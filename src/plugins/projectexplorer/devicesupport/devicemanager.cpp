@@ -158,6 +158,8 @@ void DeviceManager::load()
     // Insert devices into the model. Prefer the higher device version when there are multiple
     // devices with the same id.
     foreach (IDevice::Ptr device, userDevices) {
+        if (hasDevice(device->displayName())) // HACK: Do not re-load "Desktop Device"
+            continue;
         foreach (const IDevice::Ptr &sdkDevice, sdkDevices) {
             if (device->id() == sdkDevice->id()) {
                 if (device->version() < sdkDevice->version())
