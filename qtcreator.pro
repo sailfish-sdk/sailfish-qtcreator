@@ -110,7 +110,7 @@ linux {
 
 macx {
     APPBUNDLE = "$$OUT_PWD/bin/$${IDE_APP_TARGET}.app"
-    BINDIST_SOURCE.release = "$$OUT_PWD/bin/$${IDE_APP_TARGET}.app"
+    BINDIST_SOURCE.release = "$$OUT_PWD/bin"
     BINDIST_SOURCE.debug = "$$OUT_PWD/bin"
     BINDIST_EXCLUDE_ARG.debug = "--exclude-toplevel"
     deployqt.commands = $$PWD/scripts/deployqtHelper_mac.sh \"$${APPBUNDLE}\" \"$$[QT_INSTALL_BINS]\" \"$$[QT_INSTALL_TRANSLATIONS]\" \"$$[QT_INSTALL_PLUGINS]\" \"$$[QT_INSTALL_QML]\"
