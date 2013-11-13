@@ -164,6 +164,7 @@ void DeviceManager::load()
             if (device->id() == sdkDevice->id()) {
                 if (device->version() < sdkDevice->version())
                     device = sdkDevice;
+                addDevice(device);
                 sdkDevices.removeOne(sdkDevice);
                 break;
             }
