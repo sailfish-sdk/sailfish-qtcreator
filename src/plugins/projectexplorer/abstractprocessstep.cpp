@@ -229,7 +229,7 @@ void AbstractProcessStep::doRun()
     // Enforce PWD in the environment because some build tools use that.
     // PWD can be different from getcwd in case of symbolic links (getcwd resolves symlinks).
     // For example Clang uses PWD for paths in debug info, see QTCREATORBUG-23788
-    Environment envWithPwd = d->m_param.environment();
+    Environment envWithPwd = d->m_param.effectiveEnvironment();
     envWithPwd.set("PWD", d->m_process->workingDirectory());
     d->m_process->setEnvironment(envWithPwd);
     d->m_process->setCommand(effectiveCommand);

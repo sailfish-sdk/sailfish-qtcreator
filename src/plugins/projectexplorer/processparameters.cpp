@@ -130,6 +130,24 @@ FilePath ProcessParameters::effectiveCommand() const
 }
 
 /*!
+    Gets the fully expanded enviroment directory.
+*/
+
+Utils::Environment ProcessParameters::effectiveEnvironment() const
+{
+    if (m_macroExpander) {
+        m_effectiveEnvironment.clear();
+        Utils::Environment::const_iterator i;
+        for (i = environment().constBegin(); i != environment().constEnd(); ++i) {
+            m_effectiveEnvironment.set(m_macroExpander->expand(i.key().name),
+                    m_macroExpander->expand(i.value().first),
+                    i.value().second);
+        }
+    }
+    return m_effectiveEnvironment;
+}
+
+/*!
     Returns \c true if effectiveCommand() would return only a fallback.
 */
 

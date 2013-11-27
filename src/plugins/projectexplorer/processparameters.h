@@ -60,6 +60,8 @@ public:
     Utils::FilePath effectiveCommand() const;
     /// Get the fully expanded arguments to use:
     QString effectiveArguments() const;
+    /// Get the fully expanded environment to use:
+    Utils::Environment effectiveEnvironment() const;
 
     /// True if effectiveCommand() would return only a fallback
     bool commandMissing() const;
@@ -78,6 +80,7 @@ private:
     mutable Utils::FilePath m_effectiveWorkingDirectory;
     mutable Utils::FilePath m_effectiveCommand;
     mutable QString m_effectiveArguments;
+    mutable Utils::Environment m_effectiveEnvironment;
     mutable bool m_commandMissing = false;
 };
 
