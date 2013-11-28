@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>QtSupport::Internal::CopyToLocationDialog</class>
+ <widget class="QDialog" name="QtSupport::Internal::CopyToLocationDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>501</width>
+    <height>202</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Copy Project to writable Location.</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QLabel" name="infoLabel1">
+     <property name="text">
+      <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;The project you are about to open is located in the write-protected location:&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+     </property>
+     <property name="wordWrap">
+      <bool>false</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="locationLabel">
+     <property name="text">
+      <string/>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="infoLabel2">
+     <property name="text">
+      <string>&lt;p&gt;Please select a writable location to copy and open the files.&lt;/p&gt;</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="Utils::PathChooser" name="pathChooser" native="true"/>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="buttonBox">
+     <property name="orientation">
+      <enum>Qt::Horizontal</enum>
+     </property>
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>Utils::PathChooser</class>
+   <extends>QWidget</extends>
+   <header location="global">utils/pathchooser.h</header>
+   <container>1</container>
+   <slots>
+    <signal>editingFinished()</signal>
+    <signal>browsingFinished()</signal>
+   </slots>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>accepted()</signal>
+   <receiver>QtSupport::Internal::CopyToLocationDialog</receiver>
+   <slot>accept()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>248</x>
+     <y>254</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>157</x>
+     <y>274</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>rejected()</signal>
+   <receiver>QtSupport::Internal::CopyToLocationDialog</receiver>
+   <slot>reject()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>316</x>
+     <y>260</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>286</x>
+     <y>274</y>
+    </hint>
+   </hints>
+  </connection>
+ </connections>
+</ui>
