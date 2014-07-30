@@ -445,8 +445,9 @@ Utils::FilePath CompilationDatabaseProject::rootPathFromSettings() const
 #endif
 }
 
-void CompilationDatabaseProject::configureAsExampleProject(Kit *kit)
+void CompilationDatabaseProject::configureAsExampleProject(Kit *kit, const QSet<Core::Id> &preferredFeatures)
 {
+    Q_UNUSED(preferredFeatures);
     if (kit)
         addTargetForKit(kit);
     else if (KitManager::defaultKit())

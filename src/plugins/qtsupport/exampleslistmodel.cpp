@@ -340,6 +340,8 @@ void ExamplesListModel::parseExamples(QXmlStreamReader *reader,
                 item->tags = trimStringList(reader->readElementText(QXmlStreamReader::ErrorOnUnexpectedElement).split(QLatin1Char(','), Qt::SkipEmptyParts));
             } else if (reader->name() == QLatin1String("platforms")) {
                 item->platforms = trimStringList(reader->readElementText(QXmlStreamReader::ErrorOnUnexpectedElement).split(QLatin1Char(','), Qt::SkipEmptyParts));
+            } else if (reader->name() == QLatin1String("preferredFeatures")) {
+                item->preferredFeatures = trimStringList(reader->readElementText(QXmlStreamReader::ErrorOnUnexpectedElement).split(QLatin1Char(','), Qt::SkipEmptyParts));
         }
             break;
         case QXmlStreamReader::EndElement:
