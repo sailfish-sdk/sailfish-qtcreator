@@ -52,13 +52,18 @@ using namespace ProjectExplorer;
 using namespace Utils;
 
 namespace QtSupport {
+
+// Prefix added by the default QT_MESSAGE_PATTERN on Sailfish
+#define SAILFISH_PREFIX_REGEXP \
+    "(?:\\[[DIWCF]\\] [^\\s]+ - )"
+
 namespace Internal {
 
 class QtOutputFormatterPrivate
 {
 public:
     QtOutputFormatterPrivate()
-        : qmlError("(" QT_QML_URL_REGEXP  // url
+        : qmlError("^" SAILFISH_PREFIX_REGEXP "(" QT_QML_URL_REGEXP  // url
                    ":\\d+"              // colon, line
                    "(?::\\d+)?)"        // colon, column (optional)
                    "\\b")               // word boundary
