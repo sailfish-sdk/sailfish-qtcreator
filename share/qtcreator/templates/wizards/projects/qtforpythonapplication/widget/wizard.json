@@ -7,7 +7,7 @@
     "trDisplayName": "Qt for Python - Window (UI file)",
     "trDisplayCategory": "Application (Qt for Python)",
     "icon": "../icons/icon.png",
-    "enabled": "%{JS: value('Plugins').indexOf('Python') >= 0}",
+    "enabled": "%{JS: false // value('Plugins').indexOf('Python') >= 0}",
 
     "options":
     [

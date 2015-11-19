@@ -7,7 +7,7 @@
     "trDisplayName": "Qt Quick UI Prototype",
     "trDisplayCategory": "Other Project",
     "icon": "qtquickuiprototype.png",
-    "enabled": "%{JS: value('Plugins').indexOf('QmlProjectManager') >= 0}",
+    "enabled": "%{JS: false // value('Plugins').indexOf('QmlProjectManager') >= 0}",
     "featuresRequired": [ "QtSupport.Wizards.FeatureQtQuickProject", "QtSupport.Wizards.FeatureQt" ],
 
     "options":

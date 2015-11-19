@@ -10,7 +10,7 @@
         "ToolChain.Nim.NimToolChain"
     ],
     "icon":"../nim/icon.png",
-    "enabled":"%{JS: value('Plugins').indexOf('Nim') >= 0 }",
+    "enabled":"%{JS: false // value('Plugins').indexOf('Nim') >= 0 }",
     "options":[
         {
             "key":"ProjectFile",

@@ -8,7 +8,7 @@
     "trDisplayCategory": "Library",
     "icon": "qtcreatorplugin.png",
     "featuresRequired": [ "QtSupport.Wizards.FeatureQt", "QtSupport.Wizards.FeatureDesktop" ],
-    "enabled": "%{JS: value('Plugins').indexOf('CMakeProjectManager') >= 0}",
+    "enabled": "%{JS: false // value('Plugins').indexOf('CMakeProjectManager') >= 0}",
 
     "options":
     [

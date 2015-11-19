@@ -8,7 +8,7 @@
     "trDisplayCategory": "Library",
     "icon": "lib.png",
     "featuresRequired": [ "QtSupport.Wizards.FeatureQtQuick", "QtSupport.Wizards.FeatureQtQuick.2" ],
-    "enabled": "%{JS: value('Plugins').indexOf('QmakeProjectManager') >= 0}",
+    "enabled": "%{JS: false // value('Plugins').indexOf('QmakeProjectManager') >= 0}",
 
     "options":
     [

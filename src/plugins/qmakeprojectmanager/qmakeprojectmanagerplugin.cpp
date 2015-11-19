@@ -162,7 +162,7 @@ bool QmakeProjectManagerPlugin::initialize(const QStringList &arguments, QString
     IWizardFactory::registerFactoryCreator([] {
         return QList<IWizardFactory *> {
             new SubdirsProjectWizard,
-            new CustomWidgetWizard
+            //new CustomWidgetWizard
         };
     });
 
