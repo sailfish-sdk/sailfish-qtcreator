@@ -113,6 +113,7 @@ KitOptionsPageWidget::KitOptionsPageWidget()
     horizontalLayout->addLayout(buttonLayout);
 
     auto verticalLayout = new QVBoxLayout(this);
+    verticalLayout->setSizeConstraint(QLayout::SetMinimumSize);
     verticalLayout->addLayout(horizontalLayout);
 
     m_model = new Internal::KitModel(verticalLayout, this);
