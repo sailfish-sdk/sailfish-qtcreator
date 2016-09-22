@@ -123,6 +123,7 @@ IconsModeDebugActiveColor=ff6a6add
 IconsModeProjectActiveColor=ff5caa15
 IconsModeAnalyzeActiveColor=ff43adee
 IconsModeHelpActiveColor=fffaa838
+IconsModeMerActiveColor=ff97f0ff
 IconsCodeModelKeywordColor=ff777777
 IconsCodeModelClassColor=ffc0b550
 IconsCodeModelStructColor=ff53b053
