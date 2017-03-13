@@ -25,8 +25,21 @@
 
 #include "port.h"
 
+#include <QDebug>
+
 /*! \class Utils::Port
 
   \brief The Port class implements a wrapper around a 16 bit port number
   to be used in conjunction with IP addresses.
 */
+
+namespace Utils {
+
+QDebug operator<<(QDebug debug, const Port &p)
+{
+    QDebugStateSaver saver(debug);
+    debug.nospace() << QLatin1String("Port(") << p.number() << QLatin1Char(')');
+    return debug;
+}
+
+} // namespace Utils

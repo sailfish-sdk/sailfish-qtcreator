@@ -74,6 +74,8 @@ inline bool operator!=(const Port &p1, const Port &p2)
     return p1.isValid() ? (!p2.isValid() || p1.number() != p2.number()) : p2.isValid();
 }
 
+QTCREATOR_UTILS_EXPORT QDebug operator<<(QDebug debug, const Port &p);
+
 } // Utils
 
 Q_DECLARE_METATYPE(Utils::Port)
