@@ -1362,6 +1362,7 @@ void QmakeBuildSystem::testToolChain(ToolChain *tc, const FilePath &path) const
     const Utils::FilePath expected = tc->compilerCommand();
     Environment env = buildConfiguration()->environment();
 
+#if 0 // Does not work with Mer SDK
     if (env.isSameExecutable(path.toString(), expected.toString()))
         return;
     const QPair<Utils::FilePath, Utils::FilePath> pair = qMakePair(expected, path);
@@ -1385,6 +1386,7 @@ void QmakeBuildSystem::testToolChain(ToolChain *tc, const FilePath &path) const
                             .arg(expected.toUserOutput())
                             .arg(kit()->displayName())));
     m_toolChainWarnings.insert(pair);
+#endif
 }
 
 void QmakeBuildSystem::warnOnToolChainMismatch(const QmakeProFile *pro) const
