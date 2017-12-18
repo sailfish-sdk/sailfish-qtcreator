@@ -194,6 +194,7 @@ signals:
     // or the file list of a specific project has changed.
     void fileListChanged();
 
+    void aboutToExecuteProject(ProjectExplorer::RunControl *runControl);
     void recentProjectsChanged();
 
     void settingsChanged();
