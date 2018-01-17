@@ -567,9 +567,9 @@ QString ICore::versionString()
 {
     QString ideVersionDescription;
     if (QLatin1String(Constants::IDE_VERSION_LONG) != QLatin1String(Constants::IDE_VERSION_DISPLAY))
-        ideVersionDescription = tr(" (%1)").arg(QLatin1String(Constants::IDE_VERSION_LONG));
+        ideVersionDescription = tr(" (%1)").arg(QLatin1String(Constants::IDE_VERSION_DISPLAY));
     return tr("%1 %2%3").arg(QLatin1String(Constants::IDE_DISPLAY_NAME),
-                             QLatin1String(Constants::IDE_VERSION_DISPLAY),
+                             QLatin1String(Constants::IDE_VERSION_LONG),
                              ideVersionDescription);
 }
 
