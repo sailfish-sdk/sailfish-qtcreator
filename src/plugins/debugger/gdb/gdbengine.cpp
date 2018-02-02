@@ -353,7 +353,9 @@ void GdbEngine::handleResponse(const QString &buff)
             m_pendingLogStreamOutput += data;
 
             if (isGdbConnectionError(data)) {
-                notifyInferiorExited();
+                if (state() == InferiorRunOk || state() == InferiorStopOk || state() == InferiorShutdownRequested) {
+                    notifyInferiorExited();
+                }
                 break;
             }
 
@@ -1663,6 +1665,8 @@ void GdbEngine::handleInferiorShutdown(const DebuggerResponse &response)
     }
     // "kill" got stuck, gdb was kill -9'd, or similar.
     CHECK_STATE(InferiorShutdownRequested);
+    if (state() != InferiorShutdownRequested)
+        return;
     QString msg = response.data["msg"].data();
     if (msg.contains(": No such file or directory.")) {
         // This happens when someone removed the binary behind our back.
