@@ -158,6 +158,7 @@ void ExamplesWelcomePage::openProject(const ExampleItem *item)
     if (!proFileInfo.exists())
         return;
 
+#if 0
     // If the Qt is a distro Qt on Linux, it will not be writable, hence compilation will fail
     // Same if it is installed in non-writable location for other reasons
     const bool needsCopy = withNtfsPermissions<bool>([proFileInfo] {
@@ -167,6 +168,7 @@ void ExamplesWelcomePage::openProject(const ExampleItem *item)
                 || !QFileInfo(pathInfo.path()).isWritable() /* shadow build directory */;
     });
     if (needsCopy)
+#endif
         proFile = copyToAlternativeLocation(proFileInfo, filesToOpen, item->dependencies);
 
     // don't try to load help and files if loading the help request is being cancelled
