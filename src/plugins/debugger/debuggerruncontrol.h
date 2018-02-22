@@ -131,6 +131,9 @@ public:
     Internal::TerminalRunner *terminalRunner() const;
     DebuggerEngineType cppEngineType() const;
 
+signals:
+    void inferiorRunning();
+
 private:
     bool fixupParameters();
     void handleEngineStarted(Internal::DebuggerEngine *engine);
