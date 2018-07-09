@@ -71,6 +71,8 @@ public:
     void setSolibSearchPath(const QStringList &list);
     void addSolibSearchDir(const QString &str);
 
+    void addSourcePathMap(const QString &installPath, const QString &buildPath);
+
     static void setBreakOnMainNextTime();
 
     void setInferior(const ProjectExplorer::Runnable &runnable);
