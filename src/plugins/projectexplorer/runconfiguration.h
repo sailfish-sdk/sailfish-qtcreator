@@ -250,8 +250,9 @@ protected:
     void addSupportedTargetDeviceType(Utils::Id deviceTypeId);
     void setDecorateDisplayNames(bool on);
 
+    virtual bool canHandle(Target *target) const;
+
 private:
-    bool canHandle(Target *target) const;
     RunConfiguration *create(Target *target) const;
 
     friend class RunConfigurationCreationInfo;
