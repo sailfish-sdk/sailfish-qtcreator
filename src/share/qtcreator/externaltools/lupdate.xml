@@ -32,7 +32,7 @@
     <category>Linguist</category>
     <order>1</order>
     <executable>
-        <path>%{CurrentDocument:Project:QT_INSTALL_BINS}/lupdate</path>
+        <path>%{CurrentBuild:Env:MER_SSH_SDK_TOOLS}/lupdate</path>
         <path>lupdate</path>
         <arguments>%{CurrentDocument:Project:FilePath}</arguments>
         <workingdirectory>%{CurrentDocument:Project:Path}</workingdirectory>
