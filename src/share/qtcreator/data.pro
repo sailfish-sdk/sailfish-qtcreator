@@ -7,7 +7,6 @@ STATIC_OUTPUT_BASE = $$IDE_DATA_PATH
 STATIC_INSTALL_BASE = $$INSTALL_DATA_PATH
 
 STATIC_FILES = \
-    $$PWD/externaltools/lrelease.xml \
     $$PWD/externaltools/lupdate.xml \
     $$PWD/externaltools/qmlviewer.xml \
     $$PWD/externaltools/qmlscene.xml
