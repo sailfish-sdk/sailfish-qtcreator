@@ -1445,7 +1445,6 @@ void DebuggerPluginPrivate::updatePresetState()
         m_startAction.setEnabled(canRun);
         m_startAction.setIcon(startIcon(true));
         m_startAction.setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-        m_startAction.setVisible(true);
         if (!BuildManager::isBuilding()) {
             m_startAction.setVisible(!SessionManager::startupProject()
                     || SessionManager::startupProject()->needsConfiguration() || canRun);
