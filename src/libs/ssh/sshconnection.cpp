@@ -112,9 +112,13 @@ struct SshConnection::SshConnectionPrivate
 
     QStringList connectionOptions(const FilePath &binary) const
     {
+        bool avoidUpdatingKnownHosts = false;
         QString hostKeyCheckingString;
         switch (connParams.hostKeyCheckingMode) {
         case SshHostKeyCheckingNone:
+            avoidUpdatingKnownHosts = true;
+            hostKeyCheckingString = "no";
+            break;
         case SshHostKeyCheckingAllowNoMatch:
             // There is "accept-new" as well, but only since 7.6.
             hostKeyCheckingString = "no";
@@ -126,6 +130,8 @@ struct SshConnection::SshConnectionPrivate
         QStringList args{"-o", "StrictHostKeyChecking=" + hostKeyCheckingString,
                     "-o", "User=" + connParams.userName(),
                     "-o", "Port=" + QString::number(connParams.port())};
+        if (avoidUpdatingKnownHosts)
+            args << "-o" << "UserKnownHostsFile=/dev/null";
         const bool keyOnly = connParams.authenticationType ==
                 SshConnectionParameters::AuthenticationTypeSpecificKey;
         if (keyOnly) {
