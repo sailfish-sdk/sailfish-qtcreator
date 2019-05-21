@@ -362,10 +362,6 @@ void SshConnection::doConnectToHost()
                   .arg(sshBinary.toUserOutput()));
         return;
     }
-    if (!d->sharingEnabled) {
-        emitConnected();
-        return;
-    }
     d->masterSocketDir.reset(new QTemporaryDir);
     if (!d->masterSocketDir->isValid()) {
         emitError(tr("Cannot establish SSH connection: Failed to create temporary "
@@ -373,8 +369,15 @@ void SshConnection::doConnectToHost()
                   .arg(d->masterSocketDir->errorString()));
         return;
     }
-    QStringList args = QStringList{"-M", "-N", "-o", "ControlPersist=no"}
+    QStringList args;
+    if (d->sharingEnabled) {
+        args = QStringList{"-M", "-N", "-o", "ControlPersist=no"}
             << d->connectionArgs(sshBinary);
+    } else {
+        const QString notify = QString("echo I am not a socket > \"%1\"").arg(d->socketFilePath());
+        args = QStringList{"-N", "-o", "PermitLocalCommand=yes", "-o", "LocalCommand=" + notify}
+            << d->connectionArgs(sshBinary);
+    }
     if (!d->connParams.x11DisplayName.isEmpty())
         args.prepend("-X");
     qCDebug(sshLog) << "establishing connection:" << sshBinary.toUserOutput() << args;
