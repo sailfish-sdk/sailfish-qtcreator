@@ -162,6 +162,7 @@ struct SshConnection::SshConnectionPrivate
     SshProcess masterProcess;
     QString errorString;
     std::unique_ptr<QTemporaryDir> masterSocketDir;
+    std::unique_ptr<FileSystemWatcher> masterSocketWatcher;
     State state = Unconnected;
     const bool sharingEnabled = SshSettings::connectionSharingEnabled();
 };
@@ -179,20 +180,21 @@ SshConnection::SshConnection(const SshConnectionParameters &serverInfo, QObject 
             emitConnected();
             return;
         }
-        auto * const socketWatcher = new FileSystemWatcher(this);
-        auto * const socketWatcherTimer = new QTimer(this);
-        const auto socketFileChecker = [this, socketWatcher, socketWatcherTimer] {
+        d->masterSocketWatcher.reset(new FileSystemWatcher(this));
+        auto * const socketWatcherTimer = new QTimer(d->masterSocketWatcher.get());
+        const auto socketFileChecker = [this, socketWatcherTimer] {
             if (!QFileInfo::exists(d->socketFilePath()))
                 return;
-            socketWatcher->disconnect();
-            socketWatcher->deleteLater();
+            d->masterSocketWatcher->disconnect();
+            d->masterSocketWatcher->deleteLater();
+            (void) d->masterSocketWatcher.release();
             socketWatcherTimer->disconnect();
             socketWatcherTimer->stop();
-            socketWatcherTimer->deleteLater();
             emitConnected();
         };
-        connect(socketWatcher, &FileSystemWatcher::directoryChanged, socketFileChecker);
-        socketWatcher->addDirectory(socketInfo.path(), FileSystemWatcher::WatchAllChanges);
+        connect(d->masterSocketWatcher.get(), &FileSystemWatcher::directoryChanged,
+                socketFileChecker);
+        d->masterSocketWatcher->addDirectory(socketInfo.path(), FileSystemWatcher::WatchAllChanges);
         if (HostOsInfo::isMacHost()) {
             // QTBUG-72455
             socketWatcherTimer->setInterval(1000);
