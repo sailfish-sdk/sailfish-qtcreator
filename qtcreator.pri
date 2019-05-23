@@ -125,6 +125,7 @@ osx {
     INSTALL_DOC_PATH     = $$INSTALL_DATA_PATH/doc
     INSTALL_BIN_PATH     = $$QTC_PREFIX/$${IDE_APP_TARGET}.app/Contents/MacOS
     INSTALL_APP_PATH     = $$QTC_PREFIX/
+    RELATIVE_PREFIX_PATH = ../../../..
 } else {
     contains(TEMPLATE, vc.*):vcproj = 1
     IDE_APP_TARGET   = $$IDE_ID
@@ -156,6 +157,7 @@ osx {
     INSTALL_DOC_PATH     = $$QTC_PREFIX/share/doc/qtcreator
     INSTALL_BIN_PATH     = $$QTC_PREFIX/bin
     INSTALL_APP_PATH     = $$QTC_PREFIX/bin
+    RELATIVE_PREFIX_PATH = ..
 }
 
 gcc:!clang: QMAKE_CXXFLAGS += -Wno-noexcept-type
@@ -168,6 +170,7 @@ DEFINES += $$shell_quote(RELATIVE_PLUGIN_PATH=\"$$RELATIVE_PLUGIN_PATH\")
 DEFINES += $$shell_quote(RELATIVE_LIBEXEC_PATH=\"$$RELATIVE_LIBEXEC_PATH\")
 DEFINES += $$shell_quote(RELATIVE_DATA_PATH=\"$$RELATIVE_DATA_PATH\")
 DEFINES += $$shell_quote(RELATIVE_DOC_PATH=\"$$RELATIVE_DOC_PATH\")
+DEFINES += $$shell_quote(RELATIVE_PREFIX_PATH=\"$$RELATIVE_PREFIX_PATH\")
 
 INCLUDEPATH += \
     $$IDE_BUILD_TREE/src \ # for <app/app_version.h> in case of actual build directory

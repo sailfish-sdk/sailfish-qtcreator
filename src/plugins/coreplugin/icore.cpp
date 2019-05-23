@@ -31,10 +31,12 @@
 #include <app/app_version.h>
 #include <extensionsystem/pluginmanager.h>
 
+#include <utils/fileutils.h>
 #include <utils/qtcassert.h>
 
 #include <QApplication>
 #include <QDebug>
+#include <QRegularExpression>
 #include <QStandardPaths>
 #include <QSysInfo>
 
@@ -387,6 +389,11 @@ QString ICore::userInterfaceLanguage()
     return qApp->property("qtc_locale").toString();
 }
 
+QString ICore::prefixPath()
+{
+    return QDir::cleanPath(QCoreApplication::applicationDirPath() + '/' + RELATIVE_PREFIX_PATH);
+}
+
 /*!
     Returns the absolute path that is used for resources like
     project templates and the debugger macros.
@@ -565,9 +572,25 @@ static QString compilerString()
 */
 QString ICore::versionString()
 {
+    static QString sdkRelease = []() -> QString {
+        FileReader reader;
+        if (!reader.fetch(prefixPath() + "/sdk-release")) {
+            qWarning() << "Error reading sdk-release file:" << reader.errorString();
+            return {};
+        }
+        QRegularExpression re("^SDK_RELEASE=(.+)$");
+        re.setPatternOptions(QRegularExpression::MultilineOption);
+        QRegularExpressionMatch match = re.match(QString::fromUtf8(reader.data()));
+        if (!match.hasMatch()) {
+            qWarning() << "Error parsing sdk-release file";
+            return {};
+        }
+        return " " + match.captured(1);
+    }();
+
     QString ideVersionDescription;
     if (QLatin1String(Constants::IDE_VERSION_LONG) != QLatin1String(Constants::IDE_VERSION_DISPLAY))
-        ideVersionDescription = tr(" (%1)").arg(QLatin1String(Constants::IDE_VERSION_DISPLAY));
+        ideVersionDescription = tr(" (%1%2)").arg(QLatin1String(Constants::IDE_VERSION_DISPLAY), sdkRelease);
     return tr("%1 %2%3").arg(QLatin1String(Constants::IDE_DISPLAY_NAME),
                              QLatin1String(Constants::IDE_VERSION_LONG),
                              ideVersionDescription);

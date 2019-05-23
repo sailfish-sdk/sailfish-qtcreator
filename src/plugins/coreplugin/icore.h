@@ -92,6 +92,7 @@ public:
     static QPrinter *printer();
     static QString userInterfaceLanguage();
 
+    static QString prefixPath();
     static QString resourcePath();
     static QString userResourcePath();
     static QString cacheResourcePath();
