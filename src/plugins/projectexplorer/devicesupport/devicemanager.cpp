@@ -271,7 +271,6 @@ void DeviceManager::removeDevice(Utils::Id id)
 {
     const IDevice::Ptr device = mutableDevice(id);
     QTC_ASSERT(device, return);
-    QTC_ASSERT(this != instance() || device->isAutoDetected(), return);
 
     const bool wasDefault = d->defaultDevices.value(device->type()) == device->id();
     const Utils::Id deviceType = device->type();
