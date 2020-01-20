@@ -40,6 +40,7 @@ const char BUILD_FILE[] = "CMakeProject.BuildFile";
 
 // Project
 const char CMAKE_PROJECT_ID[] = "CMakeProjectManager.CMakeProject";
+const char CMAKE_PROJECT_BC_ID[] = "CMakeProjectManager.CMakeBuildConfiguration";
 
 // Menu
 const char M_CONTEXT[] = "CMakeEditor.ContextMenu";
