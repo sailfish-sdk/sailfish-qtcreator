@@ -124,6 +124,7 @@ public:
     void doRun() override;
     QWidget *createConfigWidget() override;
     void setForced(bool b);
+    void setRecursive(bool b);
 
     enum class ArgumentFlag {
         OmitProjectPath = 0x01,
@@ -200,6 +201,7 @@ private:
     bool m_wasSuccess = true;
     State m_nextState = State::IDLE;
     bool m_forced = false;
+    bool m_recursive = true;
     bool m_needToRunQMake = false; // set in init(), read in run()
 
     bool m_runMakeQmake = false;
