@@ -262,11 +262,7 @@ FilePath CMakeBuildConfiguration::shadowBuildDirectory(const FilePath &projectFi
 
 void CMakeBuildConfiguration::buildTarget(const QString &buildTarget)
 {
-    auto cmBs = qobject_cast<CMakeBuildStep *>(Utils::findOrDefault(
-                                                   buildSteps()->steps(),
-                                                   [](const ProjectExplorer::BuildStep *bs) {
-        return bs->id() == Constants::CMAKE_BUILD_STEP_ID;
-    }));
+    CMakeBuildStep *cmBs = cmakeBuildStep();
 
     QStringList originalBuildTargets;
     if (cmBs) {
@@ -293,6 +289,15 @@ QStringList CMakeBuildConfiguration::extraCMakeArguments() const
 QStringList CMakeBuildConfiguration::initialCMakeArguments() const
 {
     return aspect<InitialCMakeArgumentsAspect>()->value().split('\n', Qt::SkipEmptyParts);
+}
+
+CMakeBuildStep *CMakeBuildConfiguration::cmakeBuildStep() const
+{
+    return qobject_cast<CMakeBuildStep *>(Utils::findOrDefault(
+                                                   buildSteps()->steps(),
+                                                   [](const ProjectExplorer::BuildStep *bs) {
+        return bs->id() == Constants::CMAKE_BUILD_STEP_ID;
+    }));
 }
 
 void CMakeBuildConfiguration::setExtraCMakeArguments(const QStringList &args)

@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include "cmakebuildstep.h"
 #include "cmakeconfigitem.h"
 #include "configmodel.h"
 
@@ -55,6 +56,8 @@ public:
     QStringList extraCMakeArguments() const;
 
     QStringList initialCMakeArguments() const;
+
+    CMakeBuildStep *cmakeBuildStep() const;
 
     QString error() const;
     QString warning() const;
