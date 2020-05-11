@@ -49,6 +49,7 @@ const char CMAKE_INFORMATION_AUTORUN[] = "AutoRun";
 const char CMAKE_INFORMATION_QCH_FILE_PATH[] = "QchFile";
 const char CMAKE_INFORMATION_AUTO_CREATE_BUILD_DIRECTORY[] = "AutoCreateBuildDirectory";
 const char CMAKE_INFORMATION_AUTODETECTED[] = "AutoDetected";
+const char CMAKE_INFORMATION_AUTODETECTED_BY_PLUGIN[] = "AutoDetectedByPlugin";
 const char CMAKE_INFORMATION_READERTYPE[] = "ReaderType";
 
 bool CMakeTool::Generator::matches(const QString &n, const QString &ex) const
@@ -109,7 +110,8 @@ public:
 ///////////////////////////
 CMakeTool::CMakeTool(Detection d, const Utils::Id &id)
     : m_id(id)
-    , m_isAutoDetected(d == AutoDetection)
+    , m_isAutoDetected(d & AutoDetection)
+    , m_isAutoDetectedByPlugin(d == AutoDetectionByPlugin)
     , m_introspection(std::make_unique<Internal::IntrospectionData>())
 {
     QTC_ASSERT(m_id.isValid(), m_id = Utils::Id::fromString(QUuid::createUuid().toString()));
@@ -126,8 +128,10 @@ CMakeTool::CMakeTool(const QVariantMap &map, bool fromSdk) :
         map.value(CMAKE_INFORMATION_READERTYPE).toString());
 
     //loading a CMakeTool from SDK is always autodetection
-    if (!fromSdk)
+    if (!fromSdk) {
         m_isAutoDetected = map.value(CMAKE_INFORMATION_AUTODETECTED, false).toBool();
+        m_isAutoDetectedByPlugin = map.value(CMAKE_INFORMATION_AUTODETECTED_BY_PLUGIN, false).toBool();
+    }
 
     setFilePath(Utils::FilePath::fromString(map.value(CMAKE_INFORMATION_COMMAND).toString()));
 
@@ -215,6 +219,7 @@ QVariantMap CMakeTool::toMap() const
         data.insert(CMAKE_INFORMATION_READERTYPE,
                     Internal::readerTypeToString(m_readerType.value()));
     data.insert(CMAKE_INFORMATION_AUTODETECTED, m_isAutoDetected);
+    data.insert(CMAKE_INFORMATION_AUTODETECTED_BY_PLUGIN, m_isAutoDetectedByPlugin);
     return data;
 }
 
@@ -324,6 +329,11 @@ CMakeTool::Version CMakeTool::version() const
 bool CMakeTool::isAutoDetected() const
 {
     return m_isAutoDetected;
+}
+
+bool CMakeTool::isAutoDetectedByPlugin() const
+{
+    return m_isAutoDetectedByPlugin;
 }
 
 QString CMakeTool::displayName() const

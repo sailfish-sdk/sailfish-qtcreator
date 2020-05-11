@@ -45,7 +45,11 @@ namespace Internal {  class IntrospectionData;  }
 class CMAKE_EXPORT CMakeTool
 {
 public:
-    enum Detection { ManualDetection, AutoDetection };
+    enum Detection {
+        ManualDetection = 0x0,
+        AutoDetection = 0x1,
+        AutoDetectionByPlugin = 0x3
+    };
 
     enum ReaderType { FileApi };
 
@@ -103,6 +107,7 @@ public:
     Version version() const;
 
     bool isAutoDetected() const;
+    bool isAutoDetectedByPlugin() const;
     QString displayName() const;
     void setDisplayName(const QString &displayName);
 
@@ -130,6 +135,7 @@ private:
 
     bool m_isAutoRun = true;
     bool m_isAutoDetected = false;
+    bool m_isAutoDetectedByPlugin = false;
     bool m_autoCreateBuildDirectory = false;
 
     Utils::optional<ReaderType> m_readerType;

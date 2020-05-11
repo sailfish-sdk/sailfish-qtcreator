@@ -130,7 +130,7 @@ mergeTools(std::vector<std::unique_ptr<CMakeTool>> &sdkTools,
         userTools.erase(std::begin(userTools));
 
         if (!Utils::contains(result, Utils::equal(&CMakeTool::id, userTool->id()))) {
-            if (userTool->isAutoDetected()
+            if (userTool->isAutoDetected() && !userTool->isAutoDetectedByPlugin()
                     && !Utils::contains(autoDetectedTools, Utils::equal(&CMakeTool::cmakeExecutable,
                                                                         userTool->cmakeExecutable()))) {
 
