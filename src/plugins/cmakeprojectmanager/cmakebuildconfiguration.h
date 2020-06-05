@@ -39,13 +39,15 @@ namespace Internal {
 class CMakeBuildSystem;
 class CMakeBuildSettingsWidget;
 
-class CMakeBuildConfiguration final : public ProjectExplorer::BuildConfiguration
+class CMAKE_EXPORT CMakeBuildConfiguration : public ProjectExplorer::BuildConfiguration
 {
     Q_OBJECT
 
     friend class ProjectExplorer::BuildConfigurationFactory;
+
+public:
     CMakeBuildConfiguration(ProjectExplorer::Target *target, Utils::Id id);
-    ~CMakeBuildConfiguration() final;
+    ~CMakeBuildConfiguration() override;
 
 public:
     CMakeConfig configurationFromCMake() const;
@@ -106,7 +108,7 @@ private:
 
 class CMakeProjectImporter;
 
-class CMakeBuildConfigurationFactory final : public ProjectExplorer::BuildConfigurationFactory
+class CMAKE_EXPORT CMakeBuildConfigurationFactory : public ProjectExplorer::BuildConfigurationFactory
 {
 public:
     CMakeBuildConfigurationFactory();
