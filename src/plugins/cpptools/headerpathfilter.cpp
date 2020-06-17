@@ -63,6 +63,7 @@ bool HeaderPathFilter::isProjectHeaderPath(const QString &path) const
 void HeaderPathFilter::removeGccInternalIncludePaths()
 {
     if (projectPart.toolchainType != ProjectExplorer::Constants::GCC_TOOLCHAIN_TYPEID
+        && projectPart.toolchainType != "QmakeProjectManager.ToolChain.Mer"
         && projectPart.toolchainType != ProjectExplorer::Constants::MINGW_TOOLCHAIN_TYPEID) {
         return;
     }
