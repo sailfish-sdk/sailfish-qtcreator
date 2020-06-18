@@ -125,6 +125,7 @@ public:
     // Note: Stickyness is *not* saved!
     void setAutoDetected(bool detected);
     void setAutoDetectionSource(const QString &autoDetectionSource);
+    void setSdkProvided(bool sdkProvided);
     void makeSticky();
     void setSticky(Utils::Id id, bool b);
     void makeUnSticky();
@@ -148,7 +149,6 @@ public:
 
 private:
     static void copyKitCommon(Kit *target, const Kit *source);
-    void setSdkProvided(bool sdkProvided);
 
     Kit(const Kit &other) = delete;
     void operator=(const Kit &other) = delete;
