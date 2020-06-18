@@ -107,8 +107,15 @@ public:
         vbox->setContentsMargins(0, 0, 0, 0);
         vbox->addWidget(clearBox);
         vbox->addWidget(envWidget);
+
+        if (s_extender)
+            s_extender(vbox);
     }
+
+    static std::function<void(QVBoxLayout *)> s_extender;
 };
+
+std::function<void(QVBoxLayout *)> BuildEnvironmentWidget::s_extender;
 
 class CustomParsersBuildWidget : public NamedWidget
 {
@@ -414,6 +421,12 @@ void BuildConfiguration::updateCacheAndEmitEnvironmentChanged()
         return;
     d->m_cachedEnvironment = env;
     emit environmentChanged(); // might trigger buildDirectoryChanged signal!
+}
+
+void BuildConfiguration::setEnvironmentWidgetExtender(const std::function<void(QVBoxLayout *)> &extender)
+{
+    QTC_CHECK(!Internal::BuildEnvironmentWidget::s_extender);
+    Internal::BuildEnvironmentWidget::s_extender = extender;
 }
 
 void BuildConfiguration::emitBuildDirectoryChanged()

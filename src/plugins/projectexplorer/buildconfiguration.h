@@ -32,6 +32,12 @@
 #include <utils/environment.h>
 #include <utils/fileutils.h>
 
+#include <functional>
+
+QT_BEGIN_NAMESPACE
+class QVBoxLayout;
+QT_END_NAMESPACE
+
 namespace Utils { class MacroExpander; }
 
 namespace ProjectExplorer {
@@ -112,6 +118,7 @@ public:
 
     static void prependCompilerPathToEnvironment(Kit *k, Utils::Environment &env);
     void updateCacheAndEmitEnvironmentChanged();
+    static void setEnvironmentWidgetExtender(const std::function<void(QVBoxLayout *)> &extender);
 
     ProjectExplorer::BuildDirectoryAspect *buildDirectoryAspect() const;
     void setConfigWidgetDisplayName(const QString &display);
