@@ -2,6 +2,7 @@
     \"Name\" : \"QmlPreview\",
     \"Version\" : \"$$QTCREATOR_VERSION\",
     \"CompatVersion\" : \"$$QTCREATOR_COMPAT_VERSION\",
+    \"Experimental\" : true,
     \"Vendor\" : \"The Qt Company Ltd\",
     \"Copyright\" : \"(C) $$QTCREATOR_COPYRIGHT_YEAR The Qt Company Ltd\",
     \"License\" : [ \"Commercial Usage\",
