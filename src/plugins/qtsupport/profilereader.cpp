@@ -89,6 +89,11 @@ void ProMessageHandler::fileMessage(int type, const QString &msg)
 void ProMessageHandler::appendMessage(const QString &msg)
 {
     m_messages << (m_exact ? msg : m_prefix + msg);
+    if (msg.contains("Project ERROR: Unknown module(s) in QT:")) {
+        m_messages << QCoreApplication::translate("ProMessageHandler",
+                "  Use \"Build > Run qmake\" to get missing build time dependencies installed.\n"
+                "  If it persists, check for missing \"BuildRequires\" in RPM .spec (or .yaml) file.");
+    }
 }
 
 ProFileReader::ProFileReader(QMakeGlobals *option, QMakeVfs *vfs)
