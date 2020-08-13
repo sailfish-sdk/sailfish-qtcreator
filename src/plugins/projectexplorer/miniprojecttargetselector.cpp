@@ -63,6 +63,8 @@
 #include <QAction>
 #include <QItemDelegate>
 
+#include <array>
+
 using namespace Utils;
 
 namespace ProjectExplorer {
