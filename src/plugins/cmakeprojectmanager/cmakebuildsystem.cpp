@@ -42,6 +42,7 @@
 #include <cpptools/cppprojectupdater.h>
 #include <cpptools/cpptoolsconstants.h>
 #include <cpptools/generatedcodemodelsupport.h>
+#include <projectexplorer/buildmanager.h>
 #include <projectexplorer/kitinformation.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/session.h>
@@ -784,6 +785,10 @@ void CMakeBuildSystem::wireUpConnections()
         if (cmakeBuildConfiguration()->isActive() && !isParsing()) {
             const auto cmake = CMakeKitAspect::cmakeTool(cmakeBuildConfiguration()->kit());
             if (cmake && cmake->isAutoRun()) {
+                if (BuildManager::isBuilding(m_buildConfiguration->target())) {
+                    qCDebug(cmakeBuildSystemLog) << "Ignoring project file change while building - not requesting parse now";
+                    return;
+                }
                 qCDebug(cmakeBuildSystemLog) << "Requesting parse due to dirty project file";
                 setParametersAndRequestParse(BuildDirParameters(cmakeBuildConfiguration()),
                                              CMakeBuildSystem::REPARSE_FORCE_CMAKE_RUN);
