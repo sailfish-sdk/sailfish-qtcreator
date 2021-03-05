@@ -32,10 +32,12 @@
 #include <nodemetainfo.h>
 #include <qmldesignerplugin.h>
 #include <qmlobjectnode.h>
+#include <designermcumanager.h>
+#include <qmlitemnode.h>
 
 #include <utils/qtcassert.h>
 
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QUrl>
 
 //using namespace QmlDesigner;
@@ -62,10 +64,7 @@ QVariant PropertyEditorValue::value() const
 static bool cleverDoubleCompare(const QVariant &value1, const QVariant &value2)
 { //we ignore slight changes on doubles
     if ((value1.type() == QVariant::Double) && (value2.type() == QVariant::Double)) {
-        int a = value1.toDouble() * 100;
-        int b = value2.toDouble() * 100;
-
-        if (qFuzzyCompare((qreal(a) / 100), (qreal(b) / 100)))
+        if (qFuzzyCompare(value1.toDouble(), value2.toDouble()))
             return true;
     }
     return false;
@@ -249,12 +248,13 @@ bool PropertyEditorValue::isTranslated() const
         if (modelNode().metaInfo().propertyTypeName(name()) == "QString" || modelNode().metaInfo().propertyTypeName(name()) == "string") {
             const QmlDesigner::QmlObjectNode objectNode(modelNode());
             if (objectNode.isValid() && objectNode.hasBindingProperty(name())) {
-                QRegExp rx("qsTr(|Id|anslate)\\(\".*\"\\)");
+                const QRegularExpression rx(QRegularExpression::anchoredPattern(
+                                                "qsTr(|Id|anslate)\\(\".*\"\\)"));
                 //qsTr()
                 if (objectNode.propertyAffectedByCurrentState(name())) {
-                    return rx.exactMatch(expression());
+                    return expression().contains(rx);
                 } else {
-                    return rx.exactMatch(modelNode().bindingProperty(name()).expression());
+                    return modelNode().bindingProperty(name()).expression().contains(rx);
                 }
             }
             return false;
@@ -263,19 +263,62 @@ bool PropertyEditorValue::isTranslated() const
     return false;
 }
 
+static bool isAllowedSubclassType(const QString &type, const QmlDesigner::NodeMetaInfo &metaInfo)
+{
+    if (!metaInfo.isValid())
+        return false;
+
+    return (metaInfo.isSubclassOf(type.toUtf8()));
+}
+
 bool PropertyEditorValue::isAvailable() const
 {
-    const QList<QByteArray> mcuProperties = {"layer", "opacity", "rotation", "scale", "gradient",
-                                             "transformOrigin", "smooth", "antialiasing", "border"};
-    const QList<QByteArray> list = name().split('.');
-    const QByteArray pureName = list.first();
+    if (!m_modelNode.isValid())
+        return true;
 
-    QmlDesigner::DesignDocument *designDocument =
-        QmlDesigner::QmlDesignerPlugin::instance()->documentManager().currentDesignDocument();
+    const QmlDesigner::DesignerMcuManager &mcuManager = QmlDesigner::DesignerMcuManager::instance();
 
+    if (mcuManager.isMCUProject()) {
+        const QSet<QString> nonMcuProperties = mcuManager.bannedProperties();
+        const auto mcuAllowedItemProperties = mcuManager.allowedItemProperties();
+        const auto mcuBannedComplexProperties = mcuManager.bannedComplexProperties();
 
-    if (designDocument && designDocument->isQtForMCUsProject())
-        return !mcuProperties.contains(pureName);
+        const QList<QByteArray> list = name().split('.');
+        const QByteArray pureName = list.constFirst();
+        const QString pureNameStr = QString::fromUtf8(pureName);
+
+        const QByteArray ending = list.constLast();
+        const QString endingStr = QString::fromUtf8(ending);
+
+        //allowed item properties:
+        const auto itemTypes = mcuAllowedItemProperties.keys();
+        for (const auto &itemType : itemTypes) {
+            if (isAllowedSubclassType(itemType, m_modelNode.metaInfo())) {
+                const QmlDesigner::DesignerMcuManager::ItemProperties allowedItemProps =
+                        mcuAllowedItemProperties.value(itemType);
+                if (allowedItemProps.properties.contains(pureNameStr)) {
+                    if (QmlDesigner::QmlItemNode::isValidQmlItemNode(m_modelNode)) {
+                        const bool itemHasChildren = QmlDesigner::QmlItemNode(m_modelNode).hasChildren();
+
+                        if (itemHasChildren)
+                            return allowedItemProps.allowChildren;
+
+                        return true;
+                    }
+                }
+            }
+        }
+
+        //banned properties:
+        //with prefixes:
+        if (mcuBannedComplexProperties.value(pureNameStr).contains(endingStr))
+            return false;
+
+        //general group:
+        if (nonMcuProperties.contains(pureNameStr))
+            return false;
+
+    }
 
     return true;
 }
@@ -304,7 +347,9 @@ void PropertyEditorValue::resetValue()
     if (m_value.isValid() || isBound()) {
         m_value = QVariant();
         m_isBound = false;
+        m_expression = QString();
         emit valueChanged(nameAsQString(), QVariant());
+        emit expressionChanged({});
     }
 }
 
@@ -359,9 +404,11 @@ QString PropertyEditorValue::getTranslationContext() const
         if (modelNode().metaInfo().propertyTypeName(name()) == "QString" || modelNode().metaInfo().propertyTypeName(name()) == "string") {
             const QmlDesigner::QmlObjectNode objectNode(modelNode());
             if (objectNode.isValid() && objectNode.hasBindingProperty(name())) {
-                QRegExp rx("qsTranslate\\(\"(.*)\"\\s*,\\s*\".*\"\\s*\\)");
-                if (rx.exactMatch(expression()))
-                    return rx.cap(1);
+                const QRegularExpression rx(QRegularExpression::anchoredPattern(
+                                          "qsTranslate\\(\"(.*)\"\\s*,\\s*\".*\"\\s*\\)"));
+                const QRegularExpressionMatch match = rx.match(expression());
+                if (match.hasMatch())
+                    return match.captured(1);
             }
         }
     }
@@ -373,11 +420,12 @@ bool PropertyEditorValue::isIdList() const
     if (modelNode().isValid() && modelNode().metaInfo().isValid() && modelNode().metaInfo().hasProperty(name())) {
         const QmlDesigner::QmlObjectNode objectNode(modelNode());
         if (objectNode.isValid() && objectNode.hasBindingProperty(name())) {
-            static const QRegExp rx("^[a-z_]\\w*|^[A-Z]\\w*\\.{1}([a-z_]\\w*\\.?)+");
+            static const QRegularExpression rx(QRegularExpression::anchoredPattern(
+                                                   "^[a-z_]\\w*|^[A-Z]\\w*\\.{1}([a-z_]\\w*\\.?)+"));
             const QString exp = objectNode.propertyAffectedByCurrentState(name()) ? expression() : modelNode().bindingProperty(name()).expression();
             for (const auto &str : generateStringList(exp))
             {
-                if (!rx.exactMatch(str))
+                if (!str.contains(rx))
                     return false;
             }
             return true;
@@ -398,8 +446,9 @@ bool PropertyEditorValue::idListAdd(const QString &value)
     if (!isIdList() && (objectNode.isValid() && objectNode.hasProperty(name())))
         return false;
 
-    static const QRegExp rx("^[a-z_]\\w*|^[A-Z]\\w*\\.{1}([a-z_]\\w*\\.?)+");
-    if (!rx.exactMatch(value))
+    static const QRegularExpression rx(QRegularExpression::anchoredPattern(
+                                           "^[a-z_]\\w*|^[A-Z]\\w*\\.{1}([a-z_]\\w*\\.?)+"));
+    if (!value.contains(rx))
         return false;
 
     auto stringList = generateStringList(expression());
@@ -427,8 +476,9 @@ bool PropertyEditorValue::idListReplace(int idx, const QString &value)
 {
     QTC_ASSERT(isIdList(), return false);
 
-    static const QRegExp rx("^[a-z_]\\w*|^[A-Z]\\w*\\.{1}([a-z_]\\w*\\.?)+");
-    if (!rx.exactMatch(value))
+    static const QRegularExpression rx(QRegularExpression::anchoredPattern(
+                                           "^[a-z_]\\w*|^[A-Z]\\w*\\.{1}([a-z_]\\w*\\.?)+"));
+    if (!value.contains(rx))
         return false;
 
     auto stringList = generateStringList(expression());
@@ -447,7 +497,7 @@ QStringList PropertyEditorValue::generateStringList(const QString &string) const
     QString copy = string;
     copy = copy.remove("[").remove("]");
 
-    QStringList tmp = copy.split(",", QString::SkipEmptyParts);
+    QStringList tmp = copy.split(',', Qt::SkipEmptyParts);
     for (QString &str : tmp)
         str = str.trimmed();
 

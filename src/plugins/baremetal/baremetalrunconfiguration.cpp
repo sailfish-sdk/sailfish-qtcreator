@@ -45,11 +45,11 @@ class BareMetalRunConfiguration final : public RunConfiguration
     Q_DECLARE_TR_FUNCTIONS(BareMetal::Internal::BareMetalRunConfiguration)
 
 public:
-    explicit BareMetalRunConfiguration(Target *target, Core::Id id)
+    explicit BareMetalRunConfiguration(Target *target, Utils::Id id)
         : RunConfiguration(target, id)
     {
         const auto exeAspect = addAspect<ExecutableAspect>();
-        exeAspect->setDisplayStyle(BaseStringAspect::LabelDisplay);
+        exeAspect->setDisplayStyle(StringAspect::LabelDisplay);
         exeAspect->setPlaceHolderText(tr("Unknown"));
 
         addAspect<ArgumentsAspect>();
@@ -69,13 +69,13 @@ class BareMetalCustomRunConfiguration final : public RunConfiguration
     Q_DECLARE_TR_FUNCTIONS(BareMetal::Internal::BareMetalCustomRunConfiguration)
 
 public:
-    explicit BareMetalCustomRunConfiguration(Target *target, Core::Id id)
+    explicit BareMetalCustomRunConfiguration(Target *target, Utils::Id id)
         : RunConfiguration(target, id)
     {
         const auto exeAspect = addAspect<ExecutableAspect>();
         exeAspect->setSettingsKey("BareMetal.CustomRunConfig.Executable");
         exeAspect->setPlaceHolderText(tr("Unknown"));
-        exeAspect->setDisplayStyle(BaseStringAspect::PathChooserDisplay);
+        exeAspect->setDisplayStyle(StringAspect::PathChooserDisplay);
         exeAspect->setHistoryCompleter("BareMetal.CustomRunConfig.History");
         exeAspect->setExpectedKind(PathChooser::Any);
 

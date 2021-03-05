@@ -31,6 +31,7 @@
 #include "callgrindfunction.h"
 
 #include <utils/qtcassert.h>
+#include <utils/stringutils.h>
 
 #include <QFileDevice>
 #include <QHash>
@@ -293,11 +294,11 @@ void Parser::Private::parseHeader(QIODevice *device)
             continue;
         } else if (line.startsWith("positions: ")) {
             QString values = getValue(line, 11);
-            data->setPositions(values.split(' ', QString::SkipEmptyParts));
+            data->setPositions(values.split(' ', Qt::SkipEmptyParts));
             addressValuesCount = data->positions().count();
         } else if (line.startsWith("events: ")) {
             QString values = getValue(line, 8);
-            data->setEvents(values.split(' ', QString::SkipEmptyParts));
+            data->setEvents(values.split(' ', Qt::SkipEmptyParts));
             costValuesCount = data->events().count();
         } else if (line.startsWith("version: ")) {
             QString value = getValue(line, 9);
@@ -320,7 +321,7 @@ void Parser::Private::parseHeader(QIODevice *device)
         } else if (line.startsWith("summary: ")) {
             QString values = getValue(line, 9);
             uint i = 0;
-            foreach (const QStringRef &value, values.splitRef(' ', QString::SkipEmptyParts))
+            foreach (const QString &value, values.split(' ', Qt::SkipEmptyParts))
                 data->setTotalCost(i++, value.toULongLong());
         } else if (!line.trimmed().isEmpty()) {
             // handle line and exit parseHeader
@@ -463,7 +464,7 @@ void Parser::Private::parseCostItem(const char *begin, const char *end)
         if (currentCallData.calledFile == -1) {
             currentCallData.calledFile = currentDifferingFile != -1 ? currentDifferingFile : lastFile;
             //HACK: workaround issue where sometimes fi=??? lines are prepended to function calls
-            if (unknownFiles.contains(currentCallData.calledFile))
+            if (unknownFiles.contains(quint64(currentCallData.calledFile)))
                 currentCallData.calledFile = lastFile;
         }
         if (currentCallData.calledObject == -1)

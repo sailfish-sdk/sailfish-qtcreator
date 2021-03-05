@@ -28,6 +28,7 @@
 #include "sqlitedatabasebackend.h"
 #include "sqlitedatabaseinterface.h"
 #include "sqliteglobal.h"
+#include "sqlitesessionchangeset.h"
 #include "sqlitetable.h"
 #include "sqlitetransaction.h"
 
@@ -66,6 +67,8 @@ public:
     Database(const Database &) = delete;
     Database &operator=(const Database &) = delete;
 
+    static void activateLogging();
+
     void open();
     void open(Utils::PathString &&databaseFilePath);
     void close();
@@ -87,7 +90,7 @@ public:
     void setOpenMode(OpenMode openMode);
     OpenMode openMode() const;
 
-    void execute(Utils::SmallStringView sqlStatement);
+    void execute(Utils::SmallStringView sqlStatement) override;
 
     DatabaseBackend &backend();
 
@@ -108,7 +111,28 @@ public:
 
     int totalChangesCount() { return m_databaseBackend.totalChangesCount(); }
 
-    void walCheckpointFull() override { m_databaseBackend.walCheckpointFull(); }
+    void walCheckpointFull() override
+    {
+        std::lock_guard<std::mutex> lock{m_databaseMutex};
+        m_databaseBackend.walCheckpointFull();
+    }
+
+    void setUpdateHook(void *object,
+                       void (*callback)(void *object,
+                                        int,
+                                        char const *database,
+                                        char const *,
+                                        long long rowId)) override
+    {
+        m_databaseBackend.setUpdateHook(object, callback);
+    }
+
+    void resetUpdateHook() override { m_databaseBackend.resetUpdateHook(); }
+
+    void setAttachedTables(const Utils::SmallStringVector &tables) override;
+    void applyAndUpdateSessions() override;
+
+    SessionChangeSets changeSets() const;
 
 private:
     void deferredBegin() override;
@@ -118,6 +142,9 @@ private:
     void rollback() override;
     void lock() override;
     void unlock() override;
+    void immediateSessionBegin() override;
+    void sessionCommit() override;
+    void sessionRollback() override;
 
     void initializeTables();
     void registerTransactionStatements();

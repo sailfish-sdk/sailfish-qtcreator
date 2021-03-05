@@ -35,7 +35,6 @@
 #include "remotelinuxenvironmentreader.h"
 
 #include <coreplugin/icore.h>
-#include <coreplugin/id.h>
 #include <coreplugin/messagemanager.h>
 
 #include <projectexplorer/devicesupport/sshdeviceprocesslist.h>
@@ -48,6 +47,7 @@
 #include <utils/hostosinfo.h>
 #include <utils/port.h>
 #include <utils/qtcassert.h>
+#include <utils/stringutils.h>
 
 using namespace ProjectExplorer;
 using namespace Utils;
@@ -88,16 +88,16 @@ private:
     {
         QList<DeviceProcessItem> processes;
         const QStringList lines = listProcessesReply.split(QString::fromLatin1(Delimiter0)
-                + QString::fromLatin1(Delimiter1), QString::SkipEmptyParts);
+                + QString::fromLatin1(Delimiter1), Qt::SkipEmptyParts);
         foreach (const QString &line, lines) {
             const QStringList elements = line.split(QLatin1Char('\n'));
             if (elements.count() < 4) {
                 qDebug("%s: Expected four list elements, got %d. Line was '%s'.", Q_FUNC_INFO,
-                       elements.count(), qPrintable(visualizeNull(line)));
+                       int(elements.count()), qPrintable(visualizeNull(line)));
                 continue;
             }
             bool ok;
-            const int pid = elements.first().midRef(6).toInt(&ok);
+            const int pid = elements.first().mid(6).toInt(&ok);
             if (!ok) {
                 qDebug("%s: Expected number in %s. Line was '%s'.", Q_FUNC_INFO,
                        qPrintable(elements.first()), qPrintable(visualizeNull(line)));
@@ -280,16 +280,6 @@ DeviceEnvironmentFetcher::Ptr LinuxDevice::environmentFetcher() const
     return DeviceEnvironmentFetcher::Ptr(new LinuxDeviceEnvironmentFetcher(sharedFromThis()));
 }
 
-void LinuxDevice::setSupportsRsync(bool supportsRsync)
-{
-    setExtraData("RemoteLinux.SupportsRSync", supportsRsync);
-}
-
-bool LinuxDevice::supportsRSync() const
-{
-    return extraData("RemoteLinux.SupportsRSync").toBool();
-}
-
 namespace Internal {
 
 // Factory
@@ -305,7 +295,7 @@ LinuxDeviceFactory::LinuxDeviceFactory()
 
 IDevice::Ptr LinuxDeviceFactory::create() const
 {
-    GenericLinuxDeviceConfigurationWizard wizard(Core::ICore::mainWindow());
+    GenericLinuxDeviceConfigurationWizard wizard(Core::ICore::dialogParent());
     if (wizard.exec() != QDialog::Accepted)
         return IDevice::Ptr();
     return wizard.device();

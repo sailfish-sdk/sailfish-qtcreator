@@ -35,12 +35,15 @@
 #include <qtsupport/qtsupportconstants.h>
 #include <qtsupport/qtversionmanager.h>
 
+#include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/target.h>
 #include <projectexplorer/kit.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projecttree.h>
 
 #include <proparser/profileevaluator.h>
+
+#include <QRegularExpression>
 
 using namespace ProjectExplorer;
 
@@ -81,28 +84,34 @@ QString AndroidQtVersion::invalidReason() const
     return tmp;
 }
 
+bool AndroidQtVersion::supportsMultipleQtAbis() const
+{
+    return qtVersion() >= QtSupport::QtVersionNumber{5, 14}
+           && qtVersion() < QtSupport::QtVersionNumber{6, 0};
+}
+
 Abis AndroidQtVersion::detectQtAbis() const
 {
     auto androidAbi2Abi = [](const QString &androidAbi) {
-        if (androidAbi == "arm64-v8a") {
+        if (androidAbi == ProjectExplorer::Constants::ANDROID_ABI_ARM64_V8A) {
             return Abi{Abi::Architecture::ArmArchitecture,
                        Abi::OS::LinuxOS,
                        Abi::OSFlavor::AndroidLinuxFlavor,
                        Abi::BinaryFormat::ElfFormat,
                        64, androidAbi};
-        } else if (androidAbi == "armeabi-v7a") {
+        } else if (androidAbi == ProjectExplorer::Constants::ANDROID_ABI_ARMEABI_V7A) {
             return Abi{Abi::Architecture::ArmArchitecture,
                        Abi::OS::LinuxOS,
                        Abi::OSFlavor::AndroidLinuxFlavor,
                        Abi::BinaryFormat::ElfFormat,
                        32, androidAbi};
-        } else if (androidAbi == "x86_64") {
+        } else if (androidAbi == ProjectExplorer::Constants::ANDROID_ABI_X86_64) {
             return Abi{Abi::Architecture::X86Architecture,
                        Abi::OS::LinuxOS,
                        Abi::OSFlavor::AndroidLinuxFlavor,
                        Abi::BinaryFormat::ElfFormat,
                        64, androidAbi};
-        } else if (androidAbi == "x86") {
+        } else if (androidAbi == ProjectExplorer::Constants::ANDROID_ABI_X86) {
             return Abi{Abi::Architecture::X86Architecture,
                        Abi::OS::LinuxOS,
                        Abi::OSFlavor::AndroidLinuxFlavor,
@@ -124,7 +133,9 @@ Abis AndroidQtVersion::detectQtAbis() const
 
 void AndroidQtVersion::addToEnvironment(const Kit *k, Utils::Environment &env) const
 {
-    const AndroidConfig &config =AndroidConfigurations::currentConfig();
+    BaseQtVersion::addToEnvironment(k, env);
+
+    const AndroidConfig &config = AndroidConfigurations::currentConfig();
     // this env vars are used by qmake mkspecs to generate makefiles (check QTDIR/mkspecs/android-g++/qmake.conf for more info)
     env.set(QLatin1String("ANDROID_NDK_HOST"), config.toolchainHost(this));
     env.set(QLatin1String("ANDROID_NDK_ROOT"), config.ndkLocation(this).toUserOutput());
@@ -160,16 +171,16 @@ int AndroidQtVersion::minimumNDK() const
 
 void AndroidQtVersion::parseMkSpec(ProFileEvaluator *evaluator) const
 {
-    if (qtVersion() >= QtSupport::QtVersionNumber{5, 14})
-        m_androidAbis = evaluator->values("ALL_ANDROID_ABIS");
-    else
+    m_androidAbis = evaluator->values("ALL_ANDROID_ABIS");
+    if (m_androidAbis.isEmpty())
         m_androidAbis = QStringList{evaluator->value("ANDROID_TARGET_ARCH")};
     const QString androidPlatform = evaluator->value("ANDROID_PLATFORM");
     if (!androidPlatform.isEmpty()) {
-        const QRegExp regex("android-(\\d+)");
-        if (regex.exactMatch(androidPlatform)) {
+        const QRegularExpression regex("android-(\\d+)");
+        const QRegularExpressionMatch match = regex.match(androidPlatform);
+        if (match.hasMatch()) {
             bool ok = false;
-            int tmp = regex.cap(1).toInt(&ok);
+            int tmp = match.captured(1).toInt(&ok);
             if (ok)
                 m_minNdk = tmp;
         }
@@ -177,16 +188,16 @@ void AndroidQtVersion::parseMkSpec(ProFileEvaluator *evaluator) const
     BaseQtVersion::parseMkSpec(evaluator);
 }
 
-QSet<Core::Id> AndroidQtVersion::availableFeatures() const
+QSet<Utils::Id> AndroidQtVersion::availableFeatures() const
 {
-    QSet<Core::Id> features = QtSupport::BaseQtVersion::availableFeatures();
+    QSet<Utils::Id> features = QtSupport::BaseQtVersion::availableFeatures();
     features.insert(QtSupport::Constants::FEATURE_MOBILE);
     features.remove(QtSupport::Constants::FEATURE_QT_CONSOLE);
     features.remove(QtSupport::Constants::FEATURE_QT_WEBKIT);
     return features;
 }
 
-QSet<Core::Id> AndroidQtVersion::targetDeviceTypes() const
+QSet<Utils::Id> AndroidQtVersion::targetDeviceTypes() const
 {
     return {Constants::ANDROID_DEVICE_TYPE};
 }

@@ -29,6 +29,10 @@
 #include "annotation.h"
 
 #include "qmlmodelnodeproxy.h"
+
+#include <qmldesignerconstants.h>
+#include <qmldesignerplugin.h>
+
 #include <coreplugin/icore.h>
 
 #include <QObject>
@@ -38,7 +42,8 @@
 
 namespace QmlDesigner {
 
-AnnotationEditor::AnnotationEditor(QObject *)
+AnnotationEditor::AnnotationEditor(QObject *parent)
+    : QObject(parent)
 {
 }
 
@@ -55,11 +60,11 @@ void AnnotationEditor::registerDeclarativeType()
 void AnnotationEditor::showWidget()
 {
     m_dialog = new AnnotationEditorDialog(Core::ICore::dialogParent(),
-                                          modelNode().validId(),
-                                          modelNode().customId(),
-                                          modelNode().annotation());
+                                          m_modelNode.id(),
+                                          m_modelNode.customId(),
+                                          m_modelNode.annotation());
 
-    QObject::connect(m_dialog, &AnnotationEditorDialog::accepted,
+    QObject::connect(m_dialog, &AnnotationEditorDialog::acceptedDialog,
                      this, &AnnotationEditor::acceptedClicked);
     QObject::connect(m_dialog, &AnnotationEditorDialog::rejected,
                      this, &AnnotationEditor::cancelClicked);
@@ -81,6 +86,19 @@ void AnnotationEditor::hideWidget()
     if (m_dialog)
         m_dialog->close();
     m_dialog = nullptr;
+}
+
+AnnotationEditor* AnnotationEditor::showWidget(const ModelNode &modelNode)
+{
+    auto editor = new AnnotationEditor;
+
+    editor->setModelNode(modelNode);
+    editor->showWidget();
+
+    connect(editor->m_dialog, &QDialog::destroyed,
+            [editor]() { editor->deleteLater(); } );
+
+    return editor;
 }
 
 void AnnotationEditor::setModelNode(const ModelNode &modelNode)
@@ -138,14 +156,16 @@ void AnnotationEditor::removeFullAnnotation()
     if (!m_modelNode.customId().isNull()) {
         dialogTitle = m_modelNode.customId();
     }
-    QMessageBox *deleteDialog = new QMessageBox(Core::ICore::dialogParent());
+    QPointer<QMessageBox> deleteDialog = new QMessageBox(Core::ICore::dialogParent());
     deleteDialog->setWindowTitle(dialogTitle);
     deleteDialog->setText(tr("Delete this annotation?"));
     deleteDialog->setStandardButtons(QMessageBox::Yes | QMessageBox::No);
     deleteDialog->setDefaultButton(QMessageBox::Yes);
 
     int result = deleteDialog->exec();
-    if (deleteDialog) deleteDialog->deleteLater();
+
+    if (deleteDialog)
+        deleteDialog->deleteLater();
 
     if (result == QMessageBox::Yes) {
         m_modelNode.removeCustomId();
@@ -159,6 +179,7 @@ void AnnotationEditor::removeFullAnnotation()
 void AnnotationEditor::acceptedClicked()
 {
     if (m_dialog) {
+        QmlDesignerPlugin::emitUsageStatistics(Constants::EVENT_ANNOTATION_ADDED);
         QString customId = m_dialog->customId();
         Annotation annotation = m_dialog->annotation();
 

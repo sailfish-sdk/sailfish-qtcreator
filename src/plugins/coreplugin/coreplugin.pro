@@ -20,7 +20,6 @@ SOURCES += corejsextensions.cpp \
     fancytabwidget.cpp \
     generalsettings.cpp \
     themechooser.cpp \
-    id.cpp \
     icontext.cpp \
     jsexpander.cpp \
     messagemanager.cpp \
@@ -72,7 +71,6 @@ SOURCES += corejsextensions.cpp \
     sidebar.cpp \
     fileiconprovider.cpp \
     icore.cpp \
-    infobar.cpp \
     editormanager/ieditor.cpp \
     dialogs/ioptionspage.cpp \
     settingsdatabase.cpp \
@@ -88,7 +86,6 @@ SOURCES += corejsextensions.cpp \
     externaltool.cpp \
     dialogs/externaltoolconfig.cpp \
     dialogs/filepropertiesdialog.cpp \
-    variablechooser.cpp \
     mimetypemagicdialog.cpp \
     mimetypesettings.cpp \
     dialogs/promptoverwritedialog.cpp \
@@ -112,7 +109,9 @@ SOURCES += corejsextensions.cpp \
     coreicons.cpp \
     diffservice.cpp \
     menubarfilter.cpp \
-    welcomepagehelper.cpp
+    welcomepagehelper.cpp \
+    dialogs/codecselector.cpp \
+    plugininstallwizard.cpp
 
 HEADERS += corejsextensions.h \
     mainwindow.h \
@@ -123,7 +122,6 @@ HEADERS += corejsextensions.h \
     fancytabwidget.h \
     generalsettings.h \
     themechooser.h \
-    id.h \
     jsexpander.h \
     messagemanager.h \
     messageoutputwindow.h \
@@ -167,7 +165,6 @@ HEADERS += corejsextensions.h \
     reaper_p.h \
     icontext.h \
     icore.h \
-    infobar.h \
     imode.h \
     ioutputpane.h \
     coreconstants.h \
@@ -203,7 +200,6 @@ HEADERS += corejsextensions.h \
     externaltool.h \
     dialogs/externaltoolconfig.h \
     dialogs/filepropertiesdialog.h \
-    variablechooser.h \
     mimetypemagicdialog.h \
     mimetypesettings.h \
     dialogs/promptoverwritedialog.h \
@@ -228,7 +224,9 @@ HEADERS += corejsextensions.h \
     diffservice.h \
     menubarfilter.h \
     editormanager/ieditorfactory_p.h \
-    welcomepagehelper.h
+    welcomepagehelper.h \
+    dialogs/codecselector.h \
+    plugininstallwizard.h
 
 FORMS += dialogs/newdialog.ui \
     dialogs/saveitemsdialog.ui \

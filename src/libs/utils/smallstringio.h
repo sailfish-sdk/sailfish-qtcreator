@@ -65,8 +65,8 @@ QDataStream &operator>>(QDataStream &in, BasicSmallString<Size> &string)
     return in;
 }
 
-template <typename String>
-QDebug &operator<<(QDebug &debug, const String &string)
+template <uint Size>
+QDebug &operator<<(QDebug &debug, const BasicSmallString<Size> &string)
 {
     using QT_PREPEND_NAMESPACE(operator<<);
 
@@ -78,14 +78,19 @@ QDebug &operator<<(QDebug &debug, const String &string)
 template <uint Size>
 std::ostream &operator<<(std::ostream &out, const BasicSmallString<Size> &string)
 {
-    BasicSmallString<Size> formatedString = string.clone();
-
-    formatedString.replace("\n", "\\n");
-    formatedString.replace("\t", "\\t");
-
-    out.write(formatedString.data(), std::streamsize(formatedString.size()));
+    out.write(string.data(), std::streamsize(string.size()));
 
     return out;
+}
+
+inline
+QDebug &operator<<(QDebug &debug, SmallStringView string)
+{
+    using QT_PREPEND_NAMESPACE(operator<<);
+
+    debug.nospace().quote() << QByteArray::fromRawData(string.data(), int(string.size()));
+
+    return debug;
 }
 
 inline
@@ -228,30 +233,6 @@ QDataStream &operator>>(QDataStream &in, vector<Type> &vector)
     }
 
     return in;
-}
-
-template <typename T>
-ostream &operator<<(ostream &out, const vector<T> &vector)
-{
-    out << "[";
-
-    for (auto current = vector.begin(); current != vector.end(); ++current) {
-        std::ostringstream entryStream;
-        entryStream << *current;
-        std::string entryString = entryStream.str();
-
-        if (entryString.size() > 4)
-            out << "\n\t";
-
-        out << entryString;
-
-        if (std::next(current) != vector.end())
-            out << ", ";
-    }
-
-    out << "]";
-
-    return out;
 }
 
 } // namespace std

@@ -46,7 +46,7 @@
 #include <utils/algorithm.h>
 
 #include <QHash>
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QSet>
 #include <QTextStream>
 
@@ -93,7 +93,25 @@ ModelNode::ModelNode(const ModelNode &modelNode, AbstractView *view)
       m_model(modelNode.model()),
       m_view(view)
 {
+}
 
+ModelNode::ModelNode(ModelNode &&other)
+    : m_internalNode(std::move(other.m_internalNode))
+    , m_model(std::move(other.m_model))
+    , m_view(std::move(other.m_view))
+{
+    other.m_model = {};
+    other.m_view = {};
+}
+
+ModelNode &ModelNode::operator=(ModelNode &&other)
+{
+    ModelNode newNode;
+
+    swap(other, newNode);
+    swap(*this, newNode);
+
+    return *this;
 }
 
 /*! \brief contructs a invalid model node
@@ -103,7 +121,6 @@ ModelNode::ModelNode(const ModelNode &modelNode, AbstractView *view)
 ModelNode::ModelNode():
         m_internalNode(new InternalNode)
 {
-
 }
 
 ModelNode::ModelNode(const ModelNode &other) = default;
@@ -199,7 +216,9 @@ static bool isIdToAvoid(const QString& id)
         "layer",
         "scale",
         "enabled",
-        "anchors"
+        "anchors",
+        "texture",
+        "shaderInfo"
     };
 
     return ids.contains(id);
@@ -207,8 +226,8 @@ static bool isIdToAvoid(const QString& id)
 
 static bool idContainsWrongLetter(const QString& id)
 {
-    static QRegExp idExpr(QStringLiteral("[a-z_][a-zA-Z0-9_]*"));
-    return !idExpr.exactMatch(id);
+    static QRegularExpression idExpr(QStringLiteral("^[a-z_][a-zA-Z0-9_]+$"));
+    return !id.contains(idExpr);
 }
 
 bool ModelNode::isValidId(const QString &id)
@@ -674,35 +693,33 @@ void ModelNode::removeProperty(const PropertyName &name) const
         model()->d->removeProperty(internalNode()->property(name));
 }
 
-
 /*! \brief removes this node from the node tree
 */
-
-static QList<ModelNode> descendantNodes(const ModelNode &parent)
+static QList<ModelNode> descendantNodes(const ModelNode &node)
 {
-    QList<ModelNode> descendants(parent.directSubModelNodes());
-    foreach (const ModelNode &child, parent.directSubModelNodes()) {
+    const QList<ModelNode> children = node.directSubModelNodes();
+    QList<ModelNode> descendants = children;
+    for (const ModelNode &child : children)
         descendants += descendantNodes(child);
-    }
+
     return descendants;
 }
 
 static void removeModelNodeFromSelection(const ModelNode &node)
 {
-    { // remove nodes from the active selection:
-        QList<ModelNode> selectedList = node.view()->selectedModelNodes();
+    // remove nodes from the active selection
+    QList<ModelNode> selectedList = node.view()->selectedModelNodes();
 
-        foreach (const ModelNode &childModelNode, descendantNodes(node))
-            selectedList.removeAll(childModelNode);
-        selectedList.removeAll(node);
+    const QList<ModelNode> descendants = descendantNodes(node);
+    for (const ModelNode &descendantNode : descendants)
+        selectedList.removeAll(descendantNode);
 
-        node.view()->setSelectedModelNodes(selectedList);
-    }
+    selectedList.removeAll(node);
+
+    node.view()->setSelectedModelNodes(selectedList);
 }
 
-
 /*! \brief complete removes this ModelNode from the Model
-
 */
 void ModelNode::destroy()
 {
@@ -1148,6 +1165,107 @@ void ModelNode::removeAnnotation()
     if (hasAnnotation()) {
         removeAuxiliaryData(annotationProperty);
     }
+}
+
+Annotation ModelNode::globalAnnotation() const
+{
+    Annotation result;
+    ModelNode root = view()->rootModelNode();
+
+    if (hasGlobalAnnotation())
+        result.fromQString(root.auxiliaryData(globalAnnotationProperty).value<QString>());
+
+    return result;
+}
+
+bool ModelNode::hasGlobalAnnotation() const
+{
+    return view()->rootModelNode().hasAuxiliaryData(globalAnnotationProperty);
+}
+
+void ModelNode::setGlobalAnnotation(const Annotation &annotation)
+{
+    view()->rootModelNode().setAuxiliaryData(globalAnnotationProperty,
+                                             QVariant::fromValue<QString>(annotation.toQString()));
+}
+
+void ModelNode::removeGlobalAnnotation()
+{
+    if (hasGlobalAnnotation()) {
+        view()->rootModelNode().removeAuxiliaryData(globalAnnotationProperty);
+    }
+}
+
+GlobalAnnotationStatus ModelNode::globalStatus() const
+{
+    GlobalAnnotationStatus result;
+    ModelNode root = view()->rootModelNode();
+
+    if (hasGlobalAnnotation()) {
+        result.fromQString(root.auxiliaryData(globalAnnotationStatus).value<QString>());
+    }
+
+    return result;
+}
+
+bool ModelNode::hasGlobalStatus() const
+{
+    return view()->rootModelNode().hasAuxiliaryData(globalAnnotationStatus);
+}
+
+void ModelNode::setGlobalStatus(const GlobalAnnotationStatus &status)
+{
+    view()->rootModelNode().setAuxiliaryData(globalAnnotationStatus,
+                                             QVariant::fromValue<QString>(status.toQString()));
+}
+
+void ModelNode::removeGlobalStatus()
+{
+    if (hasGlobalStatus()) {
+        view()->rootModelNode().removeAuxiliaryData(globalAnnotationStatus);
+    }
+}
+
+bool ModelNode::locked() const
+{
+    if (hasLocked())
+        return auxiliaryData(lockedProperty).toBool();
+
+    return false;
+}
+
+bool ModelNode::hasLocked() const
+{
+    return hasAuxiliaryData(lockedProperty);
+}
+
+void ModelNode::setLocked(bool value)
+{
+    if (value) {
+        setAuxiliaryData(lockedProperty, true);
+        // Remove newly locked node and all its descendants from potential selection
+        for (ModelNode node : allSubModelNodesAndThisNode()) {
+            node.deselectNode();
+            node.removeAuxiliaryData("timeline_expanded");
+            node.removeAuxiliaryData("transition_expanded");
+        }
+    } else {
+        removeAuxiliaryData(lockedProperty);
+    }
+}
+
+bool ModelNode::isThisOrAncestorLocked(const ModelNode &node)
+{
+    if (!node.isValid())
+        return false;
+
+    if (node.locked())
+        return true;
+
+    if (node.isRootNode() || !node.hasParentProperty())
+        return false;
+
+    return isThisOrAncestorLocked(node.parentProperty().parentModelNode());
 }
 
 void  ModelNode::setScriptFunctions(const QStringList &scriptFunctionList)

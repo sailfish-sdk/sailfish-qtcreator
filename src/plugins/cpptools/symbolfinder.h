@@ -30,6 +30,7 @@
 #include "cppfileiterationorder.h"
 
 #include <QHash>
+#include <QSet>
 #include <QStringList>
 
 #include <set>
@@ -53,6 +54,9 @@ public:
     CPlusPlus::Function *findMatchingDefinition(CPlusPlus::Symbol *symbol,
                                                 const CPlusPlus::Snapshot &snapshot,
                                                 bool strict = false);
+
+    CPlusPlus::Symbol *findMatchingVarDefinition(CPlusPlus::Symbol *declaration,
+                                                 const CPlusPlus::Snapshot &snapshot);
 
     CPlusPlus::Class *findMatchingClassDeclaration(CPlusPlus::Symbol *declaration,
                                                    const CPlusPlus::Snapshot &snapshot);

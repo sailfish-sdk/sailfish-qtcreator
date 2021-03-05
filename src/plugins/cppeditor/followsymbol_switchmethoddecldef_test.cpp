@@ -554,6 +554,31 @@ void CppEditorPlugin::test_SwitchMethodDeclarationDefinition_data()
         "class Foo { void $" TEST_UNICODE_IDENTIFIER "(); };\n"
         "void Foo::@" TEST_UNICODE_IDENTIFIER "() {}\n"
     ) << _();
+
+    QTest::newRow("globalVar")
+            << _("namespace NS { extern int @globalVar; }\n")
+            << _("int globalVar;\n"
+                 "namespace NS {\n"
+                 "extern int globalVar;\n"
+                 "int $globalVar;\n"
+                 "}\n");
+
+    QTest::newRow("staticMemberVar")
+            << _("namespace NS {\n"
+                 "class Test {\n"
+                 "    static int @var;\n"
+                 "};\n"
+                 "class OtherClass { static int var; };\n"
+                 "}\n"
+                 "class OtherClass { static int var; };\n")
+            << _("#include \"file.h\"\n"
+                 "int var;\n"
+                 "int OtherClass::var;\n"
+                 "namespace NS {\n"
+                 "int OtherClass::var;\n"
+                 "float Test::var;\n"
+                 "int Test::$var;\n"
+                 "}\n");
 }
 
 void CppEditorPlugin::test_SwitchMethodDeclarationDefinition()
@@ -910,6 +935,16 @@ void CppEditorPlugin::test_FollowSymbolUnderCursor_data()
         "void Foo::foo(int) {}\n"
     );
 
+    QTest::newRow("matchFunctionSignature_Follow_3.5") << _(
+        "void foo(int);\n"
+        "void @$foo() {}\n"
+    );
+
+    QTest::newRow("matchFunctionSignature_Follow_3.6") << _(
+        "void foo(int);\n"
+        "void @$foo(double) {}\n"
+    );
+
     QTest::newRow("matchFunctionSignature_Follow_4") << _(
         "class Foo {\n"
         "    void foo(int);\n"
@@ -938,17 +973,33 @@ void CppEditorPlugin::test_FollowSymbolUnderCursor_data()
         "void Foo::@foo(int) {}\n"
     );
 
-    QTest::newRow("matchFunctionSignature_Follow_8") << _(
+    QTest::newRow("matchFunctionSignature_Follow_8_fuzzy") << _(
         "class Foo {\n"
-        "    void @$foo(int *);\n"
+        "    void @foo(int *);\n"
         "};\n"
-        "void Foo::foo(const int *) {}\n"
+        "void Foo::$foo(const int *) {}\n"
     );
 
-    QTest::newRow("matchFunctionSignature_Follow_9") << _(
+    QTest::newRow("matchFunctionSignature_Follow_8_exact") << _(
         "class Foo {\n"
-        "    void @$foo(int&);\n"
+        "    void @foo(int *);\n"
         "};\n"
+        "void Foo::foo(const int *) {}\n"
+        "void Foo::$foo(int *) {}\n"
+    );
+
+    QTest::newRow("matchFunctionSignature_Follow_9_fuzzy") << _(
+        "class Foo {\n"
+        "    void @foo(int&);\n"
+        "};\n"
+        "void Foo::$foo(const int&) {}\n"
+    );
+
+    QTest::newRow("matchFunctionSignature_Follow_9_exact") << _(
+        "class Foo {\n"
+        "    void @foo(int&);\n"
+        "};\n"
+        "void Foo::$foo(int&) {}\n"
         "void Foo::foo(const int&) {}\n"
     );
 
@@ -978,6 +1029,12 @@ void CppEditorPlugin::test_FollowSymbolUnderCursor_data()
         "class Bar;"
         "template<class $T>\n"
         "using Foo = Bar<@T>;\n"
+    );
+
+    QTest::newRow("shadowed overload with default args") << _(
+        "struct Parent { void disconnect(int n = 0); };\n"
+        "struct Child : public Parent { void $disconnect(); };\n"
+        "void test() { Child c; c.@disconnect(); }\n"
     );
 }
 
@@ -1139,6 +1196,76 @@ void CppEditorPlugin::test_FollowSymbolUnderCursor_multipleDocuments_data()
                                 "bool *$fun(C *) const {}\n",
                                 "foo.cpp")
     );
+
+    QTest::newRow("matchFunctionSignatureFuzzy1Forward") << (QList<TestDocumentPtr>()
+        << TestDocument::create("class Foo {\n"
+                                "    void @foo(int);\n"
+                                "    void foo();\n"
+                                "};\n",
+                                "foo.h")
+        << TestDocument::create("#include \"foo.h\"\n"
+                                "void Foo::$foo() {}\n",
+                                "foo.cpp")
+    );
+
+    QTest::newRow("matchFunctionSignatureFuzzy1Backward") << (QList<TestDocumentPtr>()
+        << TestDocument::create("class Foo {\n"
+                                "    void $foo(int);\n"
+                                "};\n",
+                                "foo.h")
+        << TestDocument::create("#include \"foo.h\"\n"
+                                "void Foo::@foo() {}\n",
+                                "foo.cpp")
+    );
+
+    QTest::newRow("matchFunctionSignatureFuzzy2Forward") << (QList<TestDocumentPtr>()
+        << TestDocument::create("class Foo {\n"
+                                "    void foo(int);\n"
+                                "    void @foo();\n"
+                                "};\n",
+                                "foo.h")
+        << TestDocument::create("#include \"foo.h\"\n"
+                                "void Foo::$foo(int) {}\n",
+                                "foo.cpp")
+    );
+
+    QTest::newRow("matchFunctionSignatureFuzzy2Backward") << (QList<TestDocumentPtr>()
+        << TestDocument::create("class Foo {\n"
+                                "    void $foo();\n"
+                                "};\n",
+                                "foo.h")
+        << TestDocument::create("#include \"foo.h\"\n"
+                                "void Foo::@foo(int) {}\n",
+                                "foo.cpp")
+    );
+
+    QTest::newRow("globalVar") << QList<TestDocumentPtr>{
+            TestDocument::create("namespace NS { extern int @globalVar; }\n", "file.h"),
+            TestDocument::create(
+                "int globalVar;\n"
+                "namespace NS {\n"
+                "extern int globalVar;\n"
+                "int $globalVar;\n"
+                "}\n", "file.cpp")};
+
+    QTest::newRow("staticMemberVar") << QList<TestDocumentPtr>{
+        TestDocument::create(
+            "namespace NS {\n"
+            "class Test {\n"
+            "    static int @var;\n"
+            "};\n"
+            "class OtherClass { static int var; };\n"
+            "}\n"
+            "class OtherClass { static int var; };\n", "file.h"),
+        TestDocument::create(
+            "#include \"file.h\"\n"
+            "int var;\n"
+            "int OtherClass::var;\n"
+            "namespace NS {\n"
+            "int OtherClass::var;\n"
+            "float Test::var;\n"
+            "int Test::$var;\n"
+            "}\n", "file.cpp")};
 }
 
 void CppEditorPlugin::test_FollowSymbolUnderCursor_multipleDocuments()
@@ -1250,6 +1377,26 @@ void CppEditorPlugin::test_FollowSymbolUnderCursor_QObject_connect()
     F2TestCase(F2TestCase::FollowSymbolUnderCursorAction, singleDocument(source));
 }
 
+void CppEditorPlugin::test_FollowSymbolUnderCursor_QObject_oldStyleConnect()
+{
+    const QByteArray source =
+            "class O : public QObject {\n"
+            "    Q_OBJECT\n"
+            "signals:\n"
+            "    void $theSignal();\n"
+            "};\n"
+            "struct S {\n"
+            "    O* o();\n"
+            "};\n"
+            "int main()\n"
+            "{\n"
+            "    S s;\n"
+            "    QObject::connect(s.o(), SIGNAL(@theSignal()), s.o(), SIGNAL(theSignal()));\n"
+            "}\n";
+
+    F2TestCase(F2TestCase::FollowSymbolUnderCursorAction, singleDocument(source));
+}
+
 void CppEditorPlugin::test_FollowSymbolUnderCursor_classOperator_onOperatorToken_data()
 {
     QTest::addColumn<bool>("toDeclaration");
@@ -1353,6 +1500,31 @@ void CppEditorPlugin::test_FollowSymbolUnderCursor_virtualFunctionCall_data()
             << OverrideItem(QLatin1String("C::virt"), 8)
             << OverrideItem(QLatin1String("CD1::virt"), 11)
             << OverrideItem(QLatin1String("CD2::virt"), 14));
+
+    /// Check: Cursor on unimplemented base declaration.
+    QTest::newRow("allOverrides from base declaration") << _(
+            "struct A { virtual void $@virt() = 0; };\n"
+            "\n"
+            "struct B : A { void virt(); };\n"
+            "void B::virt() {}\n"
+            "\n"
+            "struct C : B { void virt(); };\n"
+            "void C::virt() {}\n"
+            "\n"
+            "struct CD1 : C { void virt(); };\n"
+            "void CD1::virt() {}\n"
+            "\n"
+            "struct CD2 : C { void virt(); };\n"
+            "void CD2::virt() {}\n"
+            "\n"
+            "int f(A *o) { o->virt(); }\n"
+            "\n")
+        << (OverrideItemList()
+            << OverrideItem(QLatin1String("A::virt = 0"), 1)
+            << OverrideItem(QLatin1String("B::virt"), 4)
+            << OverrideItem(QLatin1String("C::virt"), 7)
+            << OverrideItem(QLatin1String("CD1::virt"), 10)
+            << OverrideItem(QLatin1String("CD2::virt"), 13));
 
     /// Check: Static type is derived class pointer, only overrides of sub classes are presented.
     QTest::newRow("possibleOverrides1") << _(

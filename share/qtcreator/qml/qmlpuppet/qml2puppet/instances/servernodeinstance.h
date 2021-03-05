@@ -40,6 +40,7 @@ class QGraphicsItem;
 class QGraphicsTransform;
 #if (QT_VERSION >= QT_VERSION_CHECK(5, 0, 0))
 class QQuickItem;
+class QQuickItemGrabResult;
 #endif
 QT_END_NAMESPACE
 
@@ -61,6 +62,7 @@ namespace Internal {
     class QmlStateNodeInstance;
     class QuickItemNodeInstance;
     class Quick3DNodeInstance;
+    class Quick3DTextureNodeInstance;
 }
 
 class ServerNodeInstance
@@ -71,6 +73,7 @@ class ServerNodeInstance
     friend class Qt5InformationNodeInstanceServer;
     friend class Qt5NodeInstanceServer;
     friend class Qt5PreviewNodeInstanceServer;
+    friend class Qt5CapturePreviewNodeInstanceServer;
     friend class Qt5TestNodeInstanceServer;
     friend class QHash<qint32, ServerNodeInstance>;
     friend uint qHash(const ServerNodeInstance &instance);
@@ -84,6 +87,7 @@ class ServerNodeInstance
     friend class QmlDesigner::Internal::QmlPropertyChangesNodeInstance;
     friend class QmlDesigner::Internal::QmlStateNodeInstance;
     friend class QmlDesigner::Internal::Quick3DNodeInstance;
+    friend class QmlDesigner::Internal::Quick3DTextureNodeInstance;
 
 public:
     enum ComponentWrap {
@@ -98,6 +102,8 @@ public:
 
     QImage renderImage() const;
     QImage renderPreviewImage(const QSize &previewImageSize) const;
+
+    QSharedPointer<QQuickItemGrabResult> createGrabResult() const;
 
     ServerNodeInstance parent() const;
     bool hasParent() const;
@@ -169,6 +175,8 @@ public:
     static bool isSubclassOf(QObject *object, const QByteArray &superTypeName);
 
     void setModifiedFlag(bool b);
+    void updateDirtyNodeRecursive();
+    bool holdsGraphical() const;
 
 private: // functions
     ServerNodeInstance(const QSharedPointer<Internal::ObjectNodeInstance> &abstractInstance);
@@ -177,7 +185,8 @@ private: // functions
 
     void setPropertyBinding(const PropertyName &name, const QString &expression);
 
-    void setHideInEditor(bool b);
+    void setHiddenInEditor(bool b);
+    void setLockedInEditor(bool b);
 
     void resetProperty(const PropertyName &name);
     void refreshProperty(const PropertyName &name);
@@ -195,7 +204,6 @@ private: // functions
     void setDeleteHeldInstance(bool deleteInstance);
     void reparent(const ServerNodeInstance &oldParentInstance, const PropertyName &oldParentProperty, const ServerNodeInstance &newParentInstance, const PropertyName &newParentProperty);
 
-
     void setId(const QString &id);
 
     static QSharedPointer<Internal::ObjectNodeInstance> createInstance(QObject *objectToBeWrapped);
@@ -203,10 +211,6 @@ private: // functions
     void paintUpdate();
 
     void setNodeSource(const QString &source);
-
-    bool holdsGraphical() const;
-
-    void updateDirtyNodeRecursive();
 
     QObject *internalObject() const; // should be not used outside of the nodeinstances!!!!
 

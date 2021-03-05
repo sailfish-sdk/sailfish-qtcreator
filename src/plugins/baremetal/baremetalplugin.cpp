@@ -70,7 +70,7 @@ class BareMetalPluginPrivate
 {
 public:
     IarToolChainFactory iarToolChainFactory;
-    KeilToolchainFactory keilToolChainFactory;
+    KeilToolChainFactory keilToolChainFactory;
     SdccToolChainFactory sdccToolChainFactory;
     BareMetalDeviceFactory deviceFactory;
     BareMetalRunConfigurationFactory runConfigurationFactory;
@@ -82,7 +82,8 @@ public:
     RunWorkerFactory runWorkerFactory{
         RunWorkerFactory::make<BareMetalDebugSupport>(),
         {ProjectExplorer::Constants::NORMAL_RUN_MODE, ProjectExplorer::Constants::DEBUG_RUN_MODE},
-        {runConfigurationFactory.id(), customRunConfigurationFactory.id()}
+        {runConfigurationFactory.runConfigurationId(),
+         customRunConfigurationFactory.runConfigurationId()}
     };
 };
 

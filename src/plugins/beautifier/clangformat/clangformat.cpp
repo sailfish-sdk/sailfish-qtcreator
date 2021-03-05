@@ -40,7 +40,6 @@
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/editormanager/ieditor.h>
 #include <coreplugin/idocument.h>
-#include <cppeditor/cppeditorconstants.h>
 #include <texteditor/formattexteditor.h>
 #include <texteditor/texteditor.h>
 #include <utils/algorithm.h>
@@ -54,30 +53,32 @@ using namespace TextEditor;
 
 namespace Beautifier {
 namespace Internal {
-namespace ClangFormat {
 
 ClangFormat::ClangFormat()
 {
-    Core::ActionContainer *menu = Core::ActionManager::createMenu(Constants::ClangFormat::MENU_ID);
+    Core::ActionContainer *menu = Core::ActionManager::createMenu("ClangFormat.Menu");
     menu->menu()->setTitle(tr("&ClangFormat"));
 
     m_formatFile = new QAction(BeautifierPlugin::msgFormatCurrentFile(), this);
     Core::Command *cmd
-            = Core::ActionManager::registerAction(m_formatFile,
-                                                  Constants::ClangFormat::ACTION_FORMATFILE);
+            = Core::ActionManager::registerAction(m_formatFile, "ClangFormat.FormatFile");
     menu->addAction(cmd);
     connect(m_formatFile, &QAction::triggered, this, &ClangFormat::formatFile);
 
+    m_formatLines = new QAction(BeautifierPlugin::msgFormatLines(), this);
+    cmd = Core::ActionManager::registerAction(m_formatLines, "ClangFormat.FormatLines");
+    menu->addAction(cmd);
+    connect(m_formatLines, &QAction::triggered, this, &ClangFormat::formatLines);
+
     m_formatRange = new QAction(BeautifierPlugin::msgFormatAtCursor(), this);
-    cmd = Core::ActionManager::registerAction(m_formatRange,
-                                              Constants::ClangFormat::ACTION_FORMATATCURSOR);
+    cmd = Core::ActionManager::registerAction(m_formatRange, "ClangFormat.FormatAtCursor");
     menu->addAction(cmd);
     connect(m_formatRange, &QAction::triggered, this, &ClangFormat::formatAtCursor);
 
     m_disableFormattingSelectedText
         = new QAction(BeautifierPlugin::msgDisableFormattingSelectedText(), this);
     cmd = Core::ActionManager::registerAction(
-        m_disableFormattingSelectedText, Constants::ClangFormat::ACTION_DISABLEFORMATTINGSELECTED);
+        m_disableFormattingSelectedText, "ClangFormat.DisableFormattingSelectedText");
     menu->addAction(cmd);
     connect(m_disableFormattingSelectedText, &QAction::triggered,
             this, &ClangFormat::disableFormattingSelectedText);
@@ -90,7 +91,7 @@ ClangFormat::ClangFormat()
 
 QString ClangFormat::id() const
 {
-    return QLatin1String(Constants::ClangFormat::DISPLAY_NAME);
+    return QLatin1String(Constants::CLANGFORMAT_DISPLAY_NAME);
 }
 
 void ClangFormat::updateActions(Core::IEditor *editor)
@@ -125,6 +126,31 @@ void ClangFormat::formatAtCursor()
         const int length = block.length();
         formatCurrentFile(command(offset, length));
     }
+}
+
+void ClangFormat::formatLines()
+{
+    const TextEditorWidget *widget = TextEditorWidget::currentTextEditorWidget();
+    if (!widget)
+        return;
+
+    const QTextCursor tc = widget->textCursor();
+    // Current line by default
+    int lineStart = tc.blockNumber() + 1;
+    int lineEnd = lineStart;
+
+    // Note that clang-format will extend the range to the next bigger
+    // syntactic construct if needed.
+    if (tc.hasSelection()) {
+        const QTextBlock start = tc.document()->findBlock(tc.selectionStart());
+        const QTextBlock end = tc.document()->findBlock(tc.selectionEnd());
+        lineStart = start.blockNumber() + 1;
+        lineEnd = end.blockNumber() + 1;
+    }
+
+    auto cmd = command();
+    cmd.addOption(QString("-lines=%1:%2").arg(QString::number(lineStart)).arg(QString::number(lineEnd)));
+    formatCurrentFile(cmd);
 }
 
 void ClangFormat::disableFormattingSelectedText()
@@ -201,6 +227,5 @@ Command ClangFormat::command(int offset, int length) const
     return c;
 }
 
-} // namespace ClangFormat
 } // namespace Internal
 } // namespace Beautifier

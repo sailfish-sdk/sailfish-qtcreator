@@ -29,9 +29,15 @@
 #include "itemlibraryitem.h"
 #include "itemlibrarysection.h"
 
+#include <components/previewtooltip/previewtooltipbackend.h>
+
 #include <model.h>
 #include <nodehints.h>
 #include <nodemetainfo.h>
+
+#include <designdocument.h>
+#include <qmldesignerplugin.h>
+#include <designermcumanager.h>
 
 #include <utils/algorithm.h>
 #include <utils/qtcassert.h>
@@ -47,7 +53,7 @@
 static Q_LOGGING_CATEGORY(itemlibraryPopulate, "qtc.itemlibrary.populate", QtWarningMsg)
 
 static bool inline registerItemLibrarySortedModel() {
-    qmlRegisterType<QmlDesigner::ItemLibrarySectionModel>();
+    qmlRegisterAnonymousType<QmlDesigner::ItemLibrarySectionModel>("ItemLibrarySectionModel", 1);
     return true;
 }
 
@@ -197,11 +203,18 @@ void ItemLibraryModel::update(ItemLibraryInfo *itemLibraryInfo, Model *model)
             forceVisiblity = isItem;
         }
 
+        const DesignerMcuManager &mcuManager = DesignerMcuManager::instance();
 
-        if (valid
-                && (isItem || forceVisiblity) //We can change if the navigator does support pure QObjects
-                && (entry.requiredImport().isEmpty()
-                    || model->hasImport(entryToImport(entry), true, true))) {
+        if (mcuManager.isMCUProject()) {
+            const QSet<QString> blockTypes = mcuManager.bannedItems();
+
+            if (blockTypes.contains(QString::fromUtf8(entry.typeName())))
+                valid = false;
+        }
+
+        if (valid && (isItem || forceVisiblity) //We can change if the navigator does support pure QObjects
+            && (entry.requiredImport().isEmpty()
+                || model->hasImport(entryToImport(entry), true, true))) {
             QString itemSectionName = entry.category();
             qCInfo(itemlibraryPopulate) << "Adding:" << entry.typeName() << "to:" << entry.category();
             ItemLibrarySection *sectionModel = sectionByName(itemSectionName);
@@ -246,8 +259,8 @@ void ItemLibraryModel::clearSections()
 
 void ItemLibraryModel::registerQmlTypes()
 {
-    qmlRegisterType<QmlDesigner::ItemLibrarySectionModel>();
-    qmlRegisterType<QmlDesigner::ItemLibraryModel>();
+    qmlRegisterAnonymousType<QmlDesigner::ItemLibrarySectionModel>("ItemLibrarySectionModel", 1);
+    qmlRegisterAnonymousType<QmlDesigner::ItemLibraryModel>("ItemLibraryModel", 1);
 }
 
 ItemLibrarySection *ItemLibraryModel::sectionByName(const QString &sectionName)
@@ -294,7 +307,7 @@ void ItemLibraryModel::sortSections()
 
     std::sort(m_sections.begin(), m_sections.end(), sectionSort);
 
-    for (auto itemLibrarySection : m_sections)
+    for (const auto &itemLibrarySection : qAsConst(m_sections))
         itemLibrarySection->sortItems();
 }
 

@@ -26,27 +26,30 @@
 #pragma once
 
 #include "projectexplorer_export.h"
-#include "projectconfigurationaspects.h"
+
+#include <utils/aspects.h>
 
 namespace Utils { class FilePath; }
 
 namespace ProjectExplorer {
+class BuildConfiguration;
 
-class PROJECTEXPLORER_EXPORT BuildDirectoryAspect : public BaseStringAspect
+class PROJECTEXPLORER_EXPORT BuildDirectoryAspect : public Utils::StringAspect
 {
     Q_OBJECT
 public:
-    BuildDirectoryAspect();
+    explicit BuildDirectoryAspect(const BuildConfiguration *bc);
     ~BuildDirectoryAspect() override;
 
     void allowInSourceBuilds(const Utils::FilePath &sourceDir);
     bool isShadowBuild() const;
     void setProblem(const QString &description);
 
+    void addToLayout(Utils::LayoutBuilder &builder) override;
+
 private:
     void toMap(QVariantMap &map) const override;
     void fromMap(const QVariantMap &map) override;
-    void addToLayout(LayoutBuilder &builder) override;
 
     void updateProblemLabel();
 
@@ -54,7 +57,7 @@ private:
     Private * const d;
 };
 
-class PROJECTEXPLORER_EXPORT SeparateDebugInfoAspect : public BaseTriStateAspect
+class PROJECTEXPLORER_EXPORT SeparateDebugInfoAspect : public Utils::TriStateAspect
 {
     Q_OBJECT
 public:

@@ -26,8 +26,6 @@
 #include "futureprogress.h"
 #include "progressbar.h"
 
-#include <coreplugin/id.h>
-
 #include <utils/stylehelper.h>
 #include <utils/theme/theme.h>
 
@@ -84,8 +82,10 @@ FutureProgressPrivate::FutureProgressPrivate(FutureProgress *q) :
 
 /*!
     \ingroup mainclasses
+    \inheaderfile coreplugin/progressmanager/futureprogress.h
     \class Core::FutureProgress
     \inmodule QtCreator
+
     \brief The FutureProgress class is used to adapt the appearance of
     progress indicators that were created through the ProgressManager class.
 

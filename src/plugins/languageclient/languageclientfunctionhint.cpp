@@ -57,7 +57,9 @@ private:
 
 QString FunctionHintProposalModel::text(int index) const
 {
-    return m_sigis.signatures().size() > index ? m_sigis.signatures().at(index).label() : QString();
+    if (index < 0 || m_sigis.signatures().size() >= index)
+        return {};
+    return m_sigis.signatures().at(index).label();
 }
 
 class FunctionHintProcessor : public IAssistProcessor
@@ -65,7 +67,7 @@ class FunctionHintProcessor : public IAssistProcessor
 public:
     explicit FunctionHintProcessor(Client *client) : m_client(client) {}
     IAssistProposal *perform(const AssistInterface *interface) override;
-    bool running() override { return m_currentRequest.isValid(); }
+    bool running() override { return m_currentRequest.has_value(); }
     bool needsRestart() const override { return true; }
     void cancel() override;
 
@@ -73,7 +75,7 @@ private:
     void handleSignatureResponse(const SignatureHelpRequest::Response &response);
 
     QPointer<Client> m_client;
-    MessageId m_currentRequest;
+    Utils::optional<MessageId> m_currentRequest;
     int m_pos = -1;
 };
 
@@ -83,9 +85,8 @@ IAssistProposal *FunctionHintProcessor::perform(const AssistInterface *interface
     m_pos = interface->position();
     QTextCursor cursor(interface->textDocument());
     cursor.setPosition(m_pos);
-    auto uri = DocumentUri::fromFilePath(Utils::FilePath::fromString(interface->fileName()));
-    SignatureHelpRequest request;
-    request.setParams(TextDocumentPositionParams(TextDocumentIdentifier(uri), Position(cursor)));
+    auto uri = DocumentUri::fromFilePath(interface->filePath());
+    SignatureHelpRequest request((TextDocumentPositionParams(TextDocumentIdentifier(uri), Position(cursor))));
     request.setResponseCallback([this](auto response) { this->handleSignatureResponse(response); });
     m_client->sendContent(request);
     m_currentRequest = request.id();
@@ -95,19 +96,25 @@ IAssistProposal *FunctionHintProcessor::perform(const AssistInterface *interface
 void FunctionHintProcessor::cancel()
 {
     if (running()) {
-        m_client->cancelRequest(m_currentRequest);
-        m_currentRequest = MessageId();
+        m_client->cancelRequest(m_currentRequest.value());
+        m_client->removeAssistProcessor(this);
+        m_currentRequest.reset();
     }
 }
 
 void FunctionHintProcessor::handleSignatureResponse(const SignatureHelpRequest::Response &response)
 {
-    m_currentRequest = MessageId();
+    m_currentRequest.reset();
     if (auto error = response.error())
         m_client->log(error.value());
-    FunctionHintProposalModelPtr model(
-        new FunctionHintProposalModel(response.result().value().value()));
-    setAsyncProposalAvailable(new FunctionHintProposal(m_pos, model));
+    m_client->removeAssistProcessor(this);
+    const SignatureHelp &signatureHelp = response.result().value().value();
+    if (signatureHelp.signatures().isEmpty()) {
+        setAsyncProposalAvailable(nullptr);
+    } else {
+        FunctionHintProposalModelPtr model(new FunctionHintProposalModel(signatureHelp));
+        setAsyncProposalAvailable(new FunctionHintProposal(m_pos, model));
+    }
 }
 
 FunctionHintAssistProvider::FunctionHintAssistProvider(Client *client)

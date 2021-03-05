@@ -26,6 +26,8 @@
 
 #include <extensionsystem/iplugin.h>
 
+#include <utils/id.h>
+
 #include <QTextCursor>
 
 // forward declarations
@@ -33,7 +35,6 @@ QT_FORWARD_DECLARE_CLASS(QAction)
 QT_FORWARD_DECLARE_CLASS(QPlainTextEdit)
 
 namespace Core {
-class Id;
 class IEditor;
 }
 namespace TextEditor {
@@ -87,7 +88,7 @@ private:
     void scrollHalfDown();        // C-v
     void scrollHalfUp();          // M-v
 
-    QAction *registerAction(Core::Id id, void (EmacsKeysPlugin::*callback)(),
+    QAction *registerAction(Utils::Id id, void (EmacsKeysPlugin::*callback)(),
                             const QString &title);
     void genericGoto(QTextCursor::MoveOperation op, bool abortAssist = true);
     void genericVScroll(int direction);

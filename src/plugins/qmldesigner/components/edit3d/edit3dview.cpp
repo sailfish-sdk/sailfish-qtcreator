@@ -112,7 +112,7 @@ void Edit3DView::updateActiveScene3D(const QVariantMap &sceneState)
     if (sceneState.contains(sceneKey)) {
         qint32 newActiveScene = sceneState[sceneKey].value<qint32>();
         edit3DWidget()->canvas()->updateActiveScene(newActiveScene);
-        rootModelNode().setAuxiliaryData("3d-active-scene", newActiveScene);
+        rootModelNode().setAuxiliaryData("active3dScene@Internal", newActiveScene);
     }
 
     if (sceneState.contains(selectKey))
@@ -177,6 +177,17 @@ void Edit3DView::importsChanged(const QList<Import> &addedImports,
     Q_UNUSED(removedImports)
 
     checkImports();
+}
+
+void Edit3DView::customNotification(const AbstractView *view, const QString &identifier,
+                                    const QList<ModelNode> &nodeList, const QList<QVariant> &data)
+{
+    Q_UNUSED(view)
+    Q_UNUSED(nodeList)
+    Q_UNUSED(data)
+
+    if (identifier == "asset_import_update")
+        resetPuppet();
 }
 
 void Edit3DView::sendInputEvent(QInputEvent *e) const
@@ -257,7 +268,7 @@ void Edit3DView::createEdit3DActions()
 
     m_showGridAction = new Edit3DAction(
                 QmlDesigner::Constants::EDIT3D_EDIT_SHOW_GRID, View3DActionCommand::ShowGrid,
-                QCoreApplication::translate("ShowGridAction", "Toggle grid visibility"),
+                QCoreApplication::translate("ShowGridAction", "Toggle Grid Visibility"),
                 QKeySequence(Qt::Key_G), true, true, Icons::EDIT3D_GRID_OFF.icon(),
                 Icons::EDIT3D_GRID_ON.icon());
 
@@ -301,14 +312,16 @@ QVector<Edit3DAction *> Edit3DView::rightActions() const
 
 void Edit3DView::addQuick3DImport()
 {
-    const QList<Import> imports = model()->possibleImports();
-    for (const auto &import : imports) {
-        if (import.url() == "QtQuick3D") {
-            model()->changeImports({import}, {});
+    if (model()) {
+        const QList<Import> imports = model()->possibleImports();
+        for (const auto &import : imports) {
+            if (import.url() == "QtQuick3D") {
+                model()->changeImports({import}, {});
 
-            // Subcomponent manager update needed to make item library entries appear
-            QmlDesignerPlugin::instance()->currentDesignDocument()->updateSubcomponentManager();
-            return;
+                // Subcomponent manager update needed to make item library entries appear
+                QmlDesignerPlugin::instance()->currentDesignDocument()->updateSubcomponentManager();
+                return;
+            }
         }
     }
     Core::AsynchronousMessageBox::warning(tr("Failed to Add Import"),

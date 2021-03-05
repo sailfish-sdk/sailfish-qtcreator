@@ -65,7 +65,7 @@ class LANGUAGESERVERPROTOCOL_EXPORT Position : public JsonObject
 public:
     Position() = default;
     Position(int line, int character);
-    Position(const QTextCursor &cursor);
+    explicit Position(const QTextCursor &cursor);
     using JsonObject::JsonObject;
 
     // Line position in a document (zero-based).
@@ -233,7 +233,7 @@ class LANGUAGESERVERPROTOCOL_EXPORT TextDocumentIdentifier : public JsonObject
 {
 public:
     TextDocumentIdentifier() : TextDocumentIdentifier(DocumentUri()) {}
-    TextDocumentIdentifier(const DocumentUri &uri) { setUri(uri); }
+    explicit TextDocumentIdentifier(const DocumentUri &uri) { setUri(uri); }
     using JsonObject::JsonObject;
 
     // The text document's URI.
@@ -271,9 +271,10 @@ public:
     using JsonObject::JsonObject;
 
     // The text document to change.
-    VersionedTextDocumentIdentifier id() const
-    { return  typedValue<VersionedTextDocumentIdentifier>(idKey); }
-    void setId(const VersionedTextDocumentIdentifier &id) { insert(idKey, id); }
+    VersionedTextDocumentIdentifier textDocument() const
+    { return  typedValue<VersionedTextDocumentIdentifier>(textDocumentKey); }
+    void setTextDocument(const VersionedTextDocumentIdentifier &textDocument)
+    { insert(textDocumentKey, textDocument); }
 
     // The edits to be applied.
     QList<TextEdit> edits() const { return array<TextEdit>(editsKey); }
@@ -392,7 +393,7 @@ public:
     MarkupKind(const Value value)
         : m_value(value)
     {}
-    MarkupKind(const QJsonValue &value);
+    explicit MarkupKind(const QJsonValue &value);
 
     operator QJsonValue() const;
     Value value() const { return m_value; }
@@ -410,8 +411,10 @@ public:
     using JsonObject::JsonObject;
 
     // The type of the Markup
-    MarkupKind kind() const { return value(kindKey); }
+    MarkupKind kind() const { return MarkupKind(value(kindKey)); }
     void setKind(MarkupKind kind) { insert(kindKey, kind); }
+    Qt::TextFormat textFormat() const
+    { return kind() == MarkupKind::markdown ? Qt::MarkdownText : Qt::PlainText; }
 
     // The content itself
     QString content() const { return typedValue<QString>(contentKey); }
@@ -425,7 +428,7 @@ class LANGUAGESERVERPROTOCOL_EXPORT MarkupOrString : public Utils::variant<QStri
 {
 public:
     MarkupOrString() = default;
-    MarkupOrString(const Utils::variant<QString, MarkupContent> &val);
+    explicit MarkupOrString(const Utils::variant<QString, MarkupContent> &val);
     explicit MarkupOrString(const QString &val);
     explicit MarkupOrString(const MarkupContent &val);
     MarkupOrString(const QJsonValue &val);
@@ -439,12 +442,12 @@ class LANGUAGESERVERPROTOCOL_EXPORT WorkSpaceFolder : public JsonObject
 {
 public:
     WorkSpaceFolder() = default;
-    WorkSpaceFolder(const QString &uri, const QString &name);
+    WorkSpaceFolder(const DocumentUri &uri, const QString &name);
     using JsonObject::JsonObject;
 
     // The associated URI for this workspace folder.
-    QString uri() const { return typedValue<QString>(uriKey); }
-    void setUri(const QString &uri) { insert(uriKey, uri); }
+    DocumentUri uri() const { return DocumentUri::fromProtocol(typedValue<QString>(uriKey)); }
+    void setUri(const DocumentUri &uri) { insert(uriKey, uri); }
 
     // The name of the workspace folder. Defaults to the uri's basename.
     QString name() const { return typedValue<QString>(nameKey); }

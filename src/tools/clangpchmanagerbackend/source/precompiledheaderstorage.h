@@ -74,7 +74,7 @@ public:
                                                                              pchBuildTime.value);
 
             transaction.commit();
-        } catch (const Sqlite::StatementIsBusy) {
+        } catch (const Sqlite::StatementIsBusy &) {
             deleteProjectPrecompiledHeader(projectPartId, pchBuildTime);
         }
     }
@@ -88,7 +88,7 @@ public:
                 deleteProjectPrecompiledHeaderStatement.write(projectPartId.projectPathId);
 
             transaction.commit();
-        } catch (const Sqlite::StatementIsBusy) {
+        } catch (const Sqlite::StatementIsBusy &) {
             deleteProjectPrecompiledHeaders(projectPartIds);
         }
     }
@@ -106,7 +106,7 @@ public:
                                                              pchBuildTime.value);
             }
             transaction.commit();
-        } catch (const Sqlite::StatementIsBusy) {
+        } catch (const Sqlite::StatementIsBusy &) {
             insertSystemPrecompiledHeaders(projectPartIds, pchPath, pchBuildTime);
         }
     }
@@ -120,7 +120,7 @@ public:
                 deleteSystemPrecompiledHeaderStatement.write(projectPartId.projectPathId);
 
             transaction.commit();
-        } catch (const Sqlite::StatementIsBusy) {
+        } catch (const Sqlite::StatementIsBusy &) {
             deleteSystemPrecompiledHeaders(projectPartIds);
         }
     }
@@ -134,7 +134,7 @@ public:
                 deleteSystemAndProjectPrecompiledHeaderStatement.write(projectPartId.projectPathId);
 
             transaction.commit();
-        } catch (const Sqlite::StatementIsBusy) {
+        } catch (const Sqlite::StatementIsBusy &) {
             deleteSystemAndProjectPrecompiledHeaders(projectPartIds);
         }
     }
@@ -152,7 +152,7 @@ public:
             if (value)
                 return *value;
 
-        } catch (const Sqlite::StatementIsBusy) {
+        } catch (const Sqlite::StatementIsBusy &) {
             return fetchSystemPrecompiledHeaderPath(projectPartId);
         }
 
@@ -172,7 +172,7 @@ public:
             if (value)
                 return *value;
 
-        } catch (const Sqlite::StatementIsBusy) {
+        } catch (const Sqlite::StatementIsBusy &) {
             return fetchPrecompiledHeader(projectPartId);
         }
 
@@ -192,7 +192,7 @@ public:
             if (value)
                 return *value;
 
-        } catch (const Sqlite::StatementIsBusy) {
+        } catch (const Sqlite::StatementIsBusy &) {
             return fetchPrecompiledHeaders(projectPartId);
         }
 
@@ -212,11 +212,27 @@ public:
             if (value)
                 return *value;
 
-        } catch (const Sqlite::StatementIsBusy) {
+        } catch (const Sqlite::StatementIsBusy &) {
             return fetchTimeStamps(projectPartId);
         }
 
         return {};
+    }
+
+    FilePaths fetchAllPchPaths() const
+    {
+        try {
+            Sqlite::DeferredTransaction transaction{database};
+
+            auto filePaths = fetchAllPchPathsStatement.template values<FilePath>(1024);
+
+            transaction.commit();
+
+            return filePaths;
+
+        } catch (const Sqlite::StatementIsBusy &) {
+            return fetchAllPchPaths();
+        }
     }
 
 public:
@@ -261,6 +277,10 @@ public:
     mutable ReadStatement fetchTimeStampsStatement{
         "SELECT projectPchBuildTime, systemPchBuildTime FROM precompiledHeaders WHERE "
         "projectPartId = ?",
+        database};
+    mutable ReadStatement fetchAllPchPathsStatement{
+        "SELECT DISTINCT systemPchPath FROM precompiledHeaders UNION ALL SELECT "
+        "DISTINCT projectPchPath FROM precompiledHeaders",
         database};
 };
 

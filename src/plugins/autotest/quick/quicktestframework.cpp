@@ -27,17 +27,20 @@
 #include "quicktestparser.h"
 #include "quicktesttreeitem.h"
 
+#include "../testframeworkmanager.h"
+#include "../qtest/qttestconstants.h"
+
 namespace Autotest {
 namespace Internal {
 
-ITestParser *QuickTestFramework::createTestParser() const
+ITestParser *QuickTestFramework::createTestParser()
 {
-    return new QuickTestParser;
+    return new QuickTestParser(this);
 }
 
-TestTreeItem *QuickTestFramework::createRootNode() const
+TestTreeItem *QuickTestFramework::createRootNode()
 {
-    return new QuickTestTreeItem(QCoreApplication::translate("QuickTestFramework", "Quick Test"),
+    return new QuickTestTreeItem(this, QCoreApplication::translate("QuickTestFramework", "Quick Test"),
                                  QString(), TestTreeItem::Root);
 }
 
@@ -49,6 +52,14 @@ const char *QuickTestFramework::name() const
 unsigned QuickTestFramework::priority() const
 {
     return 5;
+}
+
+IFrameworkSettings *QuickTestFramework::frameworkSettings()
+{
+    static const Utils::Id id
+            = Utils::Id(Constants::FRAMEWORK_PREFIX).withSuffix(QtTest::Constants::FRAMEWORK_NAME);
+    ITestFramework *qtTestFramework = TestFrameworkManager::frameworkForId(id);
+    return qtTestFramework->frameworkSettings();
 }
 
 } // namespace Internal

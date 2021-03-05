@@ -39,6 +39,8 @@ const char *nameForStyle(TextStyle style)
     case C_SELECTION:           return "Selection";
     case C_LINE_NUMBER:         return "LineNumber";
     case C_SEARCH_RESULT:       return "SearchResult";
+    case C_SEARCH_RESULT_ALT1:  return "SearchResultAlt1";
+    case C_SEARCH_RESULT_ALT2:  return "SearchResultAlt2";
     case C_SEARCH_SCOPE:        return "SearchScope";
     case C_PARENTHESES:         return "Parentheses";
     case C_PARENTHESES_MISMATCH:return "ParenthesesMismatch";
@@ -97,6 +99,11 @@ const char *nameForStyle(TextStyle style)
     case C_DIFF_DEST_CHAR:      return "DiffDestChar";
 
     case C_LOG_CHANGE_LINE:     return "LogChangeLine";
+    case C_LOG_AUTHOR_NAME:     return "LogAuthorName";
+    case C_LOG_COMMIT_DATE:     return "LogCommitDate";
+    case C_LOG_COMMIT_HASH:     return "LogCommitHash";
+    case C_LOG_COMMIT_SUBJECT:  return "LogCommitSubject";
+    case C_LOG_DECORATION:      return "LogDecoration";
 
     case C_ERROR:               return "Error";
     case C_ERROR_CONTEXT:       return "ErrorContext";

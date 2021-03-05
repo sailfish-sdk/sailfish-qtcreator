@@ -282,11 +282,9 @@
 
     \list
 
-        \li C++
+        \li C/C++
 
-            C++ class, source, or header files that you can use to write the
-            application logic in both Qt Quick projects and
-            Qt widget based projects
+            C or C++ source and header files
 
         \li Qt
 
@@ -375,7 +373,8 @@
 
     The wizard supports namespaces. To use a namespace, enter a qualified
     class name in the \uicontrol {Class name} field. For example:
-    MyNamespace::MySubNamespace::MyClass.
+    \c MyNamespace::MySubNamespace::MyClass. The wizard suggests
+    existing namespaces and class names as you type.
 
     \image qtcreator-cpp-class-wizard.png "Enter Class Name dialog"
 
@@ -407,6 +406,9 @@
 
     Select \uicontrol {Add Files} to locate and add individual
     files.
+
+    To list the folders and files in ascending alphabetic order in the source
+    tree, select \uicontrol {Sort Alphabetically} in the context menu.
 
     By default, resources are accessible in the application under the same file
     name as they have in the source tree, with a \c{:/} prefix, or by a URL with

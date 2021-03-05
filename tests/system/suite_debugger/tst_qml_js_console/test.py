@@ -149,10 +149,10 @@ def main():
         mainRect = getQModelIndexStr("text='Rectangle'", rootIndex)
         doubleClick(waitForObject(mainRect))
         if not object.exists(":DebugModeWidget_Debugger::Internal::ConsoleView"):
-            invokeMenuItem("Window", "Output Panes", "QML Debugger Console")
+            invokeMenuItem("View", "Output Panes", "QML Debugger Console")
         # Window might be too small to show Locals, so close what we don't need
         for view in ("Stack", "Breakpoints", "Expressions"):
-            invokeMenuItem("Window", "Views", view)
+            invokeMenuItem("View", "Views", view)
         # color and float values have additional ZERO WIDTH SPACE (\u200b), different usage of
         # whitespaces inside expressions is part of the test
         checks = [("color", u"#\u200b008000"), ("width", "50"),

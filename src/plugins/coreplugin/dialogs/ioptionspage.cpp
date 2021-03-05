@@ -36,6 +36,7 @@
 #include <QIcon>
 #include <QLabel>
 #include <QPushButton>
+#include <QRegularExpression>
 
 using namespace Utils;
 
@@ -52,8 +53,10 @@ using namespace Utils;
 
 /*!
     \class Core::IOptionsPage
+    \inheaderfile coreplugin/dialogs/ioptionspage.h
     \ingroup mainclasses
     \inmodule QtCreator
+
     \brief The IOptionsPage class is an interface for providing pages for the
     \uicontrol Options dialog (called \uicontrol Preferences on \macos).
 
@@ -62,7 +65,7 @@ using namespace Utils;
 
 /*!
 
-    \fn Core::Id Core::IOptionsPage::id() const
+    \fn Utils::Id Core::IOptionsPage::id() const
 
     Returns a unique identifier for referencing the options page.
 */
@@ -74,7 +77,7 @@ using namespace Utils;
 */
 
 /*!
-    \fn Core::Id Core::IOptionsPage::category() const
+    \fn Utils::Id Core::IOptionsPage::category() const
 
     Returns the unique id for the category that the options page should be displayed in. This id is
     used for sorting the list on the left side of the \uicontrol Options dialog.
@@ -168,7 +171,7 @@ void Core::IOptionsPage::setCategoryIconPath(const QString &categoryIconPath)
 }
 
 /*!
-    \fn void Core::IOptionsPage::setId(Core::Id id)
+    \fn void Core::IOptionsPage::setId(Utils::Id id)
 
     Sets the \a id of the options page.
 */
@@ -180,7 +183,7 @@ void Core::IOptionsPage::setCategoryIconPath(const QString &categoryIconPath)
 */
 
 /*!
-    \fn void Core::IOptionsPage::setCategory(Core::Id category)
+    \fn void Core::IOptionsPage::setCategory(Utils::Id category)
 
     Uses \a category to sort the options pages.
 */
@@ -227,11 +230,11 @@ const QList<Core::IOptionsPage *> Core::IOptionsPage::allOptionsPages()
 }
 
 /*!
-    Is used by the \uicontrol Options dialog search filter to match \a searchKeyWord to this options
+    Is used by the \uicontrol Options dialog search filter to match \a regexp to this options
     page. This defaults to take the widget and then looks for all child labels, check boxes, push
     buttons, and group boxes. Should return \c true when a match is found.
 */
-bool Core::IOptionsPage::matches(const QString &searchKeyWord) const
+bool Core::IOptionsPage::matches(const QRegularExpression &regexp) const
 {
     if (!m_keywordsInitialized) {
         auto that = const_cast<IOptionsPage *>(this);
@@ -251,7 +254,7 @@ bool Core::IOptionsPage::matches(const QString &searchKeyWord) const
         m_keywordsInitialized = true;
     }
     foreach (const QString &keyword, m_keywords)
-        if (keyword.contains(searchKeyWord, Qt::CaseInsensitive))
+        if (keyword.contains(regexp))
             return true;
     return false;
 }

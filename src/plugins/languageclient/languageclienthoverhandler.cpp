@@ -59,10 +59,18 @@ void HoverHandler::identifyMatch(TextEditor::TextEditorWidget *editorWidget,
 {
     if (m_currentRequest.has_value())
         abort();
-    if (m_client.isNull()
-        || !m_client->documentOpen(editorWidget->textDocument())
-        || !m_client->capabilities().hoverProvider().value_or(false)) {
+    if (m_client.isNull() || !m_client->documentOpen(editorWidget->textDocument())) {
         report(Priority_None);
+        return;
+    }
+    auto uri = DocumentUri::fromFilePath(editorWidget->textDocument()->filePath());
+    QTextCursor tc = editorWidget->textCursor();
+    tc.setPosition(pos);
+    QList<Diagnostic> diagnostics = m_client->diagnosticsAt(uri, Range(Position(tc), Position(tc)));
+    if (!diagnostics.isEmpty()) {
+        const QStringList messages = Utils::transform(diagnostics, &Diagnostic::message);
+        setToolTip(messages.join('\n'));
+        report(Priority_Diagnostic);
         return;
     }
 
@@ -86,11 +94,9 @@ void HoverHandler::identifyMatch(TextEditor::TextEditorWidget *editorWidget,
     }
 
     m_report = report;
-    auto uri = DocumentUri::fromFilePath(editorWidget->textDocument()->filePath());
     QTextCursor cursor = editorWidget->textCursor();
     cursor.setPosition(pos);
-    TextDocumentPositionParams params(uri, Position(cursor));
-    HoverRequest request(params);
+    HoverRequest request((TextDocumentPositionParams(TextDocumentIdentifier(uri), Position(cursor))));
     request.setResponseCallback(
         [this](const HoverRequest::Response &response) { handleResponse(response); });
     m_client->sendContent(request);
@@ -124,24 +130,12 @@ static QString toolTipForMarkedStrings(const QList<MarkedString> &markedStrings)
 
 void HoverHandler::setContent(const HoverContent &hoverContent)
 {
-    if (auto markupContent = Utils::get_if<MarkupContent>(&hoverContent)) {
-        const QString &content = markupContent->content();
-        if (markupContent->kind() == MarkupKind::plaintext) {
-            setToolTip(content);
-        } else if (m_client) {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
-            setToolTip(content, Qt::MarkdownText);
-#else
-            m_client->log(tr("Got unsupported markup hover content: ") + content,
-                          Core::MessageManager::Silent);
-            setToolTip(content);
-#endif
-        }
-    } else if (auto markedString = Utils::get_if<MarkedString>(&hoverContent)) {
+    if (auto markupContent = Utils::get_if<MarkupContent>(&hoverContent))
+        setToolTip(markupContent->content(), markupContent->textFormat());
+    else if (auto markedString = Utils::get_if<MarkedString>(&hoverContent))
         setToolTip(toolTipForMarkedStrings({*markedString}));
-    } else if (auto markedStrings = Utils::get_if<QList<MarkedString>>(&hoverContent)) {
+    else if (auto markedStrings = Utils::get_if<QList<MarkedString>>(&hoverContent))
         setToolTip(toolTipForMarkedStrings(*markedStrings));
-    }
 }
 
 } // namespace LanguageClient

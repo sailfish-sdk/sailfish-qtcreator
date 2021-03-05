@@ -29,7 +29,6 @@
 #include "helpmanager.h"
 #include "icore.h"
 #include "idocument.h"
-#include "infobar.h"
 #include "iwizardfactory.h"
 #include "mainwindow.h"
 #include "modemanager.h"
@@ -50,9 +49,10 @@
 #include <extensionsystem/pluginmanager.h>
 #include <extensionsystem/pluginspec.h>
 #include <utils/algorithm.h>
-#include <utils/pathchooser.h>
+#include <utils/infobar.h>
 #include <utils/macroexpander.h>
 #include <utils/mimetypes/mimedatabase.h>
+#include <utils/pathchooser.h>
 #include <utils/savefile.h>
 #include <utils/stringutils.h>
 #include <utils/theme/theme.h>
@@ -180,9 +180,11 @@ bool CorePlugin::initialize(const QStringList &arguments, QString *errorMessage)
     expander->registerVariable("CurrentTime:RFC", tr("The current time (RFC2822)."),
                                []() { return QTime::currentTime().toString(Qt::RFC2822Date); });
     expander->registerVariable("CurrentDate:Locale", tr("The current date (Locale)."),
-                               []() { return QDate::currentDate().toString(Qt::DefaultLocaleShortDate); });
+                               []() { return QLocale::system()
+                                        .toString(QDate::currentDate(), QLocale::ShortFormat); });
     expander->registerVariable("CurrentTime:Locale", tr("The current time (Locale)."),
-                               []() { return QTime::currentTime().toString(Qt::DefaultLocaleShortDate); });
+                               []() { return QLocale::system()
+                                        .toString(QTime::currentTime(), QLocale::ShortFormat); });
     expander->registerVariable("Config:DefaultProjectDirectory", tr("The configured default directory for projects."),
                                []() { return DocumentManager::projectsDirectory().toString(); });
     expander->registerVariable("Config:LastFileDialogDirectory", tr("The directory last visited in a file dialog."),
@@ -274,23 +276,26 @@ void CorePlugin::addToPathChooserContextMenu(Utils::PathChooser *pathChooser, QM
     QList<QAction*> actions = menu->actions();
     QAction *firstAction = actions.isEmpty() ? nullptr : actions.first();
 
-    if (QDir().exists(pathChooser->path())) {
+    if (QDir().exists(pathChooser->filePath().toString())) {
         auto *showInGraphicalShell = new QAction(Core::FileUtils::msgGraphicalShellAction(), menu);
         connect(showInGraphicalShell, &QAction::triggered, pathChooser, [pathChooser]() {
-            Core::FileUtils::showInGraphicalShell(pathChooser, pathChooser->path());
+            Core::FileUtils::showInGraphicalShell(pathChooser, pathChooser->filePath().toString());
         });
         menu->insertAction(firstAction, showInGraphicalShell);
 
         auto *showInTerminal = new QAction(Core::FileUtils::msgTerminalHereAction(), menu);
         connect(showInTerminal, &QAction::triggered, pathChooser, [pathChooser]() {
-            Core::FileUtils::openTerminal(pathChooser->path());
+            if (pathChooser->openTerminalHandler())
+                pathChooser->openTerminalHandler()();
+            else
+                FileUtils::openTerminal(pathChooser->filePath().toString());
         });
         menu->insertAction(firstAction, showInTerminal);
 
     } else {
         auto *mkPathAct = new QAction(tr("Create Folder"), menu);
         connect(mkPathAct, &QAction::triggered, pathChooser, [pathChooser]() {
-            QDir().mkpath(pathChooser->path());
+            QDir().mkpath(pathChooser->filePath().toString());
             pathChooser->triggerChanged();
         });
         menu->insertAction(firstAction, mkPathAct);

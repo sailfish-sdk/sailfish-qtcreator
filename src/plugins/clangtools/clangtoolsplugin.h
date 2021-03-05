@@ -27,6 +27,7 @@
 
 #include <extensionsystem/iplugin.h>
 
+namespace Core { class IDocument; }
 namespace ProjectExplorer { class ProjectPanelFactory; }
 
 namespace ClangTools {
@@ -45,6 +46,9 @@ public:
 
 private:
     bool initialize(const QStringList &arguments, QString *errorString) final;
+    void registerAnalyzeActions();
+    void onCurrentEditorChanged();
+
     QVector<QObject *> createTestObjects() const final;
 
     class ClangToolsPluginPrivate *d = nullptr;

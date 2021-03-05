@@ -51,6 +51,19 @@ CameraGeometry::~CameraGeometry()
 {
 }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+QString CameraGeometry::name() const
+{
+    return objectName();
+}
+
+void CameraGeometry::setName(const QString &name)
+{
+    setObjectName(name);
+    emit nameChanged();
+}
+#endif
+
 QQuick3DCamera *CameraGeometry::camera() const
 {
     return m_camera;
@@ -146,14 +159,22 @@ QSSGRenderGraphObject *CameraGeometry::updateSpatialNode(QSSGRenderGraphObject *
     QVector3D maxBounds;
     fillVertexData(vertexData, indexData, minBounds, maxBounds);
 
+    geometry->setStride(12);
+#if QT_VERSION < QT_VERSION_CHECK(6, 1, 0)
     geometry->addAttribute(QSSGRenderGeometry::Attribute::PositionSemantic, 0,
                            QSSGRenderGeometry::Attribute::ComponentType::F32Type);
     geometry->addAttribute(QSSGRenderGeometry::Attribute::IndexSemantic, 0,
                            QSSGRenderGeometry::Attribute::ComponentType::U16Type);
-    geometry->setStride(12);
+    geometry->setPrimitiveType(QSSGRenderGeometry::Lines);
+#else
+    geometry->addAttribute(QSSGMesh::RuntimeMeshData::Attribute::PositionSemantic, 0,
+                           QSSGMesh::Mesh::ComponentType::Float32);
+    geometry->addAttribute(QSSGMesh::RuntimeMeshData::Attribute::IndexSemantic, 0,
+                           QSSGMesh::Mesh::ComponentType::UnsignedInt16);
+    geometry->setPrimitiveType(QSSGMesh::Mesh::DrawMode::Lines);
+#endif
     geometry->setVertexData(vertexData);
     geometry->setIndexData(indexData);
-    geometry->setPrimitiveType(QSSGRenderGeometry::Lines);
     geometry->setBounds(minBounds, maxBounds);
 
     return node;
@@ -173,13 +194,16 @@ void CameraGeometry::fillVertexData(QByteArray &vertexData, QByteArray &indexDat
     QMatrix4x4 m;
     QSSGRenderCamera *camera = m_camera->cameraNode();
     if (camera) {
+        QRectF rect = m_viewPortRect;
+        if (rect.isNull())
+             rect = QRectF(0, 0, 1000, 1000); // Let's have some visualization for null viewports
         if (qobject_cast<QQuick3DOrthographicCamera *>(m_camera)) {
             // For some reason ortho cameras show double what projection suggests,
             // so give them doubled viewport to match visualization to actual camera view
-            camera->calculateGlobalVariables(QRectF(0, 0, m_viewPortRect.width() * 2.0,
-                                               m_viewPortRect.height() * 2.0));
+            camera->calculateGlobalVariables(QRectF(0, 0, rect.width() * 2.0,
+                                                    rect.height() * 2.0));
         } else {
-            camera->calculateGlobalVariables(m_viewPortRect);
+            camera->calculateGlobalVariables(rect);
         }
         m = camera->projection.inverted();
     }

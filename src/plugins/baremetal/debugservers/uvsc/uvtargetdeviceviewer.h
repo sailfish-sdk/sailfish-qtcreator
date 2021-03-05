@@ -38,6 +38,8 @@ class QLineEdit;
 class QPlainTextEdit;
 QT_END_NAMESPACE
 
+namespace Utils { class PathChooser; }
+
 namespace BareMetal {
 namespace Internal {
 namespace Uv {
@@ -103,10 +105,11 @@ signals:
 private:
     DeviceSelection &m_selection;
     QLineEdit *m_vendorEdit = nullptr;
-    QLineEdit *m_fimilyEdit = nullptr;
+    QLineEdit *m_packageEdit = nullptr;
     QPlainTextEdit *m_descEdit = nullptr;
     DeviceSelectionMemoryView *m_memoryView = nullptr;
     DeviceSelectionAlgorithmView *m_algorithmView = nullptr;
+    Utils::PathChooser *m_peripheralDescriptionFileChooser = nullptr;
 };
 
 // DeviceSelectionDialog

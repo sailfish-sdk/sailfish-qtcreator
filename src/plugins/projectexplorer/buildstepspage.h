@@ -34,16 +34,11 @@ class QPushButton;
 class QToolButton;
 class QLabel;
 class QVBoxLayout;
-class QGraphicsOpacityEffect;
 QT_END_NAMESPACE
 
 namespace Utils { class DetailsWidget; }
 
 namespace ProjectExplorer {
-
-class Target;
-class BuildConfiguration;
-
 namespace Internal {
 
 class ToolWidget : public Utils::FadingPanel
@@ -87,7 +82,7 @@ public:
     ~BuildStepsWidgetData();
 
     BuildStep *step;
-    BuildStepConfigWidget *widget;
+    QWidget *widget;
     Utils::DetailsWidget *detailsWidget;
     ToolWidget *toolWidget;
 };
@@ -103,8 +98,6 @@ public:
 private:
     void updateAddBuildStepMenu();
     void addBuildStep(int pos);
-    void updateSummary();
-    void updateEnabledState();
     void stepMoved(int from, int to);
     void removeBuildStep(int pos);
 

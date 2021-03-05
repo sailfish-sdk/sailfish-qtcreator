@@ -254,6 +254,13 @@ bool QbsProjectManagerPlugin::initialize(const QStringList &arguments, QString *
             this, &QbsProjectManagerPlugin::updateBuildActions);
     connect(SessionManager::instance(), &SessionManager::startupProjectChanged,
             this, &QbsProjectManagerPlugin::updateReparseQbsAction);
+    connect(SessionManager::instance(), &SessionManager::projectAdded,
+            this, [this](Project *project) {
+        connect(project, &Project::anyParsingStarted,
+                this, &QbsProjectManagerPlugin::projectChanged);
+        connect(project, &Project::anyParsingFinished,
+                this, &QbsProjectManagerPlugin::projectChanged);
+    });
 
     // Run initial setup routines
     updateContextActions();
@@ -392,23 +399,21 @@ void QbsProjectManagerPlugin::buildFile()
 
 void QbsProjectManagerPlugin::buildProductContextMenu()
 {
-    runStepsForProductContextMenu({Core::Id(ProjectExplorer::Constants::BUILDSTEPS_BUILD)});
+    runStepsForProductContextMenu({Utils::Id(ProjectExplorer::Constants::BUILDSTEPS_BUILD)});
 }
 
 void QbsProjectManagerPlugin::cleanProductContextMenu()
 {
-    runStepsForProductContextMenu({Core::Id(ProjectExplorer::Constants::BUILDSTEPS_CLEAN)});
+    runStepsForProductContextMenu({Utils::Id(ProjectExplorer::Constants::BUILDSTEPS_CLEAN)});
 }
 
 void QbsProjectManagerPlugin::rebuildProductContextMenu()
 {
-    runStepsForProductContextMenu({
-        Core::Id(ProjectExplorer::Constants::BUILDSTEPS_CLEAN),
-        Core::Id(ProjectExplorer::Constants::BUILDSTEPS_BUILD)
-    });
+    runStepsForProductContextMenu({Utils::Id(ProjectExplorer::Constants::BUILDSTEPS_CLEAN),
+                                   Utils::Id(ProjectExplorer::Constants::BUILDSTEPS_BUILD)});
 }
 
-void QbsProjectManagerPlugin::runStepsForProductContextMenu(const QList<Core::Id> &stepTypes)
+void QbsProjectManagerPlugin::runStepsForProductContextMenu(const QList<Utils::Id> &stepTypes)
 {
     const Node *node = ProjectTree::currentNode();
     QTC_ASSERT(node, return);
@@ -424,23 +429,23 @@ void QbsProjectManagerPlugin::runStepsForProductContextMenu(const QList<Core::Id
 
 void QbsProjectManagerPlugin::buildProduct()
 {
-    runStepsForProduct({Core::Id(ProjectExplorer::Constants::BUILDSTEPS_BUILD)});
+    runStepsForProduct({Utils::Id(ProjectExplorer::Constants::BUILDSTEPS_BUILD)});
 }
 
 void QbsProjectManagerPlugin::cleanProduct()
 {
-    runStepsForProduct({Core::Id(ProjectExplorer::Constants::BUILDSTEPS_CLEAN)});
+    runStepsForProduct({Utils::Id(ProjectExplorer::Constants::BUILDSTEPS_CLEAN)});
 }
 
 void QbsProjectManagerPlugin::rebuildProduct()
 {
     runStepsForProduct({
-        Core::Id(ProjectExplorer::Constants::BUILDSTEPS_CLEAN),
-        Core::Id(ProjectExplorer::Constants::BUILDSTEPS_BUILD),
+        Utils::Id(ProjectExplorer::Constants::BUILDSTEPS_CLEAN),
+        Utils::Id(ProjectExplorer::Constants::BUILDSTEPS_BUILD),
     });
 }
 
-void QbsProjectManagerPlugin::runStepsForProduct(const QList<Core::Id> &stepTypes)
+void QbsProjectManagerPlugin::runStepsForProduct(const QList<Utils::Id> &stepTypes)
 {
     Node *node = currentEditorNode();
     if (!node)
@@ -457,23 +462,21 @@ void QbsProjectManagerPlugin::runStepsForProduct(const QList<Core::Id> &stepType
 
 void QbsProjectManagerPlugin::buildSubprojectContextMenu()
 {
-    runStepsForSubprojectContextMenu({Core::Id(ProjectExplorer::Constants::BUILDSTEPS_BUILD)});
+    runStepsForSubprojectContextMenu({Utils::Id(ProjectExplorer::Constants::BUILDSTEPS_BUILD)});
 }
 
 void QbsProjectManagerPlugin::cleanSubprojectContextMenu()
 {
-    runStepsForSubprojectContextMenu({Core::Id(ProjectExplorer::Constants::BUILDSTEPS_CLEAN)});
+    runStepsForSubprojectContextMenu({Utils::Id(ProjectExplorer::Constants::BUILDSTEPS_CLEAN)});
 }
 
 void QbsProjectManagerPlugin::rebuildSubprojectContextMenu()
 {
-    runStepsForSubprojectContextMenu({
-        Core::Id(ProjectExplorer::Constants::BUILDSTEPS_CLEAN),
-        Core::Id(ProjectExplorer::Constants::BUILDSTEPS_BUILD)
-    });
+    runStepsForSubprojectContextMenu({Utils::Id(ProjectExplorer::Constants::BUILDSTEPS_CLEAN),
+                                      Utils::Id(ProjectExplorer::Constants::BUILDSTEPS_BUILD)});
 }
 
-void QbsProjectManagerPlugin::runStepsForSubprojectContextMenu(const QList<Core::Id> &stepTypes)
+void QbsProjectManagerPlugin::runStepsForSubprojectContextMenu(const QList<Utils::Id> &stepTypes)
 {
     const Node *node = ProjectTree::currentNode();
     QTC_ASSERT(node, return);
@@ -522,7 +525,8 @@ void QbsProjectManagerPlugin::buildSingleFile(QbsProject *project, const QString
 }
 
 void QbsProjectManagerPlugin::runStepsForProducts(QbsProject *project,
-        const QStringList &products, const QList<Core::Id> &stepTypes)
+                                                  const QStringList &products,
+                                                  const QList<Utils::Id> &stepTypes)
 {
     QTC_ASSERT(project, return);
     QTC_ASSERT(!products.isEmpty(), return);
@@ -542,17 +546,13 @@ void QbsProjectManagerPlugin::runStepsForProducts(QbsProject *project,
     bc->setChangedFiles(QStringList());
     bc->setProducts(products);
     QList<ProjectExplorer::BuildStepList *> stepLists;
-    QStringList stepListNames;
-    for (const Core::Id &stepType : stepTypes) {
-        if (stepType == ProjectExplorer::Constants::BUILDSTEPS_BUILD) {
+    for (const Utils::Id &stepType : stepTypes) {
+        if (stepType == ProjectExplorer::Constants::BUILDSTEPS_BUILD)
             stepLists << bc->buildSteps();
-            stepListNames << ProjectExplorerPlugin::displayNameForStepId(stepType);
-        } else if (stepType == ProjectExplorer::Constants::BUILDSTEPS_CLEAN) {
+        else if (stepType == ProjectExplorer::Constants::BUILDSTEPS_CLEAN)
             stepLists << bc->cleanSteps();
-            stepListNames << ProjectExplorerPlugin::displayNameForStepId(stepType);
-        }
     }
-    BuildManager::buildLists(stepLists, stepListNames);
+    BuildManager::buildLists(stepLists);
     bc->setProducts(QStringList());
 }
 
@@ -589,8 +589,8 @@ void QbsProjectManagerPlugin::reparseProject(QbsProject *project)
 
 void QbsProjectManagerPlugin::buildNamedProduct(QbsProject *project, const QString &product)
 {
-    QbsProjectManagerPlugin::runStepsForProducts(project, QStringList(product),
-            {Core::Id(ProjectExplorer::Constants::BUILDSTEPS_BUILD)});
+    QbsProjectManagerPlugin::runStepsForProducts(
+        project, QStringList(product), {Utils::Id(ProjectExplorer::Constants::BUILDSTEPS_BUILD)});
 }
 
 } // namespace Internal

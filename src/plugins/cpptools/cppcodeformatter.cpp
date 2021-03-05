@@ -199,6 +199,12 @@ void CodeFormatter::recalculateStateAfter(const QTextBlock &block)
                     turnInto(substatement_open);
                 }
                 break;
+            case T_ARROW: // Trailing return type?
+                if (m_currentState.at(m_currentState.size() - 2).type == declaration_start)
+                    leave();
+                else
+                    tryExpression();
+                break;
             default:            tryExpression(); break;
             } break;
 
@@ -267,7 +273,13 @@ void CodeFormatter::recalculateStateAfter(const QTextBlock &block)
             case T_RBRACKET:    // '[', ']' and '->' can be part of lambda declarator
             case T_LBRACKET:
             case T_ARROW:       break;
-            default:            leave(); continue;
+            default:
+                if (m_tokenIndex > 0 && tokenAt(m_tokenIndex - 1).kind() == T_ARROW) {
+                    break;
+                } else {
+                    leave();
+                    continue;
+                }
             } break;
 
         case lambda_declarator:
@@ -516,7 +528,7 @@ void CodeFormatter::recalculateStateAfter(const QTextBlock &block)
                 }
             }
 
-            QStringRef tokenText = currentTokenText();
+            QStringView tokenText = currentTokenText();
             if (tokenText == QLatin1String("ifdef")
                     || tokenText == QLatin1String("if")
                     || tokenText == QLatin1String("ifndef")) {
@@ -623,7 +635,6 @@ void CodeFormatter::updateStateUntil(const QTextBlock &endBlock)
             break;
         if (loadLexerState(it) == -1)
             break;
-
         previousState = blockData.m_endState;
     }
 
@@ -659,6 +670,16 @@ void CodeFormatter::updateLineStateChange(const QTextBlock &block)
         return;
 
     saveBlockData(&next, BlockData());
+}
+
+bool CodeFormatter::isInStringLiteral(const QTextBlock &block) const
+{
+    if (!block.previous().isValid())
+        return false;
+    BlockData blockData;
+    if (!loadBlockData(block.previous(), &blockData))
+        return false;
+    return !blockData.m_endState.isEmpty() && blockData.m_endState.top().type == string_open;
 }
 
 CodeFormatter::State CodeFormatter::state(int belowTop) const
@@ -783,7 +804,7 @@ bool CodeFormatter::tryExpression(bool alsoExpression)
         newState = stream_op;
         for (int i = m_currentState.size() - 1; i >= 0; --i) {
             const int type = m_currentState.at(i).type;
-            if (type == arglist_open) { // likely a left-shift instead
+            if (type == arglist_open || type == braceinit_open) { // likely a left-shift instead
                 newState = -1;
                 break;
             }
@@ -833,7 +854,7 @@ bool CodeFormatter::tryDeclaration()
         return true;
     case T_IDENTIFIER:
         if (m_tokenIndex == 0) {
-            const QStringRef tokenText = currentTokenText();
+            const QStringView tokenText = currentTokenText();
             if (tokenText.startsWith(QLatin1String("Q_"))
                     || tokenText.startsWith(QLatin1String("QT_"))
                     || tokenText.startsWith(QLatin1String("QML_"))
@@ -863,6 +884,7 @@ bool CodeFormatter::tryDeclaration()
     case T_AUTO:
     case T___TYPEOF__:
     case T___ATTRIBUTE__:
+    case T___DECLSPEC:
     case T_STATIC:
     case T_FRIEND:
     case T_CONST:
@@ -987,9 +1009,11 @@ int CodeFormatter::column(int index) const
     return col;
 }
 
-QStringRef CodeFormatter::currentTokenText() const
+QStringView CodeFormatter::currentTokenText() const
 {
-    return m_currentLine.midRef(m_currentToken.utf16charsBegin(), m_currentToken.utf16chars());
+    if (m_currentToken.utf16charsEnd() > m_currentLine.size())
+        return QStringView(m_currentLine).mid(m_currentToken.utf16charsBegin());
+    return QStringView(m_currentLine).mid(m_currentToken.utf16charsBegin(), m_currentToken.utf16chars());
 }
 
 void CodeFormatter::turnInto(int newState)
@@ -1521,6 +1545,7 @@ void QtStyleCodeFormatter::adjustIndent(const Tokens &tokens, int lexerState, in
                 && topState.type != block_open
                 && topState.type != substatement_open
                 && topState.type != brace_list_open
+                && topState.type != arglist_open
                 && !topWasMaybeElse) {
             *indentDepth = topState.savedIndentDepth;
             *paddingDepth = 0;
@@ -1589,7 +1614,7 @@ void QtStyleCodeFormatter::adjustIndent(const Tokens &tokens, int lexerState, in
         if (m_styleSettings.indentDeclarationsRelativeToAccessSpecifiers
                 && topState.type == class_open) {
             if (tokenAt(1).is(T_COLON) || tokenAt(2).is(T_COLON)
-                    || (tokenAt(tokenCount() - 1).is(T_COLON) && tokenAt(1).is(T___ATTRIBUTE__))) {
+                || (tokenAt(tokenCount() - 1).is(T_COLON) && (tokenAt(1).is(T___ATTRIBUTE__) || tokenAt(1).is(T___DECLSPEC)))) {
                 *indentDepth = topState.savedIndentDepth;
                 if (m_styleSettings.indentAccessSpecifiers)
                     *indentDepth += m_tabSettings.m_indentSize;

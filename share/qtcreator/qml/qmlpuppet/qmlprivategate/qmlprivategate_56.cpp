@@ -87,9 +87,14 @@ void registerNodeInstanceMetaObject(QObject *object, QQmlEngine *engine)
     QQuickDesignerSupportProperties::registerNodeInstanceMetaObject(object, engine);
 }
 
+// This is used in share/qtcreator/qml/qmlpuppet/qml2puppet/instances/objectnodeinstance.cpp
 QObject *createPrimitive(const QString &typeName, int majorNumber, int minorNumber, QQmlContext *context)
 {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return QQuickDesignerSupportItems::createPrimitive(typeName, QTypeRevision::fromVersion(majorNumber, minorNumber), context);
+#else
     return QQuickDesignerSupportItems::createPrimitive(typeName, majorNumber, minorNumber, context);
+#endif
 }
 
 static QString qmlDesignerRCPath()
@@ -225,13 +230,21 @@ void emitComponentComplete(QObject *item)
 
     QQmlData *data = QQmlData::get(item);
     if (data && data->context) {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
         QQmlComponentAttached *componentAttached = data->context->componentAttached;
+#else
+        QQmlComponentAttached *componentAttached = data->context->componentAttacheds();
+#endif
         while (componentAttached) {
             if (componentAttached->parent())
                 if (componentAttached->parent() == item)
                     emit componentAttached->completed();
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
             componentAttached = componentAttached->next;
+#else
+            componentAttached = componentAttached->next();
+#endif
         }
     }
 }

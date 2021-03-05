@@ -32,7 +32,6 @@
 
 #include <coreplugin/documentmanager.h>
 #include <coreplugin/icore.h>
-#include <coreplugin/id.h>
 #include <coreplugin/idocument.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <projectexplorer/projecttree.h>
@@ -247,7 +246,7 @@ QString StateListener::windowTitleVcsTopic(const QString &filePath)
 
 static inline QString displayNameOfEditor(const QString &fileName)
 {
-    IDocument *document = DocumentModel::documentForFilePath(fileName);
+    IDocument *document = DocumentModel::documentForFilePath(FilePath::fromString(fileName));
     if (document)
         return document->displayName();
     return QString();
@@ -641,9 +640,9 @@ void VcsBasePluginPrivate::createRepository()
     // Find current starting directory
     QString directory;
     if (const Project *currentProject = ProjectTree::currentProject())
-        directory = currentProject->projectFilePath().toString();
+        directory = currentProject->projectFilePath().absolutePath().toString();
     // Prompt for a directory that is not under version control yet
-    QWidget *mw = ICore::mainWindow();
+    QWidget *mw = ICore::dialogParent();
     do {
         directory = QFileDialog::getExistingDirectory(mw, tr("Choose Repository Directory"), directory);
         if (directory.isEmpty())

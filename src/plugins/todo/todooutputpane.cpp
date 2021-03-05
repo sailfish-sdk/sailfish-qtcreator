@@ -94,11 +94,6 @@ void TodoOutputPane::clearContents()
     clearKeywordFilter();
 }
 
-void TodoOutputPane::visibilityChanged(bool visible)
-{
-    Q_UNUSED(visible)
-}
-
 void TodoOutputPane::setFocus()
 {
     m_todoTreeView->setFocus();
@@ -202,7 +197,7 @@ void TodoOutputPane::updateKeywordFilter()
     int sortColumn = m_todoTreeView->header()->sortIndicatorSection();
     Qt::SortOrder sortOrder = m_todoTreeView->header()->sortIndicatorOrder();
 
-    m_filteredTodoItemsModel->setFilterRegExp(pattern);
+    m_filteredTodoItemsModel->setFilterRegularExpression(pattern);
     m_filteredTodoItemsModel->sort(sortColumn, sortOrder);
 
     updateTodoCount();

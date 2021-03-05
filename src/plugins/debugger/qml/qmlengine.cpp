@@ -404,7 +404,7 @@ void QmlEngine::connectionStartupFailed()
         return;
     }
 
-    auto infoBox = new QMessageBox(ICore::mainWindow());
+    auto infoBox = new QMessageBox(ICore::dialogParent());
     infoBox->setIcon(QMessageBox::Critical);
     infoBox->setWindowTitle(Core::Constants::IDE_DISPLAY_NAME);
     infoBox->setText(tr("Could not connect to the in-process QML debugger."
@@ -425,7 +425,7 @@ void QmlEngine::appStartupFailed(const QString &errorMessage)
     QString error = tr("Could not connect to the in-process QML debugger. %1").arg(errorMessage);
 
     if (companionEngine()) {
-        auto infoBox = new QMessageBox(ICore::mainWindow());
+        auto infoBox = new QMessageBox(ICore::dialogParent());
         infoBox->setIcon(QMessageBox::Critical);
         infoBox->setWindowTitle(Core::Constants::IDE_DISPLAY_NAME);
         infoBox->setText(error);
@@ -570,7 +570,6 @@ void QmlEngine::shutdownEngine()
     stopApplicationLauncher();
 
     notifyEngineShutdownFinished();
-    showMessage(QString(), StatusBar);
 }
 
 void QmlEngine::setupEngine()
@@ -1400,7 +1399,7 @@ void QmlEnginePrivate::setBreakpoint(const QString type, const QString target,
         QPacket rs(dataStreamVersion());
         rs <<  target.toUtf8() << enabled;
         engine->showMessage(QString("%1 %2 %3")
-                            .arg(BREAKONSIGNAL, target, QLatin1String(enabled ? "enabled" : "disabled")), LogInput);
+                            .arg(QString(BREAKONSIGNAL), target, QLatin1String(enabled ? "enabled" : "disabled")), LogInput);
         runDirectCommand(BREAKONSIGNAL, rs.data());
 
     } else {
@@ -2383,23 +2382,22 @@ void QmlEnginePrivate::handleLookup(const QVariantMap &response)
     for (const QString &handleString : handlesList) {
         const int handle = handleString.toInt();
         const QmlV8ObjectData bodyObjectData = extractData(body.value(handleString));
-        const QList<LookupData> vals = currentlyLookingUp.values(handle);
+        const LookupData res = currentlyLookingUp.value(handle);
         currentlyLookingUp.remove(handle);
-        for (const LookupData &res : vals) {
-            auto item = new WatchItem;
-            item->exp = res.exp;
-            item->iname = res.iname;
-            item->name = res.name;
-            item->id = handle;
 
-            item->type = bodyObjectData.type;
-            item->value = bodyObjectData.value.toString();
+        auto item = new WatchItem;
+        item->exp = res.exp;
+        item->iname = res.iname;
+        item->name = res.name;
+        item->id = handle;
 
-            setWatchItemHasChildren(item, bodyObjectData.hasChildren());
-            insertSubItems(item, bodyObjectData.properties);
+        item->type = bodyObjectData.type;
+        item->value = bodyObjectData.value.toString();
 
-            engine->watchHandler()->insertItem(item);
-        }
+        setWatchItemHasChildren(item, bodyObjectData.hasChildren());
+        insertSubItems(item, bodyObjectData.properties);
+
+        engine->watchHandler()->insertItem(item);
     }
     checkForFinishedUpdate();
 }
@@ -2449,7 +2447,7 @@ QString QmlEngine::toFileInProject(const QUrl &fileUrl)
     d->fileFinder.setAdditionalSearchDirectories(rp.additionalSearchDirectories);
     d->fileFinder.setSysroot(rp.sysRoot);
 
-    return d->fileFinder.findFile(fileUrl).first().toString();
+    return d->fileFinder.findFile(fileUrl).constFirst().toString();
 }
 
 DebuggerEngine *createQmlEngine()

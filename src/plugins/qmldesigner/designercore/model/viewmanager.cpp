@@ -27,23 +27,24 @@
 
 #ifndef QMLDESIGNER_TEST
 
-#include <componentaction.h>
-#include <designmodewidget.h>
-#include <crumblebar.h>
 #include <abstractview.h>
-#include <rewriterview.h>
-#include <nodeinstanceview.h>
-#include <itemlibraryview.h>
-#include <navigatorview.h>
-#include <stateseditorview.h>
+#include <capturingconnectionmanager.h>
+#include <componentaction.h>
+#include <componentview.h>
+#include <crumblebar.h>
+#include <debugview.h>
+#include <designeractionmanagerview.h>
+#include <designmodewidget.h>
 #include <edit3dview.h>
 #include <formeditorview.h>
-#include <texteditorview.h>
-#include <propertyeditorview.h>
-#include <componentview.h>
-#include <debugview.h>
 #include <importmanagerview.h>
-#include <designeractionmanagerview.h>
+#include <itemlibraryview.h>
+#include <navigatorview.h>
+#include <nodeinstanceview.h>
+#include <propertyeditorview.h>
+#include <rewriterview.h>
+#include <stateseditorview.h>
+#include <texteditorview.h>
 #include <qmldesignerplugin.h>
 
 #include <utils/algorithm.h>
@@ -59,10 +60,14 @@ static Q_LOGGING_CATEGORY(viewBenchmark, "qtc.viewmanager.attach", QtWarningMsg)
 class ViewManagerData
 {
 public:
+    InteractiveConnectionManager connectionManager;
+    CapturingConnectionManager capturingConnectionManager;
     QmlModelState savedState;
     Internal::DebugView debugView;
     DesignerActionManagerView designerActionManagerView;
-    NodeInstanceView nodeInstanceView;
+    NodeInstanceView nodeInstanceView{
+        QCoreApplication::arguments().contains("-capture-puppet-stream") ? capturingConnectionManager
+                                                                         : connectionManager};
     ComponentView componentView;
     Edit3DView edit3DView;
     FormEditorView formEditorView;
@@ -73,6 +78,7 @@ public:
     StatesEditorView statesEditorView;
 
     QList<QPointer<AbstractView> > additionalViews;
+    bool disableStandardViews = false;
 };
 
 static CrumbleBar *crumbleBar() {
@@ -80,7 +86,7 @@ static CrumbleBar *crumbleBar() {
 }
 
 ViewManager::ViewManager()
-    : d(new ViewManagerData)
+    : d(std::make_unique<ViewManagerData>())
 {
     d->formEditorView.setGotoErrorCallback([this](int line, int column) {
         d->textEditorView.gotoCursorPosition(line, column);
@@ -91,10 +97,9 @@ ViewManager::ViewManager()
 
 ViewManager::~ViewManager()
 {
-    foreach (const QPointer<AbstractView> &view, d->additionalViews)
+    for (const QPointer<AbstractView> &view : d->additionalViews)
         delete view.data();
 
-    delete d;
 }
 
 DesignDocument *ViewManager::currentDesignDocument() const
@@ -104,6 +109,9 @@ DesignDocument *ViewManager::currentDesignDocument() const
 
 void ViewManager::attachNodeInstanceView()
 {
+    if (nodeInstanceView()->isAttached())
+        return;
+
     QElapsedTimer time;
     if (viewBenchmark().isInfoEnabled())
         time.start();
@@ -165,15 +173,27 @@ void ViewManager::switchStateEditorViewToSavedState()
 QList<QPointer<AbstractView> > ViewManager::views() const
 {
     auto list = d->additionalViews;
-    list.append({
+    list.append(standardViews());
+    return list;
+}
+
+const QList<QPointer<AbstractView> > ViewManager::standardViews() const
+{
+    QList<QPointer<AbstractView>> list = {
                     &d->edit3DView,
                     &d->formEditorView,
                     &d->textEditorView,
                     &d->itemLibraryView,
                     &d->navigatorView,
                     &d->propertyEditorView,
-                    &d->statesEditorView
-                });
+                    &d->statesEditorView,
+                    &d->designerActionManagerView
+                };
+
+    if (QmlDesignerPlugin::instance()->settings().value(
+                DesignerSettingsKey::ENABLE_DEBUGVIEW).toBool())
+         list.append(&d->debugView);
+
     return list;
 }
 
@@ -196,24 +216,14 @@ void ViewManager::detachViewsExceptRewriterAndComponetView()
 {
     switchStateEditorViewToBaseState();
     detachAdditionalViews();
-    currentModel()->detachView(&d->designerActionManagerView);
-    currentModel()->detachView(&d->edit3DView);
-    currentModel()->detachView(&d->formEditorView);
-    currentModel()->detachView(&d->textEditorView);
-    currentModel()->detachView(&d->navigatorView);
-    currentModel()->detachView(&d->itemLibraryView);
-    currentModel()->detachView(&d->statesEditorView);
-    currentModel()->detachView(&d->propertyEditorView);
 
-    if (d->debugView.isAttached())
-        currentModel()->detachView(&d->debugView);
+    detachStandardViews();
 
     currentModel()->setNodeInstanceView(nullptr);
 }
 
 void ViewManager::attachItemLibraryView()
 {
-    setItemLibraryViewResourcePath(currentDesignDocument()->fileName().toFileInfo().absolutePath());
     currentModel()->attachView(&d->itemLibraryView);
 }
 
@@ -227,6 +237,14 @@ void ViewManager::detachAdditionalViews()
 {
     foreach (const QPointer<AbstractView> &view, d->additionalViews)
         currentModel()->detachView(view.data());
+}
+
+void ViewManager::detachStandardViews()
+{
+    for (const auto &view : standardViews()) {
+        if (view->isAttached())
+            currentModel()->detachView(view);
+    }
 }
 
 void ViewManager::attachComponentView()
@@ -262,52 +280,16 @@ void ViewManager::attachViewsExceptRewriterAndComponetView()
 
     qCInfo(viewBenchmark) << Q_FUNC_INFO;
 
-    currentModel()->attachView(&d->designerActionManagerView);
-
     int last = time.elapsed();
-    qCInfo(viewBenchmark) << "ActionManagerView:" << last << time.elapsed();
-
-    currentModel()->attachView(&d->edit3DView);
-
-    int currentTime = time.elapsed();
-    qCInfo(viewBenchmark) << "Edit3DView:" << currentTime - last;
-    last = currentTime;
-
-    currentModel()->attachView(&d->formEditorView);
-
-    currentTime = time.elapsed();
-    qCInfo(viewBenchmark) << "FormEditorView:" << currentTime - last;
-    last = currentTime;
-
-    currentModel()->attachView(&d->textEditorView);
-
-    currentTime = time.elapsed();
-    qCInfo(viewBenchmark) << "TextEditorView:" << currentTime - last;
-    last = currentTime;
-
-    currentModel()->attachView(&d->navigatorView);
-
-    currentTime = time.elapsed();
-    qCInfo(viewBenchmark) << "NavigatorView:" << currentTime - last;
-    last = currentTime;
-
-    attachItemLibraryView();
-
-    currentTime = time.elapsed();
-    qCInfo(viewBenchmark) << "ItemLibraryView:" << currentTime - last;
-    last = currentTime;
-
-    currentModel()->attachView(&d->statesEditorView);
-
-    currentTime = time.elapsed();
-    qCInfo(viewBenchmark) << "StatesEditorView:" << currentTime - last;
-    last = currentTime;
-
-    currentModel()->attachView(&d->propertyEditorView);
-
-    currentTime = time.elapsed();
-    qCInfo(viewBenchmark) << "PropertyEditorView:" << currentTime - last;
-    last = currentTime;
+    int currentTime = 0;
+    if (!d->disableStandardViews) {
+        for (const auto &view : standardViews()) {
+            currentModel()->attachView(view);
+            currentTime = time.elapsed();
+            qCInfo(viewBenchmark) << view->widgetInfo().uniqueId << currentTime - last;
+            last = currentTime;
+        }
+    }
 
     attachAdditionalViews();
 
@@ -457,6 +439,23 @@ void ViewManager::reformatFileUsingTextEditorView()
 bool ViewManager::usesRewriterView(RewriterView *rewriterView)
 {
     return currentDesignDocument()->rewriterView() == rewriterView;
+}
+
+void ViewManager::disableStandardViews()
+{
+    d->disableStandardViews = true;
+    detachStandardViews();
+}
+
+void ViewManager::enableStandardViews()
+{
+    d->disableStandardViews = false;
+    attachViewsExceptRewriterAndComponetView();
+}
+
+ImageCache &ViewManager::imageCache()
+{
+    return d->itemLibraryView.imageCache();
 }
 
 } // namespace QmlDesigner

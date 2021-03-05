@@ -110,35 +110,6 @@ Highlighter::Highlighter()
                             &categoryForTextStyle);
 }
 
-Highlighter::Definition Highlighter::definitionForDocument(const TextDocument *document)
-{
-    const Utils::MimeType mimeType = Utils::mimeTypeForName(document->mimeType());
-    Definition definition;
-    if (mimeType.isValid())
-        definition = Highlighter::definitionForMimeType(mimeType.name());
-    if (!definition.isValid())
-        definition = Highlighter::definitionForFilePath(document->filePath());
-    return definition;
-}
-
-Highlighter::Definition Highlighter::definitionForMimeType(const QString &mimeType)
-{
-    if (mimeType.isEmpty())
-        return {};
-    const Definitions definitions = definitionsForMimeType(mimeType);
-    if (definitions.size() == 1)
-        return definitions.first();
-    return highlightRepository()->definitionForMimeType(mimeType);
-}
-
-Highlighter::Definition Highlighter::definitionForFilePath(const Utils::FilePath &fileName)
-{
-    const Definitions definitions = definitionsForFileName(fileName);
-    if (definitions.size() == 1)
-        return definitions.first();
-    return highlightRepository()->definitionForFileName(fileName.fileName());
-}
-
 Highlighter::Definition Highlighter::definitionForName(const QString &name)
 {
     return highlightRepository()->definitionForName(name);
@@ -147,22 +118,30 @@ Highlighter::Definition Highlighter::definitionForName(const QString &name)
 Highlighter::Definitions Highlighter::definitionsForDocument(const TextDocument *document)
 {
     QTC_ASSERT(document, return {});
-    const Utils::MimeType &mimeType = Utils::mimeTypeForName(document->mimeType());
-    if (mimeType.isValid()) {
-        if (mimeType.name() == "text/plain") {
-            // text/plain is the base mime type for all text types so ignore it and try matching the
-            // file name against the pattern and only if no definition can be found for the
-            // file name try matching the mime type
-            const Definitions &fileNameDefinitions = definitionsForFileName(document->filePath());
-            if (!fileNameDefinitions.isEmpty())
-                return fileNameDefinitions;
-            return definitionsForMimeType(mimeType.name());
+    // First try to find definitions for the file path, only afterwards try the MIME type.
+    // An example where that is important is if there was a definition for "*.rb.xml", which
+    // cannot be referred to with a MIME type (since there is none), but there is the definition
+    // for XML files, which specifies a MIME type in addition to a glob pattern.
+    // If we check the MIME type first and then skip the pattern, the definition for "*.rb.xml" is
+    // never considered.
+    // The KSyntaxHighlighting CLI also completely ignores MIME types.
+    const Utils::FilePath &filePath = document->filePath();
+    Definitions definitions = definitionsForFileName(filePath);
+    if (definitions.isEmpty()) {
+        // check for *.in filename since those are usually used for
+        // cmake configure_file input filenames without the .in extension
+        if (filePath.endsWith(".in")) {
+            definitions = definitionsForFileName(
+                Utils::FilePath::fromString(filePath.toFileInfo().completeBaseName()));
         }
-        const Definitions &mimeTypeDefinitions = definitionsForMimeType(mimeType.name());
-        if (!mimeTypeDefinitions.isEmpty())
-            return mimeTypeDefinitions;
     }
-    return definitionsForFileName(document->filePath());
+    if (definitions.isEmpty()) {
+        const Utils::MimeType &mimeType = Utils::mimeTypeForName(document->mimeType());
+        if (mimeType.isValid())
+            definitions = definitionsForMimeType(mimeType.name());
+    }
+
+    return definitions;
 }
 
 static Highlighter::Definition definitionForSetting(const QString &settingsKey,
@@ -206,8 +185,8 @@ Highlighter::Definitions Highlighter::definitionsForFileName(const Utils::FilePa
     return definitions;
 }
 
-void Highlighter::rememberDefintionForDocument(const Highlighter::Definition &definition,
-                                               const TextDocument *document)
+void Highlighter::rememberDefinitionForDocument(const Highlighter::Definition &definition,
+                                                const TextDocument *document)
 {
     QTC_ASSERT(document, return );
     if (!definition.isValid())
@@ -217,26 +196,29 @@ void Highlighter::rememberDefintionForDocument(const Highlighter::Definition &de
     const QString &path = document->filePath().toFileInfo().canonicalFilePath();
     QSettings *settings = Core::ICore::settings();
     settings->beginGroup(Constants::HIGHLIGHTER_SETTINGS_CATEGORY);
-    if (!mimeType.isEmpty()) {
+    const Definitions &fileNameDefinitions = definitionsForFileName(document->filePath());
+    if (fileNameDefinitions.contains(definition)) {
+        if (!fileExtension.isEmpty()) {
+            const QString id(kDefinitionForExtension);
+            QMap<QString, QVariant> map = settings->value(id).toMap();
+            map.insert(fileExtension, definition.name());
+            settings->setValue(id, map);
+        } else if (!path.isEmpty()) {
+            const QString id(kDefinitionForFilePath);
+            QMap<QString, QVariant> map = settings->value(id).toMap();
+            map.insert(document->filePath().toFileInfo().absoluteFilePath(), definition.name());
+            settings->setValue(id, map);
+        }
+    } else if (!mimeType.isEmpty()) {
         const QString id(kDefinitionForMimeType);
         QMap<QString, QVariant> map = settings->value(id).toMap();
         map.insert(mimeType, definition.name());
-        settings->setValue(id, map);
-    } else if (!fileExtension.isEmpty()) {
-        const QString id(kDefinitionForExtension);
-        QMap<QString, QVariant> map = settings->value(id).toMap();
-        map.insert(fileExtension, definition.name());
-        settings->setValue(id, map);
-    } else if (!path.isEmpty()) {
-        const QString id(kDefinitionForFilePath);
-        QMap<QString, QVariant> map = settings->value(id).toMap();
-        map.insert(document->filePath().toFileInfo().absoluteFilePath(), definition.name());
         settings->setValue(id, map);
     }
     settings->endGroup();
 }
 
-void Highlighter::clearDefintionForDocumentCache()
+void Highlighter::clearDefinitionForDocumentCache()
 {
     QSettings *settings = Core::ICore::settings();
     settings->beginGroup(Constants::HIGHLIGHTER_SETTINGS_CATEGORY);

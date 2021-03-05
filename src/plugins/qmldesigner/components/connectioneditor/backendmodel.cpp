@@ -75,7 +75,7 @@ void BackendModel::resetModel()
     static const PropertyTypeList simpleTypes = {"int", "real", "color", "string"};
 
     if (rewriterView)
-        for (const CppTypeData &cppTypeData : rewriterView->getCppTypes())
+        for (const QmlTypeData &cppTypeData : rewriterView->getQMLTypes())
             if (cppTypeData.isSingleton) {
                 NodeMetaInfo metaInfo = m_connectionView->model()->metaInfo(cppTypeData.typeName.toUtf8());
                   if (metaInfo.isValid() && !metaInfo.isSubclassOf("QtQuick.Item")) {
@@ -104,7 +104,7 @@ void BackendModel::resetModel()
                   }
             }
 
-    if (rootNode.isValid())
+    if (rootNode.isValid()) {
         foreach (const AbstractProperty &property ,rootNode.properties())
             if (property.isDynamic() && !simpleTypes.contains(property.dynamicTypeName())) {
 
@@ -133,6 +133,7 @@ void BackendModel::resetModel()
                     appendRow({ type, name, singletonItem, inlineItem });
                 }
             }
+    }
 
     m_lock = false;
 
@@ -145,21 +146,22 @@ QStringList BackendModel::possibleCppTypes() const
 
     QStringList list;
 
-    if (rewriterView)
-        foreach (const CppTypeData &cppTypeData, rewriterView->getCppTypes())
+    if (rewriterView) {
+        foreach (const QmlTypeData &cppTypeData, rewriterView->getQMLTypes())
             list.append(cppTypeData.typeName);
+    }
 
     return list;
 }
 
-CppTypeData BackendModel::cppTypeDataForType(const QString &typeName) const
+QmlTypeData BackendModel::cppTypeDataForType(const QString &typeName) const
 {
     RewriterView *rewriterView = m_connectionView->model()->rewriterView();
 
     if (!rewriterView)
-        return CppTypeData();
+        return QmlTypeData();
 
-    return Utils::findOr(rewriterView->getCppTypes(), CppTypeData(), [&typeName](const CppTypeData &data) {
+    return Utils::findOr(rewriterView->getQMLTypes(), QmlTypeData(), [&typeName](const QmlTypeData &data) {
         return typeName == data.typeName;
     });
 }
@@ -173,7 +175,7 @@ void BackendModel::deletePropertyByRow(int rowNumber)
     /* singleton case remove the import */
     if (data(index(rowNumber, 0), Qt::UserRole + 1).toBool()) {
         const QString typeName = data(index(rowNumber, 0), Qt::UserRole + 1).toString();
-         CppTypeData cppTypeData = cppTypeDataForType(typeName);
+         QmlTypeData cppTypeData = cppTypeDataForType(typeName);
 
          if (cppTypeData.isSingleton) {
 
@@ -207,14 +209,14 @@ void BackendModel::addNewBackend()
     if (!model)
         return;
 
-    AddNewBackendDialog dialog(Core::ICore::mainWindow());
+    AddNewBackendDialog dialog(Core::ICore::dialogParent());
 
     RewriterView *rewriterView = model->rewriterView();
 
     QStringList availableTypes;
 
     if (rewriterView)
-        dialog.setupPossibleTypes(Utils::filtered(rewriterView->getCppTypes(), [model](const CppTypeData &cppTypeData) {
+        dialog.setupPossibleTypes(Utils::filtered(rewriterView->getQMLTypes(), [model](const QmlTypeData &cppTypeData) {
             return !cppTypeData.isSingleton || !model->metaInfo(cppTypeData.typeName.toUtf8()).isValid();
             /* Only show singletons if the import is missing */
         }));

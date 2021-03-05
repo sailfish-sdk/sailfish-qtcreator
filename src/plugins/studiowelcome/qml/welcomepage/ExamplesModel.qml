@@ -28,35 +28,35 @@ import QtQuick 2.0
 ListModel {
     ListElement {
         projectName: "ClusterTutorial"
-        qmlFileName: "Cluster_Art.ui.qml"
+        qmlFileName: "ClusterTutorial.qml"
         thumbnail: "images/tutorialclusterdemo_thumbnail.png"
         displayName: "Cluster Tutorial"
     }
 
     ListElement {
         projectName: "CoffeeMachine"
-        qmlFileName: "ApplicationFlowForm.ui.qml"
+        qmlFileName: "CoffeeMachine.qml"
         thumbnail: "images/coffeemachinedemo_thumbnail.png"
         displayName: "Coffee Machine"
     }
 
     ListElement {
         projectName: "SideMenu"
-        qmlFileName: "MainFile.ui.qml"
+        qmlFileName: "SideMenu.qml"
         thumbnail: "images/sidemenu_demo.png"
         displayName: "Side Menu"
     }
 
     ListElement {
         projectName: "WebinarDemo"
-        qmlFileName: "MainApp.ui.qml"
+        qmlFileName: "DesignStudioWebinar.qml"
         thumbnail: "images/webinardemo_thumbnail.png"
         displayName: "Webinar Demo"
     }
 
     ListElement {
         projectName: "EBikeDesign"
-        qmlFileName: "Screen01.ui.qml"
+        qmlFileName: "EBikeDesign.qml"
         thumbnail: "images/ebike_demo_thumbnail.png"
         displayName: "E-Bike Design"
     }

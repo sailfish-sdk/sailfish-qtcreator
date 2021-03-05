@@ -35,7 +35,7 @@
 namespace ProjectExplorer {
 namespace Internal {
 
-CustomParserConfigDialog::CustomParserConfigDialog(QDialog *parent) :
+CustomParserConfigDialog::CustomParserConfigDialog(QWidget *parent) :
     QDialog(parent),
     ui(new Ui::CustomParserConfigDialog)
 {
@@ -278,7 +278,8 @@ bool CustomParserConfigDialog::checkPattern(QLineEdit *pattern, const QString &o
     pattern->setPalette(palette);
     pattern->setToolTip(rx.isValid() ? QString() : rx.errorString());
 
-    *match = rx.match(outputText);
+    if (rx.isValid())
+        *match = rx.match(outputText);
     if (rx.pattern().isEmpty() || !rx.isValid() || !match->hasMatch()) {
         *errorMessage = QString::fromLatin1("<font color=\"%1\">%2 ").arg(
                     Utils::creatorTheme()->color(Utils::Theme::TextColorError).name(),

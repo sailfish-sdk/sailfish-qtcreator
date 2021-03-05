@@ -40,7 +40,6 @@
 
 QT_FORWARD_DECLARE_CLASS(QSpacerItem)
 
-namespace Core { class Id; }
 namespace Utils { class FilePath; }
 
 namespace ProjectExplorer {
@@ -79,7 +78,7 @@ public:
 
     bool isComplete() const override;
     bool setupProject(Project *project);
-    QList<Core::Id> selectedKits() const;
+    QList<Utils::Id> selectedKits() const;
 
     void openOptions();
     void changeAllKitsSelections();
@@ -88,6 +87,8 @@ public:
 
 private:
     void doInitializePage();
+
+    void showEvent(QShowEvent *event) final;
 
     void handleKitAddition(Kit *k);
     void handleKitRemoval(Kit *k);
@@ -122,7 +123,7 @@ private:
     {
         return k ? widget(k->id(), fallback) : fallback;
     }
-    Internal::TargetSetupWidget *widget(const Core::Id kitId,
+    Internal::TargetSetupWidget *widget(const Utils::Id kitId,
                                         Internal::TargetSetupWidget *fallback = nullptr) const;
 
     TasksGenerator m_tasksGenerator;

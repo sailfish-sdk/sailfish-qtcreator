@@ -28,73 +28,106 @@
 #include "androidconstants.h"
 #include "androidmanager.h"
 
-#include <projectexplorer/buildsteplist.h>
-#include <projectexplorer/target.h>
+#include <projectexplorer/abstractprocessstep.h>
 #include <projectexplorer/buildconfiguration.h>
+#include <projectexplorer/buildsteplist.h>
 #include <projectexplorer/gnumakeparser.h>
 #include <projectexplorer/kitinformation.h>
 #include <projectexplorer/processparameters.h>
 #include <projectexplorer/projectexplorerconstants.h>
+#include <projectexplorer/target.h>
+#include <projectexplorer/taskhub.h>
 #include <projectexplorer/toolchain.h>
+
+#include <qtsupport/baseqtversion.h>
+#include <qtsupport/qtkitinformation.h>
 
 #include <utils/hostosinfo.h>
 #include <utils/qtcprocess.h>
 
 #include <QDir>
+#include <QLoggingCategory>
 
 using namespace ProjectExplorer;
 using namespace Utils;
-using namespace Android::Internal;
+
+namespace {
+static Q_LOGGING_CATEGORY(packageInstallationStepLog, "qtc.android.packageinstallationstep", QtWarningMsg)
+}
 
 namespace Android {
+namespace Internal {
 
-AndroidPackageInstallationStep::AndroidPackageInstallationStep(BuildStepList *bsl, Core::Id id)
+class AndroidPackageInstallationStep final : public AbstractProcessStep
+{
+    Q_DECLARE_TR_FUNCTIONS(Android::AndroidPackageInstallationStep)
+
+public:
+    AndroidPackageInstallationStep(BuildStepList *bsl, Id id);
+
+    QString nativeAndroidBuildPath() const;
+
+private:
+    bool init() final;
+    void setupOutputFormatter(OutputFormatter *formatter) final;
+    void doRun() final;
+
+    QStringList m_androidDirsToClean;
+};
+
+AndroidPackageInstallationStep::AndroidPackageInstallationStep(BuildStepList *bsl, Id id)
     : AbstractProcessStep(bsl, id)
 {
-    const QString name = tr("Copy application data");
-    setDefaultDisplayName(name);
-    setDisplayName(name);
+    setDisplayName(tr("Copy application data"));
     setWidgetExpandedByDefault(false);
     setImmutable(true);
+    setSummaryUpdater([this] {
+        return tr("<b>Make install:</b> Copy App Files to %1").arg(nativeAndroidBuildPath());
+    });
+    setUseEnglishOutput();
 }
 
 bool AndroidPackageInstallationStep::init()
 {
-    BuildConfiguration *bc = buildConfiguration();
-    QString dirPath = bc->buildDirectory().pathAppended(Constants::ANDROID_BUILDDIRECTORY).toString();
-    if (HostOsInfo::isWindowsHost())
-        if (bc->environment().searchInPath("sh.exe").isEmpty())
-            dirPath = QDir::toNativeSeparators(dirPath);
+    if (!AbstractProcessStep::init())
+        return false;
 
-    ToolChain *tc = ToolChainKitAspect::toolChain(target()->kit(),
-                                                       ProjectExplorer::Constants::CXX_LANGUAGE_ID);
+    ToolChain *tc = ToolChainKitAspect::cxxToolChain(kit());
     QTC_ASSERT(tc, return false);
 
-    CommandLine cmd{tc->makeCommand(bc->environment())};
+    QString dirPath = nativeAndroidBuildPath();
     const QString innerQuoted = QtcProcess::quoteArg(dirPath);
     const QString outerQuoted = QtcProcess::quoteArg("INSTALL_ROOT=" + innerQuoted);
+
+    CommandLine cmd{tc->makeCommand(buildEnvironment())};
     cmd.addArgs(outerQuoted + " install", CommandLine::Raw);
 
-    ProcessParameters *pp = processParameters();
-    pp->setMacroExpander(bc->macroExpander());
-    pp->setWorkingDirectory(bc->buildDirectory());
-    Environment env = bc->environment();
-    Environment::setupEnglishOutput(&env);
-    pp->setEnvironment(env);
-    pp->setCommandLine(cmd);
-
-    setOutputParser(new GnuMakeParser());
-    IOutputParser *parser = target()->kit()->createOutputParser();
-    if (parser)
-        appendOutputParser(parser);
-    outputParser()->setWorkingDirectory(pp->effectiveWorkingDirectory());
+    processParameters()->setCommandLine(cmd);
 
     m_androidDirsToClean.clear();
     // don't remove gradle's cache, it takes ages to rebuild it.
     m_androidDirsToClean << dirPath + "/assets";
     m_androidDirsToClean << dirPath + "/libs";
 
-    return AbstractProcessStep::init();
+    return true;
+}
+
+QString AndroidPackageInstallationStep::nativeAndroidBuildPath() const
+{
+    QString buildPath = buildDirectory().pathAppended(Constants::ANDROID_BUILDDIRECTORY).toString();
+    if (HostOsInfo::isWindowsHost())
+        if (buildEnvironment().searchInPath("sh.exe").isEmpty())
+            buildPath = QDir::toNativeSeparators(buildPath);
+
+    return buildPath;
+}
+
+void AndroidPackageInstallationStep::setupOutputFormatter(OutputFormatter *formatter)
+{
+    formatter->addLineParser(new GnuMakeParser);
+    formatter->addLineParsers(kit()->createOutputParsers());
+    formatter->addSearchDir(processParameters()->effectiveWorkingDirectory());
+    AbstractProcessStep::setupOutputFormatter(formatter);
 }
 
 void AndroidPackageInstallationStep::doRun()
@@ -106,31 +139,33 @@ void AndroidPackageInstallationStep::doRun()
             emit addOutput(tr("Removing directory %1").arg(dir), OutputFormat::NormalMessage);
             if (!FileUtils::removeRecursively(androidDir, &error)) {
                 emit addOutput(error, OutputFormat::Stderr);
+                TaskHub::addTask(BuildSystemTask(Task::Error, error));
                 emit finished(false);
                 return;
             }
         }
     }
     AbstractProcessStep::doRun();
-}
 
-BuildStepConfigWidget *AndroidPackageInstallationStep::createConfigWidget()
-{
-    return new AndroidPackageInstallationStepWidget(this);
-}
+    // NOTE: This is a workaround for QTCREATORBUG-24155
+    // Needed for Qt 5.15.0 and Qt 5.14.x versions
+    if (buildType() == BuildConfiguration::BuildType::Debug) {
+        QtSupport::BaseQtVersion *version = QtSupport::QtKitAspect::qtVersion(kit());
+        if (version && version->qtVersion() >= QtSupport::QtVersionNumber{5, 14}
+            && version->qtVersion() <= QtSupport::QtVersionNumber{5, 15, 0}) {
+            const QString assetsDebugDir = nativeAndroidBuildPath().append(
+                "/assets/--Added-by-androiddeployqt--/");
+            QDir dir;
+            if (!dir.exists(assetsDebugDir))
+                dir.mkpath(assetsDebugDir);
 
-
-//
-// AndroidPackageInstallationStepWidget
-//
-
-namespace Internal {
-
-AndroidPackageInstallationStepWidget::AndroidPackageInstallationStepWidget(AndroidPackageInstallationStep *step)
-    : BuildStepConfigWidget(step)
-{
-    setDisplayName(tr("Make install"));
-    setSummaryText("<b>" + tr("Make install") + "</b>");
+            QFile file(assetsDebugDir + "debugger.command");
+            if (file.open(QIODevice::WriteOnly))
+                qCDebug(packageInstallationStepLog, "Successful added %s to the package.", qPrintable(file.fileName()));
+            else
+                qCDebug(packageInstallationStepLog, "Cound't add %s to the package. The QML debugger might not work properly.", qPrintable(file.fileName()));
+        }
+    }
 }
 
 //

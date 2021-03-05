@@ -26,6 +26,7 @@
 #include "rsyncdeploystep.h"
 
 #include "abstractremotelinuxdeployservice.h"
+#include "remotelinux_constants.h"
 
 #include <projectexplorer/deploymentdata.h>
 #include <projectexplorer/runconfigurationaspects.h>
@@ -89,7 +90,7 @@ void RsyncDeployService::doDeploy()
 void RsyncDeployService::filterDeployableFiles() const
 {
     if (m_ignoreMissingFiles) {
-        erase(m_deployableFiles, [](const DeployableFile &f) {
+        Utils::erase(m_deployableFiles, [](const DeployableFile &f) {
             return !f.localFilePath().exists();
         });
     }
@@ -177,24 +178,22 @@ void RsyncDeployService::setFinished()
 
 } // namespace Internal
 
-RsyncDeployStep::RsyncDeployStep(BuildStepList *bsl, Core::Id id)
+RsyncDeployStep::RsyncDeployStep(BuildStepList *bsl, Utils::Id id)
     : AbstractRemoteLinuxDeployStep(bsl, id)
 {
     auto service = createDeployService<Internal::RsyncDeployService>();
 
-    auto flags = addAspect<BaseStringAspect>();
-    flags->setDisplayStyle(BaseStringAspect::LineEditDisplay);
+    auto flags = addAspect<StringAspect>();
+    flags->setDisplayStyle(StringAspect::LineEditDisplay);
     flags->setSettingsKey("RemoteLinux.RsyncDeployStep.Flags");
     flags->setLabelText(tr("Flags:"));
     flags->setValue(defaultFlags());
 
-    auto ignoreMissingFiles = addAspect<BaseBoolAspect>();
+    auto ignoreMissingFiles = addAspect<BoolAspect>();
     ignoreMissingFiles->setSettingsKey("RemoteLinux.RsyncDeployStep.IgnoreMissingFiles");
     ignoreMissingFiles->setLabel(tr("Ignore missing files:"),
-                                 BaseBoolAspect::LabelPlacement::InExtraLabel);
+                                 BoolAspect::LabelPlacement::InExtraLabel);
     ignoreMissingFiles->setValue(false);
-
-    setDefaultDisplayName(displayName());
 
     setInternalInitializer([service, flags, ignoreMissingFiles] {
         service->setIgnoreMissingFiles(ignoreMissingFiles->value());
@@ -209,9 +208,9 @@ RsyncDeployStep::RsyncDeployStep(BuildStepList *bsl, Core::Id id)
 
 RsyncDeployStep::~RsyncDeployStep() = default;
 
-Core::Id RsyncDeployStep::stepId()
+Utils::Id RsyncDeployStep::stepId()
 {
-    return "RemoteLinux.RsyncDeployStep";
+    return Constants::RsyncDeployStepId;
 }
 
 QString RsyncDeployStep::displayName()

@@ -85,6 +85,7 @@ private slots:
 
     void test_FollowSymbolUnderCursor_QObject_connect_data();
     void test_FollowSymbolUnderCursor_QObject_connect();
+    void test_FollowSymbolUnderCursor_QObject_oldStyleConnect();
 
     void test_FollowSymbolUnderCursor_classOperator_onOperatorToken_data();
     void test_FollowSymbolUnderCursor_classOperator_onOperatorToken();
@@ -103,11 +104,20 @@ private slots:
     void test_quickfix();
 
     void test_quickfix_GenerateGetterSetter_basicGetterWithPrefixAndNamespaceToCpp();
+    void test_quickfix_GenerateGetterSetter_createNamespaceInCpp_data();
+    void test_quickfix_GenerateGetterSetter_createNamespaceInCpp();
     void test_quickfix_GenerateGetterSetter_onlyGetter();
     void test_quickfix_GenerateGetterSetter_onlyGetter_DontPreferGetterWithGet();
     void test_quickfix_GenerateGetterSetter_onlySetter();
+    void test_quickfix_GenerateGetterSetter_onlySetterHeaderFile();
+    void test_quickfix_GenerateGetterSetter_onlySetterHeaderFileWithIncludeGuard();
     void test_quickfix_GenerateGetterSetter_offerGetterWhenSetterPresent();
     void test_quickfix_GenerateGetterSetter_offerSetterWhenGetterPresent();
+    void test_quickfix_GenerateGettersSetters_data();
+    void test_quickfix_GenerateGettersSetters();
+
+    void test_quickfix_InsertMemberFromInitialization_data();
+    void test_quickfix_InsertMemberFromInitialization();
 
     void test_quickfix_ConvertQt4Connect_connectOutOfClass();
     void test_quickfix_ConvertQt4Connect_connectWithinClass_data();
@@ -135,6 +145,9 @@ private slots:
     void test_quickfix_InsertDefFromDecl_unicodeIdentifier();
     void test_quickfix_InsertDefFromDecl_templateClass();
     void test_quickfix_InsertDefFromDecl_templateFunction();
+    void test_quickfix_InsertDefFromDecl_notTriggeredForFriendFunc();
+    void test_quickfix_InsertDefsFromDecls_data();
+    void test_quickfix_InsertDefsFromDecls();
 
     void test_quickfix_InsertDeclFromDef();
     void test_quickfix_InsertDeclFromDef_templateFuncTypename();
@@ -144,6 +157,9 @@ private slots:
     void test_quickfix_AddIncludeForUndefinedIdentifier_data();
     void test_quickfix_AddIncludeForUndefinedIdentifier();
     void test_quickfix_AddIncludeForUndefinedIdentifier_noDoubleQtHeaderInclude();
+
+    void test_quickfix_AddForwardDeclForUndefinedIdentifier_data();
+    void test_quickfix_AddForwardDeclForUndefinedIdentifier();
 
     void test_quickfix_MoveFuncDefOutside_MemberFuncToCpp();
     void test_quickfix_MoveFuncDefOutside_MemberFuncToCppInsideNS();
@@ -161,6 +177,7 @@ private slots:
     void test_quickfix_MoveFuncDefOutside_respectWsInOperatorNames2();
     void test_quickfix_MoveFuncDefOutside_macroUses();
     void test_quickfix_MoveFuncDefOutside_template();
+    void test_quickfix_MoveFuncDefOutside_unnamedTemplate();
 
     void test_quickfix_MoveAllFuncDefOutside_MemberFuncToCpp();
     void test_quickfix_MoveAllFuncDefOutside_MemberFuncOutside();
@@ -193,6 +210,14 @@ private slots:
     void test_quickfix_ExtractLiteralAsParameter_memberFunction_separateFiles();
     void test_quickfix_ExtractLiteralAsParameter_notTriggeringForInvalidCode();
 
+    void test_quickfix_addCurlyBraces();
+
+    void test_quickfix_removeUsingNamespace_data();
+    void test_quickfix_removeUsingNamespace();
+    void test_quickfix_removeUsingNamespace_simple_data();
+    void test_quickfix_removeUsingNamespace_simple();
+    void test_quickfix_removeUsingNamespace_differentSymbols();
+
     void test_quickfix_InsertVirtualMethods_data();
     void test_quickfix_InsertVirtualMethods();
     void test_quickfix_InsertVirtualMethods_implementationFile();
@@ -200,6 +225,9 @@ private slots:
 
     void test_useSelections_data();
     void test_useSelections();
+
+    void test_selectionFiltering_data();
+    void test_selectionFiltering();
 
     // tests for "Include Hierarchy"
     void test_includehierarchy_data();

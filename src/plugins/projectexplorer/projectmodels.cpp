@@ -33,6 +33,7 @@
 #include "session.h"
 #include "target.h"
 
+#include <app/app_version.h>
 #include <coreplugin/documentmanager.h>
 #include <coreplugin/fileiconprovider.h>
 #include <coreplugin/icore.h>
@@ -144,7 +145,7 @@ QVariant FlatModel::data(const QModelIndex &index, int role) const
     }
     case Qt::DecorationRole: {
         if (!folderNode)
-            return Core::FileIconProvider::icon(node->filePath().toString());
+            return Core::FileIconProvider::icon(node->filePath().toFileInfo());
         if (!project)
             return folderNode->icon();
         static QIcon warnIcon = Utils::Icons::WARNING.icon();
@@ -214,35 +215,23 @@ bool FlatModel::setData(const QModelIndex &index, const QVariant &value, int rol
     // The base name of the file was changed. Go look for other files with the same base name
     // and offer to rename them as well.
     if (orgFilePath != newFilePath && orgFileInfo.suffix() == newFilePath.toFileInfo().suffix()) {
-        ProjectNode *productNode = node->parentProjectNode();
-        while (productNode && !productNode->isProduct())
-            productNode = productNode->parentProjectNode();
-        if (productNode) {
-            const auto filter = [&orgFilePath, &orgFileInfo](const Node *n) {
-                return n->asFileNode()
-                        && n->filePath().toFileInfo().dir() == orgFileInfo.dir()
-                        && n->filePath().toFileInfo().completeBaseName()
-                                == orgFileInfo.completeBaseName()
-                        && n->filePath() != orgFilePath;
-            };
-            const QList<Node *> candidateNodes = productNode->findNodes(filter);
-            if (!candidateNodes.isEmpty()) {
-                const QMessageBox::StandardButton reply = QMessageBox::question(
-                            Core::ICore::mainWindow(), tr("Rename More Files?"),
-                            tr("Would you like to rename these files as well?\n    %1")
-                            .arg(transform<QStringList>(candidateNodes, [](const Node *n) {
-                    return n->filePath().toFileInfo().fileName();
-                }).join("\n    ")));
-                if (reply == QMessageBox::Yes) {
-                    for (Node * const n : candidateNodes) {
-                        QString targetFilePath = orgFileInfo.absolutePath() + '/'
-                                + newFilePath.toFileInfo().completeBaseName();
-                        const QString suffix = n->filePath().toFileInfo().suffix();
-                        if (!suffix.isEmpty())
-                            targetFilePath.append('.').append(suffix);
-                        toRename.emplace_back(std::make_tuple(n, n->filePath(),
-                                FilePath::fromString(targetFilePath)));
-                    }
+        const QList<Node *> candidateNodes = ProjectTree::siblingsWithSameBaseName(node);
+        if (!candidateNodes.isEmpty()) {
+            const QMessageBox::StandardButton reply = QMessageBox::question(
+                        Core::ICore::dialogParent(), tr("Rename More Files?"),
+                        tr("Would you like to rename these files as well?\n    %1")
+                        .arg(transform<QStringList>(candidateNodes, [](const Node *n) {
+                                 return n->filePath().toFileInfo().fileName();
+                             }).join("\n    ")));
+            if (reply == QMessageBox::Yes) {
+                for (Node * const n : candidateNodes) {
+                    QString targetFilePath = orgFileInfo.absolutePath() + '/'
+                            + newFilePath.toFileInfo().completeBaseName();
+                    const QString suffix = n->filePath().toFileInfo().suffix();
+                    if (!suffix.isEmpty())
+                        targetFilePath.append('.').append(suffix);
+                    toRename.emplace_back(std::make_tuple(n, n->filePath(),
+                                                          FilePath::fromString(targetFilePath)));
                 }
             }
         }
@@ -370,6 +359,7 @@ void FlatModel::handleProjectAdded(Project *project)
             this, [this, project]() {
         if (nodeForProject(project))
             parsingStateChanged(project);
+        emit ProjectTree::instance()->nodeActionsChanged();
     });
     addOrRebuildProjectModel(project);
 }
@@ -490,8 +480,9 @@ public:
         setWindowTitle(tr("Choose Drop Action"));
         const bool offerFileIo = !defaultTargetDir.isEmpty();
         auto * const layout = new QVBoxLayout(this);
+        const QString idename(Core::Constants::IDE_DISPLAY_NAME);
         layout->addWidget(new QLabel(tr("You just dragged some files from one project node to "
-                                        "another.\nWhat should Qt Creator do now?"), this));
+                                        "another.\nWhat should %1 do now?").arg(idename), this));
         auto * const copyButton = new QRadioButton(this);
         m_buttonGroup->addButton(copyButton, int(DropAction::Copy));
         layout->addWidget(copyButton);
@@ -515,12 +506,13 @@ public:
             targetDirLayout->addWidget(new QLabel(tr("Target directory:"), this));
             m_targetDirChooser = new PathChooser(this);
             m_targetDirChooser->setExpectedKind(PathChooser::ExistingDirectory);
-            m_targetDirChooser->setFileName(defaultTargetDir);
+            m_targetDirChooser->setFilePath(defaultTargetDir);
             connect(m_targetDirChooser, &PathChooser::validChanged, this, [this](bool valid) {
                 m_buttonBox->button(QDialogButtonBox::Ok)->setEnabled(valid);
             });
             targetDirLayout->addWidget(m_targetDirChooser);
-            connect(m_buttonGroup, QOverload<int>::of(&QButtonGroup::buttonClicked), this, [this] {
+            connect(m_buttonGroup, QOverload<QAbstractButton *>::of(&QButtonGroup::buttonClicked),
+                    this, [this] {
                 switch (dropAction()) {
                 case DropAction::CopyWithFiles:
                 case DropAction::MoveWithFiles:
@@ -548,7 +540,7 @@ public:
     DropAction dropAction() const { return static_cast<DropAction>(m_buttonGroup->checkedId()); }
     FilePath targetDir() const
     {
-        return m_targetDirChooser ? m_targetDirChooser->fileName() : FilePath();
+        return m_targetDirChooser ? m_targetDirChooser->filePath() : FilePath();
     }
 
 private:
@@ -759,8 +751,7 @@ bool FlatModel::dropMimeData(const QMimeData *data, Qt::DropAction action, int r
                                            "files. Please check your repository."))
                     .append("\n  ").append(makeUserFileList(failedVcsOp));
         }
-        QMessageBox::warning(Core::ICore::mainWindow(), tr("Failure Updating Project"),
-                             message);
+        QMessageBox::warning(Core::ICore::dialogParent(), tr("Failure Updating Project"), message);
     }
 
     return true;

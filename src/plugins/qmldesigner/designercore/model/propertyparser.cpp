@@ -31,6 +31,7 @@
 
 #include <QUrl>
 #include <QVector3D>
+#include <QVector2D>
 #include <QDebug>
 
 namespace {
@@ -88,8 +89,8 @@ QPointF pointFFromString(const QString &s, bool *ok)
 
     bool xGood, yGood;
     int index = s.indexOf(QLatin1Char(','));
-    qreal xCoord = s.leftRef(index).toDouble(&xGood);
-    qreal yCoord = s.midRef(index+1).toDouble(&yGood);
+    qreal xCoord = s.left(index).toDouble(&xGood);
+    qreal yCoord = s.mid(index + 1).toDouble(&yGood);
     if (!xGood || !yGood) {
         if (ok)
             *ok = false;
@@ -111,12 +112,12 @@ QRectF rectFFromString(const QString &s, bool *ok)
 
     bool xGood, yGood, wGood, hGood;
     int index = s.indexOf(QLatin1Char(','));
-    qreal x = s.leftRef(index).toDouble(&xGood);
+    qreal x = s.left(index).toDouble(&xGood);
     int index2 = s.indexOf(QLatin1Char(','), index+1);
-    qreal y = s.midRef(index+1, index2-index-1).toDouble(&yGood);
+    qreal y = s.mid(index + 1, index2 - index - 1).toDouble(&yGood);
     index = s.indexOf(QLatin1Char('x'), index2+1);
-    qreal width = s.midRef(index2+1, index-index2-1).toDouble(&wGood);
-    qreal height = s.midRef(index+1).toDouble(&hGood);
+    qreal width = s.mid(index2 + 1, index - index2 - 1).toDouble(&wGood);
+    qreal height = s.mid(index + 1).toDouble(&hGood);
     if (!xGood || !yGood || !wGood || !hGood) {
         if (ok)
             *ok = false;
@@ -138,8 +139,8 @@ QSizeF sizeFFromString(const QString &s, bool *ok)
 
     bool wGood, hGood;
     int index = s.indexOf(QLatin1Char('x'));
-    qreal width = s.leftRef(index).toDouble(&wGood);
-    qreal height = s.midRef(index+1).toDouble(&hGood);
+    qreal width = s.left(index).toDouble(&wGood);
+    qreal height = s.mid(index + 1).toDouble(&hGood);
     if (!wGood || !hGood) {
         if (ok)
             *ok = false;
@@ -149,6 +150,29 @@ QSizeF sizeFFromString(const QString &s, bool *ok)
     if (ok)
         *ok = true;
     return QSizeF(width, height);
+}
+
+QVector2D vector2DFromString(const QString &s, bool *ok)
+{
+    if (s.count(QLatin1Char(',')) != 1) {
+        if (ok)
+            *ok = false;
+        return {};
+    }
+
+    bool xGood, yGood;
+    int index = s.indexOf(QLatin1Char(','));
+    qreal xCoord = s.left(index).toDouble(&xGood);
+    qreal yCoord = s.mid(index + 1).toDouble(&yGood);
+    if (!xGood || !yGood) {
+        if (ok)
+            *ok = false;
+        return QVector2D();
+    }
+
+    if (ok)
+        *ok = true;
+    return QVector2D(xCoord, yCoord);
 }
 
 QVector3D vector3DFromString(const QString &s, bool *ok)
@@ -162,9 +186,9 @@ QVector3D vector3DFromString(const QString &s, bool *ok)
     bool xGood, yGood, zGood;
     int index = s.indexOf(QLatin1Char(','));
     int index2 = s.indexOf(QLatin1Char(','), index+1);
-    qreal xCoord = s.leftRef(index).toDouble(&xGood);
-    qreal yCoord = s.midRef(index+1, index2-index-1).toDouble(&yGood);
-    qreal zCoord = s.midRef(index2+1).toDouble(&zGood);
+    qreal xCoord = s.left(index).toDouble(&xGood);
+    qreal yCoord = s.mid(index + 1, index2 - index - 1).toDouble(&yGood);
+    qreal zCoord = s.mid(index2 + 1).toDouble(&zGood);
     if (!xGood || !yGood || !zGood) {
         if (ok)
             *ok = false;
@@ -241,6 +265,9 @@ QVariant read(int variantType, const QString &str)
     case QMetaType::QColor:
         value = colorFromString(str, &conversionOk);
         break;
+    case QMetaType::QVector2D:
+        value = vector2DFromString(str, &conversionOk);
+        break;
     case QMetaType::QVector3D:
         value = vector3DFromString(str, &conversionOk);
         break;
@@ -277,8 +304,10 @@ QVariant variantFromString(const QString &s)
     if (ok) return QVariant(p);
     QSizeF sz = sizeFFromString(s, &ok);
     if (ok) return QVariant(sz);
-    QVector3D v = vector3DFromString(s, &ok);
-    if (ok) return QVariant::fromValue(v);
+    QVector3D v3 = vector3DFromString(s, &ok);
+    if (ok) return QVariant::fromValue(v3);
+    QVector2D v2 = vector2DFromString(s, &ok);
+    if (ok) return QVariant::fromValue(v2);
 
     return QVariant(s);
 }

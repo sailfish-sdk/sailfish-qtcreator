@@ -29,10 +29,7 @@
 
 #include <QProcess>
 
-namespace Utils { class FilePath; }
 namespace ProjectExplorer {
-
-class IOutputParser;
 class ProcessParameters;
 
 // Documentation inside.
@@ -42,44 +39,40 @@ class PROJECTEXPLORER_EXPORT AbstractProcessStep : public BuildStep
 
 public:
     ProcessParameters *processParameters();
+    void setupProcessParameters(ProcessParameters *params);
 
-    bool ignoreReturnValue();
+    bool ignoreReturnValue() const;
     void setIgnoreReturnValue(bool b);
 
-    void setOutputParser(IOutputParser *parser);
-    void appendOutputParser(IOutputParser *parser);
-    IOutputParser *outputParser() const;
+    void setCommandLineProvider(const std::function<Utils::CommandLine()> &provider);
+    void setWorkingDirectoryProvider(const std::function<Utils::FilePath()> &provider);
+    void setEnvironmentModifier(const std::function<void(Utils::Environment &)> &modifier);
+    void setUseEnglishOutput();
 
     void emitFaultyConfigurationMessage();
 
 protected:
-    AbstractProcessStep(BuildStepList *bsl, Core::Id id);
+    AbstractProcessStep(BuildStepList *bsl, Utils::Id id);
     ~AbstractProcessStep() override;
-    bool init() override;
-    void doRun() override;
-    void setLowPriority();
-    virtual void finish(bool success);
 
+    bool init() override;
+    void setupOutputFormatter(Utils::OutputFormatter *formatter) override;
+    void doRun() override;
+    void doCancel() override;
+    void setLowPriority();
+
+    virtual void finish(bool success);
     virtual void processStarted();
     virtual void processFinished(int exitCode, QProcess::ExitStatus status);
     virtual void processStartupFailed();
     virtual bool processSucceeded(int exitCode, QProcess::ExitStatus status);
-    virtual void stdOutput(const QString &line);
-    virtual void stdError(const QString &line);
-
-    void doCancel() override;
+    virtual void stdOutput(const QString &output);
+    virtual void stdError(const QString &output);
 
 private:
-
     void processReadyReadStdOutput();
     void processReadyReadStdError();
     void slotProcessFinished(int, QProcess::ExitStatus);
-
-    void cleanUp(QProcess *process);
-
-    void taskAdded(const Task &task, int linkedOutputLines = 0, int skipLines = 0);
-
-    void outputAdded(const QString &string, BuildStep::OutputFormat format);
 
     class Private;
     Private *d;

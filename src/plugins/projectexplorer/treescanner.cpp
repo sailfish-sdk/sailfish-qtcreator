@@ -64,11 +64,10 @@ bool TreeScanner::asyncScanForFiles(const Utils::FilePath &directory)
     if (!m_futureWatcher.isFinished())
         return false;
 
-    auto fi = new FutureInterface();
-    m_scanFuture = fi->future();
+    m_scanFuture = Utils::runAsync([this, directory](FutureInterface &fi) {
+        TreeScanner::scanForFiles(fi, directory, m_filter, m_factory);
+    });
     m_futureWatcher.setFuture(m_scanFuture);
-
-    Utils::runAsync([this, fi, directory]() { TreeScanner::scanForFiles(fi, directory, m_filter, m_factory); });
 
     return true;
 }
@@ -104,11 +103,12 @@ TreeScanner::Result TreeScanner::result() const
 
 TreeScanner::Result TreeScanner::release()
 {
-    if (isFinished()) {
+    if (isFinished() && m_scanFuture.resultCount() > 0) {
         auto result = m_scanFuture.result();
         m_scanFuture = Future();
         return result;
     }
+    m_scanFuture = Future();
     return Result();
 }
 
@@ -145,14 +145,10 @@ FileType TreeScanner::genericFileType(const Utils::MimeType &mimeType, const Uti
     return Node::fileTypeForMimeType(mimeType);
 }
 
-void TreeScanner::scanForFiles(FutureInterface *fi, const Utils::FilePath& directory,
+void TreeScanner::scanForFiles(FutureInterface &fi, const Utils::FilePath& directory,
                                const FileFilter &filter, const FileTypeFactory &factory)
 {
-    std::unique_ptr<FutureInterface> fip(fi);
-    fip->reportStarted();
-
-    Result nodes = FileNode::scanForFiles(
-                directory,
+    Result nodes = FileNode::scanForFiles(fi, directory,
                 [&filter, &factory](const Utils::FilePath &fn) -> FileNode * {
         const Utils::MimeType mimeType = Utils::mimeTypeForFile(fn.toString());
 
@@ -166,13 +162,12 @@ void TreeScanner::scanForFiles(FutureInterface *fi, const Utils::FilePath& direc
             type = factory(mimeType, fn);
 
         return new FileNode(fn, type);
-    }, fip.get());
+    });
 
     Utils::sort(nodes, ProjectExplorer::Node::sortByPath);
 
-    fip->setProgressValue(fip->progressMaximum());
-    fip->reportResult(nodes);
-    fip->reportFinished();
+    fi.setProgressValue(fi.progressMaximum());
+    fi.reportResult(nodes);
 }
 
 } // namespace ProjectExplorer

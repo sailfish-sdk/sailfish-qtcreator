@@ -47,6 +47,9 @@
             is not available, the tooltip displays type information for the
             symbol.
 
+        \li To display tooltips for function signatures regardless of the
+            cursor position in the function call, press \key {Ctrl+Shift+D}.
+
         \li To display the full help on a Qt class or function, press \key F1 or
             select \uicontrol {Context Help} in the context menu.
             The documentation is displayed in a
@@ -75,24 +78,11 @@
     To switch to the editor context when you close the last help page, select
     the \uicontrol {Return to editor on closing the last page} check box.
 
-    \section1 Selecting the Help Viewer Backend
-
     The help viewer backend determines the style sheet that is used to display
-    the help files. A help viewer backend that is based on the \l {QTextBrowser}
-    is used by default. However, it has several issues that have been fixed when
-    using litehtml as the help viewer backend.
-
-    On \macos, you can also use a help viewer backend that is based on the
-    system WebView component.
-
-    To switch the help viewer backend:
-
-    \list 1
-        \li Select \uicontrol Tools > \uicontrol Options > \uicontrol Help >
-        \uicontrol General.
-        \li In the \uicontrol {Viewer backend} field, select a viewer backend.
-        \li Reload the help page to take the new backend to use.
-    \endlist
+    the help files. The default help viewer backend that is based on litehtml
+    is recommended for viewing Qt documentation. You can choose another help
+    viewer backend in the \uicontrol {Viewer backend} field. To take the new
+    backend to use, reload the help page.
 
     \section1 Viewing Function Tooltips
 
@@ -261,28 +251,32 @@
     contents of the \uicontrol Index and \uicontrol Contents
     view in the sidebar change accordingly.
 
-    \image qtcreator-help-filters.png "Help filters"
+    \image qtcreator-help-filters.png "Filters field on the Help mode toolbar"
 
-    You can modify the filters to include external documentation, for example,
-    or you can define your own filters. To construct filters, you can use the
-    filter attributes that are specified in the documentation. Each document
-    contains at least one filter attribute. If several documents contain the
-    same filter attribute, such as \c tools, you can use that attribute to
-    include all those documents.
+    You can define your own filters to display documentation for a set of
+    Qt modules and versions.
 
     To add filters:
 
     \list 1
 
         \li Select \uicontrol Tools > \uicontrol Options > \uicontrol Help >
-            \uicontrol Filters > \uicontrol Add.
+            \uicontrol Filters.
 
-        \li Enter a name for the filter and press \uicontrol {OK}.
+            \image qtcreator-help-filter-attributes.png "Filters tab in Help options"
 
-        \li In \uicontrol Attributes, select the documents that you want to include
+        \li Select \inlineimage plus.png
+            to add a new filter in the \uicontrol {Add Filter} dialog.
+
+        \li In the \uicontrol {Filter name} field, enter a name for the filter,
+            and then select \uicontrol {OK} to return to the \uicontrol Filters
+            tab.
+
+        \li In the \uicontrol Components field, select the Qt modules to include
             in the filter.
 
-            \image qtcreator-help-filter-attributes.png "Help filter attributes"
+        \li In the \uicontrol Versions field, select the Qt versions to include
+            in the filter.
 
         \li Click \uicontrol OK.
 
@@ -291,9 +285,11 @@
 
     \endlist
 
-    To modify filters, select a filter in \uicontrol Filters, select the attributes,
-    and then click \uicontrol Apply.
+    To modify the selected filter, add and remove Qt modules and versions, and
+    then select \uicontrol Apply.
 
-    To remove filters, select them in \uicontrol Filters, and click \uicontrol Remove.
+    To rename the selected filter, select \uicontrol Rename.
 
+    To remove the selected filter select \inlineimage minus.png
+    .
 */

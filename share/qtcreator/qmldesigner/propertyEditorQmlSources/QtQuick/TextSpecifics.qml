@@ -37,6 +37,7 @@ Column {
         showElide: true
         showFontSizeMode: true
         showLineHeight: true
+        richTextEditorAvailable: true
     }
 
     Section {
@@ -56,6 +57,7 @@ Column {
         anchors.left: parent.left
         anchors.right: parent.right
         caption: qsTr("Style Color")
+        visible: backendValues.styleColor.isAvailable
 
         ColorEditor {
             caption: qsTr("Style Color")

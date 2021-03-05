@@ -28,12 +28,17 @@
 #include <qmldesignerplugin.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/actionmanager/actionmanager.h>
+#include <bindingeditor/bindingeditordialog.h>
+#include <qmldesignerconstants.h>
 
 #include <metainfo.h>
 #include <qmlmodelnodeproxy.h>
 #include <nodeabstractproperty.h>
 #include <nodelistproperty.h>
 #include <propertyeditorvalue.h>
+
+#include <bindingproperty.h>
+#include <variantproperty.h>
 
 namespace QmlDesigner {
 
@@ -53,21 +58,34 @@ void BindingEditor::registerDeclarativeType()
     qmlRegisterType<BindingEditor>("HelperWidgets", 2, 0, "BindingEditor");
 }
 
-void BindingEditor::showWidget(int x, int y)
+void BindingEditor::prepareDialog()
 {
+    QmlDesignerPlugin::emitUsageStatistics(Constants::EVENT_BINDINGEDITOR_OPENED);
+
     if (s_lastBindingEditor)
         s_lastBindingEditor->hideWidget();
+
     s_lastBindingEditor = this;
 
     m_dialog = new BindingEditorDialog(Core::ICore::dialogParent());
 
-
-    QObject::connect(m_dialog, &BindingEditorDialog::accepted,
+    QObject::connect(m_dialog, &AbstractEditorDialog::accepted,
                      this, &BindingEditor::accepted);
-    QObject::connect(m_dialog, &BindingEditorDialog::rejected,
+    QObject::connect(m_dialog, &AbstractEditorDialog::rejected,
                      this, &BindingEditor::rejected);
 
     m_dialog->setAttribute(Qt::WA_DeleteOnClose);
+}
+
+void BindingEditor::showWidget()
+{
+    prepareDialog();
+    m_dialog->showWidget();
+}
+
+void BindingEditor::showWidget(int x, int y)
+{
+    prepareDialog();
     m_dialog->showWidget(x, y);
 }
 
@@ -75,8 +93,8 @@ void BindingEditor::hideWidget()
 {
     if (s_lastBindingEditor == this)
         s_lastBindingEditor = nullptr;
-    if (m_dialog)
-    {
+
+    if (m_dialog) {
         m_dialog->unregisterAutoCompletion(); //we have to do it separately, otherwise we have an autocompletion action override
         m_dialog->close();
     }
@@ -104,8 +122,7 @@ void BindingEditor::setBackendValue(const QVariant &backendValue)
         const PropertyEditorValue *propertyEditorValue = qobject_cast<const PropertyEditorValue *>(backendValueObj);
         const ModelNode node = propertyEditorValue->modelNode();
 
-        if (node.isValid())
-        {
+        if (node.isValid()) {
             m_backendValueTypeName = node.metaInfo().propertyTypeName(propertyEditorValue->name());
 
             if (m_backendValueTypeName == "alias" || m_backendValueTypeName == "unknown")
@@ -127,9 +144,8 @@ void BindingEditor::setModelNodeBackend(const QVariant &modelNodeBackend)
         const auto backendObjectCasted =
                 qobject_cast<const QmlDesigner::QmlModelNodeProxy *>(modelNodeBackendObject);
 
-        if (backendObjectCasted) {
+        if (backendObjectCasted)
             m_modelNode = backendObjectCasted->qmlObjectNode().modelNode();
-        }
 
         emit modelNodeBackendChanged();
     }
@@ -137,8 +153,7 @@ void BindingEditor::setModelNodeBackend(const QVariant &modelNodeBackend)
 
 void BindingEditor::setStateModelNode(const QVariant &stateModelNode)
 {
-    if (stateModelNode.isValid())
-    {
+    if (stateModelNode.isValid()) {
         m_stateModelNode = stateModelNode;
         m_modelNode = m_stateModelNode.value<QmlDesigner::ModelNode>();
 
@@ -147,6 +162,19 @@ void BindingEditor::setStateModelNode(const QVariant &stateModelNode)
 
         emit stateModelNodeChanged();
     }
+}
+
+void BindingEditor::setModelNode(const ModelNode &modelNode)
+{
+    if (modelNode.isValid())
+        m_modelNode = modelNode;
+}
+
+void BindingEditor::setBackendValueTypeName(const TypeName &backendValueTypeName)
+{
+    m_backendValueTypeName = backendValueTypeName;
+
+    emit backendValueChanged();
 }
 
 void BindingEditor::prepareBindings()
@@ -158,18 +186,55 @@ void BindingEditor::prepareBindings()
 
     QList<BindingEditorDialog::BindingOption> bindings;
 
-    for (auto objnode : allNodes) {
+    const QList<TypeName> variantTypes = {"alias", "unknown", "variant", "var"};
+    const QList<TypeName> numericTypes = {"double", "real", "int"};
+    const QList<TypeName> colorTypes = {"QColor", "color"};
+    auto isVariant = [&variantTypes](const TypeName &compareType) { return variantTypes.contains(compareType); };
+    auto isNumeric = [&numericTypes](const TypeName &compareType) { return numericTypes.contains(compareType); };
+    auto isColor = [&colorTypes](const TypeName &compareType) { return colorTypes.contains(compareType); };
+
+    const bool skipTypeFiltering = isVariant(m_backendValueTypeName);
+    const bool targetTypeIsNumeric = isNumeric(m_backendValueTypeName);
+
+    for (const auto &objnode : allNodes) {
         BindingEditorDialog::BindingOption binding;
-        for (auto propertyName : objnode.metaInfo().propertyNames())
-        {
+        for (const auto &propertyName : objnode.metaInfo().propertyNames()) {
             TypeName propertyTypeName = objnode.metaInfo().propertyTypeName(propertyName);
 
-            if ((propertyTypeName == "alias" || propertyTypeName == "unknown"))
-                if (QmlObjectNode::isValidQmlObjectNode(objnode))
-                    propertyTypeName = QmlObjectNode(objnode).instanceType(propertyName);
-
-            if (m_backendValueTypeName == propertyTypeName)
+            if (skipTypeFiltering
+                    || (m_backendValueTypeName == propertyTypeName)
+                    || isVariant(propertyTypeName)
+                    || (targetTypeIsNumeric && isNumeric(propertyTypeName))) {
                 binding.properties.append(QString::fromUtf8(propertyName));
+            }
+        }
+
+        //dynamic properties:
+        for (const BindingProperty &bindingProperty : objnode.bindingProperties()) {
+            if (bindingProperty.isValid()) {
+                if (bindingProperty.isDynamic()) {
+                    const TypeName dynamicTypeName = bindingProperty.dynamicTypeName();
+                    if (skipTypeFiltering
+                            || (dynamicTypeName == m_backendValueTypeName)
+                            || isVariant(dynamicTypeName)
+                            || (targetTypeIsNumeric && isNumeric(dynamicTypeName))) {
+                        binding.properties.append(QString::fromUtf8(bindingProperty.name()));
+                    }
+                }
+            }
+        }
+        for (const VariantProperty &variantProperty : objnode.variantProperties()) {
+            if (variantProperty.isValid()) {
+                if (variantProperty.isDynamic()) {
+                    const TypeName dynamicTypeName = variantProperty.dynamicTypeName();
+                    if (skipTypeFiltering
+                            || (dynamicTypeName == m_backendValueTypeName)
+                            || isVariant(dynamicTypeName)
+                            || (targetTypeIsNumeric && isNumeric(dynamicTypeName))) {
+                        binding.properties.append(QString::fromUtf8(variantProperty.name()));
+                    }
+                }
+            }
         }
 
         if (!binding.properties.isEmpty() && objnode.hasId()) {
@@ -178,18 +243,44 @@ void BindingEditor::prepareBindings()
         }
     }
 
-    if (!bindings.isEmpty() && !m_dialog.isNull())
-        m_dialog->setAllBindings(bindings);
+    //singletons:
+    if (RewriterView *rv = m_modelNode.view()->rewriterView()) {
+        for (const QmlTypeData &data : rv->getQMLTypes()) {
+            if (!data.typeName.isEmpty()) {
+                NodeMetaInfo metaInfo = m_modelNode.view()->model()->metaInfo(data.typeName.toUtf8());
 
-    updateWindowName();
+                if (metaInfo.isValid()) {
+                    BindingEditorDialog::BindingOption binding;
+
+                    for (const PropertyName &propertyName : metaInfo.propertyNames()) {
+                        TypeName propertyTypeName = metaInfo.propertyTypeName(propertyName);
+
+                        if (skipTypeFiltering
+                                || (m_backendValueTypeName == propertyTypeName)
+                                || (isVariant(propertyTypeName))
+                                || (targetTypeIsNumeric && isNumeric(propertyTypeName))
+                                || (isColor(m_backendValueTypeName) && isColor(propertyTypeName))) {
+                            binding.properties.append(QString::fromUtf8(propertyName));
+                        }
+                    }
+
+                    if (!binding.properties.isEmpty()) {
+                        binding.item = data.typeName;
+                        bindings.append(binding);
+                    }
+                }
+            }
+        }
+    }
+
+    if (!bindings.isEmpty() && !m_dialog.isNull())
+        m_dialog->setAllBindings(bindings, m_backendValueTypeName);
 }
 
 void BindingEditor::updateWindowName()
 {
     if (!m_dialog.isNull() && !m_backendValueTypeName.isEmpty())
-    {
         m_dialog->setWindowTitle(m_dialog->defaultTitle() + " [" + m_backendValueTypeName + "]");
-    }
 }
 
 QVariant BindingEditor::backendValue() const

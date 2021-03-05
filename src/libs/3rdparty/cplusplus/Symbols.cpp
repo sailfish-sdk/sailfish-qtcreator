@@ -191,7 +191,7 @@ Declaration::Declaration(Clone *clone, Subst *subst, Declaration *original)
                     if (const TemplateNameId * templateNameId =
                             namedType->name()->asTemplateNameId()) {
                         if (templateNameId->templateArgumentCount()) {
-                            newType = clone->type(templateNameId->templateArgumentAt(0), nullptr);
+                            newType = clone->type(templateNameId->templateArgumentAt(0).type(), nullptr);
                             newType = FullySpecifiedType(clone->control()->pointerType(newType));
                         }
                     }
@@ -339,6 +339,28 @@ bool Function::isSignatureEqualTo(const Function *other, Matcher *matcher) const
     else if (! Matcher::match(unqualifiedName(), other->unqualifiedName(), matcher))
         return false;
 
+    class FallbackMatcher : public Matcher
+    {
+    public:
+        explicit FallbackMatcher(Matcher *baseMatcher) : m_baseMatcher(baseMatcher) {}
+
+    private:
+        bool match(const NamedType *type, const NamedType *otherType) override
+        {
+            if (type == otherType)
+                 return true;
+            const Name *name = type->name();
+            if (const QualifiedNameId *q = name->asQualifiedNameId())
+                name = q->name();
+            const Name *otherName = otherType->name();
+            if (const QualifiedNameId *q = otherName->asQualifiedNameId())
+                otherName = q->name();
+            return Matcher::match(name, otherName, m_baseMatcher);
+        }
+
+        Matcher * const m_baseMatcher;
+    } fallbackMatcher(matcher);
+
     const int argc = argumentCount();
     if (argc != other->argumentCount())
         return false;
@@ -359,6 +381,8 @@ bool Function::isSignatureEqualTo(const Function *other, Matcher *matcher) const
                 if (lType.match(rType))
                     continue;
             }
+            if (l->type().match(r->type(), &fallbackMatcher))
+                continue;
             return false;
         }
     }
@@ -381,6 +405,7 @@ FullySpecifiedType Function::type() const
     FullySpecifiedType ty(const_cast<Function *>(this));
     ty.setConst(isConst());
     ty.setVolatile(isVolatile());
+    ty.setStatic(isStatic());
     return ty;
 }
 
@@ -469,6 +494,12 @@ bool Function::isVariadic() const
 void Function::setVariadic(bool isVariadic)
 { f._isVariadic = isVariadic; }
 
+bool Function::isVariadicTemplate() const
+{ return f._isVariadicTemplate; }
+
+void Function::setVariadicTemplate(bool isVariadicTemplate)
+{ f._isVariadicTemplate = isVariadicTemplate; }
+
 bool Function::isConst() const
 { return f._isConst; }
 
@@ -522,6 +553,9 @@ bool Function::maybeValidPrototype(int actualArgumentCount) const
         if (arg->hasInitializer())
             break;
     }
+
+    if (isVariadicTemplate())
+        --minNumberArguments;
 
     if (actualArgumentCount < minNumberArguments) {
         // not enough arguments.

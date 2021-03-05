@@ -208,7 +208,7 @@ TEST_F(CompilerOptionsBuilder, HeaderPathOptionsOrder)
                             "-nostdinc++",
                             "-I", toNative("/tmp/path"),
                             "-I", toNative("/tmp/system_path"),
-                            "-isystem", toNative(CLANG_RESOURCE_DIR ""),
+                            "-isystem", toNative(CLANG_INCLUDE_DIR ""),
                             "-isystem", toNative("/tmp/builtin_path")));
 }
 
@@ -232,7 +232,7 @@ TEST_F(CompilerOptionsBuilder, HeaderPathOptionsOrderCl)
                             "-I", toNative("/tmp/path"),
                             "-I", toNative("/tmp/system_path"),
                             "/clang:-isystem",
-                            "/clang:" + toNative(CLANG_RESOURCE_DIR ""),
+                            "/clang:" + toNative(CLANG_INCLUDE_DIR ""),
                             "/clang:-isystem",
                             "/clang:" + toNative("/tmp/builtin_path")));
 }
@@ -254,7 +254,7 @@ TEST_F(CompilerOptionsBuilder, UseSystemHeader)
                             "-nostdinc++",
                             "-I", toNative("/tmp/path"),
                             "-isystem", toNative("/tmp/system_path"),
-                            "-isystem", toNative(CLANG_RESOURCE_DIR ""),
+                            "-isystem", toNative(CLANG_INCLUDE_DIR ""),
                             "-isystem", toNative("/tmp/builtin_path")));
 }
 
@@ -297,7 +297,7 @@ TEST_F(CompilerOptionsBuilder, ClangHeadersAndCppIncludesPathsOrderMacOs)
                             "-isystem", toNative("/usr/include/c++/4.2.1"),
                             "-isystem", toNative("/usr/include/c++/4.2.1/backward"),
                             "-isystem", toNative("/usr/local/include"),
-                            "-isystem", toNative(CLANG_RESOURCE_DIR ""),
+                            "-isystem", toNative(CLANG_INCLUDE_DIR ""),
                             "-isystem", toNative("/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include"),
                             "-isystem", toNative("/usr/include"),
                             "-isystem", toNative("/tmp/builtin_path")));
@@ -334,7 +334,7 @@ TEST_F(CompilerOptionsBuilder, ClangHeadersAndCppIncludesPathsOrderLinux)
             "-isystem", toNative("/usr/include/c++/4.8/backward"),
             "-isystem", toNative("/usr/include/x86_64-linux-gnu/c++/4.8"),
             "-isystem", toNative("/usr/local/include"),
-            "-isystem", toNative(CLANG_RESOURCE_DIR ""),
+            "-isystem", toNative(CLANG_INCLUDE_DIR ""),
             "-isystem", toNative("/usr/lib/gcc/x86_64-linux-gnu/4.8/include"),
             "-isystem", toNative("/usr/include/x86_64-linux-gnu"),
             "-isystem", toNative("/usr/include")));
@@ -366,7 +366,7 @@ TEST_F(CompilerOptionsBuilder, ClangHeadersAndCppIncludesPathsOrderNoVersion)
                     "-isystem", toNative("C:/mingw530/i686-w64-mingw32/include/c++"),
                     "-isystem", toNative("C:/mingw530/i686-w64-mingw32/include/c++/i686-w64-mingw32"),
                     "-isystem", toNative("C:/mingw530/i686-w64-mingw32/include/c++/backward"),
-                    "-isystem", toNative(CLANG_RESOURCE_DIR ""),
+                    "-isystem", toNative(CLANG_INCLUDE_DIR ""),
                     "-isystem", toNative("C:/mingw530/i686-w64-mingw32/include")));
 }
 
@@ -395,7 +395,7 @@ TEST_F(CompilerOptionsBuilder, ClangHeadersAndCppIncludesPathsOrderAndroidClang)
                             "-nostdinc++",
                             "-isystem", toNative("C:/Android/sdk/ndk-bundle/sources/cxx-stl/llvm-libc++/include"),
                             "-isystem", toNative("C:/Android/sdk/ndk-bundle/sources/cxx-stl/llvm-libc++abi/include"),
-                            "-isystem", toNative(CLANG_RESOURCE_DIR ""),
+                            "-isystem", toNative(CLANG_INCLUDE_DIR ""),
                             "-isystem", toNative("C:/Android/sdk/ndk-bundle/sysroot/usr/include/i686-linux-android"),
                             "-isystem", toNative("C:/Android/sdk/ndk-bundle/sources/android/support/include"),
                             "-isystem", toNative("C:/Android/sdk/ndk-bundle/sysroot/usr/include")));
@@ -475,6 +475,39 @@ TEST_F(CompilerOptionsBuilder, InsertWrappedQtHeaders)
     ASSERT_THAT(compilerOptionsBuilder.options(), Contains(IsPartOfHeader("wrappedQtHeaders")));
 }
 
+TEST_F(CompilerOptionsBuilder, InsertWrappedMingwHeadersWithNonMingwToolchain)
+{
+    CppTools::CompilerOptionsBuilder builder{
+        projectPart,
+        CppTools::UseSystemHeader::Yes,
+        CppTools::UseTweakedHeaderPaths::Yes,
+        CppTools::UseLanguageDefines::No,
+        CppTools::UseBuildSystemWarnings::No,
+        "dummy_version",
+        ""};
+
+    builder.insertWrappedMingwHeaders();
+
+    ASSERT_THAT(builder.options(), Not(Contains(IsPartOfHeader("wrappedMingwHeaders"))));
+}
+
+TEST_F(CompilerOptionsBuilder, InsertWrappedMingwHeadersWithMingwToolchain)
+{
+    CppTools::CompilerOptionsBuilder builder{
+        projectPart,
+        CppTools::UseSystemHeader::Yes,
+        CppTools::UseTweakedHeaderPaths::Yes,
+        CppTools::UseLanguageDefines::No,
+        CppTools::UseBuildSystemWarnings::No,
+        "dummy_version",
+        ""};
+    projectPart.toolchainType = ProjectExplorer::Constants::MINGW_TOOLCHAIN_TYPEID;
+
+    builder.insertWrappedMingwHeaders();
+
+    ASSERT_THAT(builder.options(), Contains(IsPartOfHeader("wrappedMingwHeaders")));
+}
+
 TEST_F(CompilerOptionsBuilder, SetLanguageVersion)
 {
     compilerOptionsBuilder.updateFileLanguage(ProjectFile::CXXSource);
@@ -549,7 +582,8 @@ TEST_F(CompilerOptionsBuilder, AddDefineFunctionMacrosMsvc)
 
     compilerOptionsBuilder.addDefineFunctionMacrosMsvc();
 
-    ASSERT_THAT(compilerOptionsBuilder.options(), Contains(QString{"-D__FUNCTION__=\"\""}));
+    ASSERT_THAT(compilerOptionsBuilder.options(),
+                Contains(QString{"-D__FUNCTION__=\"someLegalAndLongishFunctionNameThatWorksAroundQTCREATORBUG-24580\""}));
 }
 
 TEST_F(CompilerOptionsBuilder, AddProjectConfigFileInclude)
@@ -617,14 +651,12 @@ TEST_F(CompilerOptionsBuilder, BuildAllOptions)
                             "-x",
                             "c++",
                             "-std=c++17",
-                            "-fcxx-exceptions",
-                            "-fexceptions",
                             "-DprojectFoo=projectBar",
                             "-I", IsPartOfHeader("wrappedQtHeaders"),
                             "-I", IsPartOfHeader(toNative("wrappedQtHeaders/QtCore").toStdString()),
                             "-I", toNative("/tmp/path"),
                             "-I", toNative("/tmp/system_path"),
-                            "-isystem", toNative(CLANG_RESOURCE_DIR ""),
+                            "-isystem", toNative(CLANG_INCLUDE_DIR ""),
                             "-isystem", toNative("/tmp/builtin_path")));
 }
 
@@ -650,19 +682,57 @@ TEST_F(CompilerOptionsBuilder, BuildAllOptionsCl)
                             "--target=x86_64-apple-darwin10",
                             "/TP",
                             "/std:c++17",
-                            "-fcxx-exceptions",
-                            "-fexceptions",
                             "-fms-compatibility-version=19.00",
                             "-DprojectFoo=projectBar",
-                            "-D__FUNCSIG__=\"\"",
-                            "-D__FUNCTION__=\"\"",
-                            "-D__FUNCDNAME__=\"\"",
+                            "-D__FUNCSIG__=\"void __cdecl someLegalAndLongishFunctionNameThatWorksAroundQTCREATORBUG-24580(void)\"",
+                            "-D__FUNCTION__=\"someLegalAndLongishFunctionNameThatWorksAroundQTCREATORBUG-24580\"",
+                            "-D__FUNCDNAME__=\"?someLegalAndLongishFunctionNameThatWorksAroundQTCREATORBUG-24580@@YAXXZ\"",
                             "-I", IsPartOfHeader("wrappedQtHeaders"),
                             "-I", IsPartOfHeader(toNative("wrappedQtHeaders/QtCore").toStdString()),
                             "-I", toNative("/tmp/path"),
                             "-I", toNative("/tmp/system_path"),
                             "/clang:-isystem",
-                            "/clang:" + toNative(CLANG_RESOURCE_DIR ""),
+                            "/clang:" + toNative(CLANG_INCLUDE_DIR ""),
+                            "/clang:-isystem",
+                            "/clang:" + toNative("/tmp/builtin_path")));
+}
+
+TEST_F(CompilerOptionsBuilder, BuildAllOptionsClWithExceptions)
+{
+    projectPart.toolchainType = ProjectExplorer::Constants::MSVC_TOOLCHAIN_TYPEID;
+    projectPart.toolChainMacros.append(ProjectExplorer::Macro{"_CPPUNWIND", "1"});
+    CppTools::CompilerOptionsBuilder compilerOptionsBuilder(projectPart,
+                                                            CppTools::UseSystemHeader::No,
+                                                            CppTools::UseTweakedHeaderPaths::Yes,
+                                                            CppTools::UseLanguageDefines::No,
+                                                            CppTools::UseBuildSystemWarnings::No,
+                                                            "dummy_version",
+                                                            "");
+
+    compilerOptionsBuilder.build(ProjectFile::CXXSource, CppTools::UsePrecompiledHeaders::No);
+
+    ASSERT_THAT(compilerOptionsBuilder.options(),
+                ElementsAre("-nostdinc",
+                            "-nostdinc++",
+                            "--driver-mode=cl",
+                            "/Zs",
+                            "-m64",
+                            "--target=x86_64-apple-darwin10",
+                            "/TP",
+                            "/std:c++17",
+                            "-fcxx-exceptions",
+                            "-fexceptions",
+                            "-fms-compatibility-version=19.00",
+                            "-DprojectFoo=projectBar",
+                            "-D__FUNCSIG__=\"void __cdecl someLegalAndLongishFunctionNameThatWorksAroundQTCREATORBUG-24580(void)\"",
+                            "-D__FUNCTION__=\"someLegalAndLongishFunctionNameThatWorksAroundQTCREATORBUG-24580\"",
+                            "-D__FUNCDNAME__=\"?someLegalAndLongishFunctionNameThatWorksAroundQTCREATORBUG-24580@@YAXXZ\"",
+                            "-I", IsPartOfHeader("wrappedQtHeaders"),
+                            "-I", IsPartOfHeader(toNative("wrappedQtHeaders/QtCore").toStdString()),
+                            "-I", toNative("/tmp/path"),
+                            "-I", toNative("/tmp/system_path"),
+                            "/clang:-isystem",
+                            "/clang:" + toNative(CLANG_INCLUDE_DIR ""),
                             "/clang:-isystem",
                             "/clang:" + toNative("/tmp/builtin_path")));
 }

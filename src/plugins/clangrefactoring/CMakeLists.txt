@@ -1,5 +1,6 @@
 add_qtc_plugin(ClangRefactoring
-  CONDITION TARGET libclang
+  BUILD_DEFAULT OFF
+  CONDITION TARGET libclang AND QTC_CLANG_BUILDMODE_MATCH
   DEPENDS ClangSupport CPlusPlus
   PLUGIN_DEPENDS Core CppTools TextEditor ClangPchManager
   SOURCES ${TEST_SOURCES}
@@ -35,6 +36,6 @@ add_qtc_plugin(ClangRefactoring
     symbol.h
     symbolquery.h
     symbolqueryinterface.h
-    symbolsfindfilter.cpp symbolsfindfilter.h
+    clangsymbolsfindfilter.cpp clangsymbolsfindfilter.h
     symbolsfindfilterconfigwidget.cpp symbolsfindfilterconfigwidget.h
 )

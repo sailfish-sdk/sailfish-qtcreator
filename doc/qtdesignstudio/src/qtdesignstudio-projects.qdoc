@@ -63,7 +63,7 @@
     or create them from scratch using the following wizards:
 
     \list
-        \li \uicontrol {MCU Support Application} creates an application that
+        \li \uicontrol {Qt for MCUs Application} creates an application that
             uses a subset of \l{Qt QML} and \l{Qt Quick Controls} types (as
             supported by Qt for MCUs) that you can deploy, run, and debug on
             MCU boards.
@@ -80,6 +80,11 @@
             project that uses Qt Quick types and defines a QML laucher
             application.
     \endlist
+
+    For an example of creating a \uicontrol {Qt Quick 3D Application} project,
+    watch the following video:
+
+    \youtube 9ihYeC0YJ0M
 
     \section1 Using Project Wizards
 
@@ -109,14 +114,18 @@
         \li qtquickcontrols2.conf file specifies the preferred style and some
             style-specific arguments.
         \li \e imports folder contains a \e {Constants.qml} file that specifies
-            a font loader for the Arial font and a \e qmldir module definition
-            file that declares the Constant QML type. For more information, see
-            \l {Module Definition qmldir Files}. In addition, the \e QtQuick
-            subfolder contains the Studio components and effects QML types.
+            a font loader for the Arial font and the screen resolution. The
+            size of the default Screen.ui.qml Rectangle should be set as
+            \c {width: Constants.width & height: Constants.height}, so it
+            inherits the global resolution saved here.
+        \li \e qmldir module definition file declares the Constant QML type.
+            For more information, see \l {Module Definition qmldir Files}.
+        \li In addition, the \e QtQuick subfolder contains the Studio components
+            and effects QML types.
     \endlist
 
-    To use JavaScript and image files in the UI, copy them to the
-    project folder.
+    To use JavaScript and image files in the UI, select \uicontrol Library >
+    Assets > Add New Assets.
 
     \section1 Adding Files to Projects
 
@@ -129,29 +138,31 @@
                 \li \uicontrol {Flow Item} and \uicontrol {Flow View} generate
                     types that you can use to design the application flow.
                 \li \uicontrol {Qt Quick File} generates a QML type with one
-                    of the following types as the root item: \l Item,
-                    \l Rectangle, \l Image, \l BorderImage, \l Flickable,
-                    \l Row, \l Column, \l Flow, or \l Grid.
+                    of the following basic types or \l{Using Positioners}
+                    {positioners} as the root item: \l {basic-item}{Item},
+                    \l {basic-rectangle}{Rectangle}, \l {Images}{Image},
+                    \l {Border Image}, \l Flickable, Row, Column, Flow, or Grid.
                 \li \uicontrol {Qt Quick UI File} generates a UI form with one
                     of the above types as the root item.
-                \li \uicontrol {Qt Quick Views} generates a \l GridView or a
-                    \l ListView.
+                \li \uicontrol {Qt Quick Views} generates a Grid View or a
+                    List View. For more information, see \l{List and Grid Views}.
+
             \endlist
         \li \uicontrol {Qt Quick Controls}
             \list
-                \li \l [Qt Quick Controls 2] {Button}{Custom Button} creates a
-                    push button with a text label.
-                \li \l [Qt Quick Controls 2] {Switch}{Custom Switch} creates a
-                    switch with on and off states.
+                \li \l {Button}{Custom Button} creates a push button with a text
+                    label.
+                \li \l {Switch}{Custom Switch} creates a switch with on and off
+                    states.
                 \li \l [Qt Quick Controls 2] {Pane} provides a background that
                     matches the UI style and theme.
-                \li \l [Qt Quick Controls 2] { StackView} provides a stack-based
+                \li \l [Qt Quick Controls 2] {StackView} provides a stack-based
                     navigation model.
                 \li \l [Qt Quick Controls 2] {SwipeView} enables users to
                     navigate pages by swiping sideways.
             \endlist
-        \li \uicontrol ListModel adds a \l{ListModel}{list model} to the
-            project.
+        \li \uicontrol ListModel adds a \l{Editing List Models}{list model} to
+            the project.
         \li \uicontrol {JavaScript File} generates files that you can use to
             write the application logic. This is useful for testing the
             application before the developers implement the application logic

@@ -27,16 +27,21 @@
 
 #include "buildconfiguration.h"
 #include "buildsteplist.h"
+#include "customparser.h"
 #include "deployconfiguration.h"
 #include "kitinformation.h"
 #include "project.h"
+#include "projectexplorer.h"
+#include "projectexplorerconstants.h"
 #include "target.h"
 
-#include <coreplugin/variablechooser.h>
-
 #include <utils/algorithm.h>
+#include <utils/fileinprojectfinder.h>
+#include <utils/layoutbuilder.h>
+#include <utils/outputformatter.h>
 #include <utils/qtcassert.h>
 #include <utils/runextensions.h>
+#include <utils/variablechooser.h>
 
 #include <QFormLayout>
 #include <QFutureWatcher>
@@ -117,20 +122,27 @@
     This signal needs to be emitted if the build step runs in the GUI thread.
 */
 
+using namespace Utils;
+
 static const char buildStepEnabledKey[] = "ProjectExplorer.BuildStep.Enabled";
 
 namespace ProjectExplorer {
 
 static QList<BuildStepFactory *> g_buildStepFactories;
 
-BuildStep::BuildStep(BuildStepList *bsl, Core::Id id) :
+BuildStep::BuildStep(BuildStepList *bsl, Utils::Id id) :
     ProjectConfiguration(bsl, id)
 {
     QTC_CHECK(bsl->target() && bsl->target() == this->target());
-    Utils::MacroExpander *expander = macroExpander();
-    expander->setDisplayName(tr("Build Step"));
-    expander->setAccumulating(true);
-    expander->registerSubProvider([this] { return projectConfiguration()->macroExpander(); });
+    connect(this, &ProjectConfiguration::displayNameChanged,
+            this, &BuildStep::updateSummary);
+//    m_displayName = step->displayName();
+//    m_summaryText = "<b>" + m_displayName + "</b>";
+}
+
+BuildStep::~BuildStep()
+{
+    emit finished(false);
 }
 
 void BuildStep::run()
@@ -145,25 +157,38 @@ void BuildStep::cancel()
     doCancel();
 }
 
-BuildStepConfigWidget *BuildStep::createConfigWidget()
+QWidget *BuildStep::doCreateConfigWidget()
 {
-    auto widget = new BuildStepConfigWidget(this);
+    QWidget *widget = createConfigWidget();
 
-    {
-        LayoutBuilder builder(widget);
-        for (ProjectConfigurationAspect *aspect : m_aspects) {
-            if (aspect->isVisible())
-                aspect->addToLayout(builder.startNewRow());
-        }
-    }
+    const auto recreateSummary = [this] {
+        if (m_summaryUpdater)
+            setSummaryText(m_summaryUpdater());
+    };
+
+    for (BaseAspect *aspect : qAsConst(m_aspects))
+        connect(aspect, &BaseAspect::changed, widget, recreateSummary);
 
     connect(buildConfiguration(), &BuildConfiguration::buildDirectoryChanged,
-            widget, &BuildStepConfigWidget::recreateSummary);
+            widget, recreateSummary);
 
-    widget->setSummaryUpdater(m_summaryUpdater);
+    recreateSummary();
+
+    return widget;
+}
+
+QWidget *BuildStep::createConfigWidget()
+{
+    auto widget = new QWidget;
+
+    LayoutBuilder builder(widget);
+    for (BaseAspect *aspect : qAsConst(m_aspects)) {
+        if (aspect->isVisible())
+            aspect->addToLayout(builder.finishRow());
+    }
 
     if (m_addMacroExpander)
-        Core::VariableChooser::addSupportForChildWidgets(widget, macroExpander());
+        VariableChooser::addSupportForChildWidgets(widget, macroExpander());
 
     return widget;
 }
@@ -186,6 +211,7 @@ BuildConfiguration *BuildStep::buildConfiguration() const
     auto config = qobject_cast<BuildConfiguration *>(parent()->parent());
     if (config)
         return config;
+
     // step is not part of a build configuration, use active build configuration of step's target
     return target()->activeBuildConfiguration();
 }
@@ -195,6 +221,8 @@ DeployConfiguration *BuildStep::deployConfiguration() const
     auto config = qobject_cast<DeployConfiguration *>(parent()->parent());
     if (config)
         return config;
+    // See comment in buildConfiguration()
+    QTC_CHECK(false);
     // step is not part of a deploy configuration, use active deploy configuration of step's target
     return target()->activeDeployConfiguration();
 }
@@ -209,6 +237,57 @@ BuildSystem *BuildStep::buildSystem() const
     if (auto bc = buildConfiguration())
         return bc->buildSystem();
     return target()->buildSystem();
+}
+
+Environment BuildStep::buildEnvironment() const
+{
+    if (const auto bc = qobject_cast<BuildConfiguration *>(parent()->parent()))
+        return bc->environment();
+    if (const auto bc = target()->activeBuildConfiguration())
+        return bc->environment();
+    return Environment::systemEnvironment();
+}
+
+FilePath BuildStep::buildDirectory() const
+{
+    if (auto bc = buildConfiguration())
+        return bc->buildDirectory();
+    return {};
+}
+
+BuildConfiguration::BuildType BuildStep::buildType() const
+{
+    if (auto bc = buildConfiguration())
+        return bc->buildType();
+    return BuildConfiguration::Unknown;
+}
+
+Utils::MacroExpander *BuildStep::macroExpander() const
+{
+    if (auto bc = buildConfiguration())
+        return bc->macroExpander();
+    return Utils::globalMacroExpander();
+}
+
+QString BuildStep::fallbackWorkingDirectory() const
+{
+    if (buildConfiguration())
+        return {Constants::DEFAULT_WORKING_DIR};
+    return {Constants::DEFAULT_WORKING_DIR_ALTERNATE};
+}
+
+void BuildStep::setupOutputFormatter(OutputFormatter *formatter)
+{
+    if (qobject_cast<BuildConfiguration *>(parent()->parent())) {
+        for (const Utils::Id id : buildConfiguration()->customParsers()) {
+            if (Internal::CustomParser * const parser = Internal::CustomParser::createFromId(id))
+                formatter->addLineParser(parser);
+        }
+    }
+    Utils::FileInProjectFinder fileFinder;
+    fileFinder.setProjectDirectory(project()->projectDirectory());
+    fileFinder.setProjectFiles(project()->files(Project::AllFiles));
+    formatter->setFileFinder(fileFinder);
 }
 
 void BuildStep::reportRunResult(QFutureInterface<bool> &fi, bool success)
@@ -227,7 +306,7 @@ void BuildStep::setWidgetExpandedByDefault(bool widgetExpandedByDefault)
     m_widgetExpandedByDefault = widgetExpandedByDefault;
 }
 
-QVariant BuildStep::data(Core::Id id) const
+QVariant BuildStep::data(Utils::Id id) const
 {
     Q_UNUSED(id)
     return {};
@@ -274,11 +353,6 @@ void BuildStep::addMacroExpander()
     m_addMacroExpander = true;
 }
 
-void BuildStep::setSummaryUpdater(const std::function<QString ()> &summaryUpdater)
-{
-    m_summaryUpdater = summaryUpdater;
-}
-
 void BuildStep::setEnabled(bool b)
 {
     if (m_enabled == b)
@@ -322,7 +396,7 @@ bool BuildStepFactory::canHandle(BuildStepList *bsl) const
     if (!m_supportedDeviceTypes.isEmpty()) {
         Target *target = bsl->target();
         QTC_ASSERT(target, return false);
-        Core::Id deviceType = DeviceTypeKitAspect::deviceTypeId(target->kit());
+        Utils::Id deviceType = DeviceTypeKitAspect::deviceTypeId(target->kit());
         if (!m_supportedDeviceTypes.contains(deviceType))
             return false;
     }
@@ -330,7 +404,7 @@ bool BuildStepFactory::canHandle(BuildStepList *bsl) const
     if (m_supportedProjectType.isValid()) {
         if (!config)
             return false;
-        Core::Id projectId = config->project()->id();
+        Utils::Id projectId = config->project()->id();
         if (projectId != m_supportedProjectType)
             return false;
     }
@@ -341,7 +415,7 @@ bool BuildStepFactory::canHandle(BuildStepList *bsl) const
     if (m_supportedConfiguration.isValid()) {
         if (!config)
             return false;
-        Core::Id configId = config->id();
+        Utils::Id configId = config->id();
         if (configId != m_supportedConfiguration)
             return false;
     }
@@ -359,32 +433,32 @@ void BuildStepFactory::setFlags(BuildStepInfo::Flags flags)
     m_info.flags = flags;
 }
 
-void BuildStepFactory::setSupportedStepList(Core::Id id)
+void BuildStepFactory::setSupportedStepList(Utils::Id id)
 {
     m_supportedStepLists = {id};
 }
 
-void BuildStepFactory::setSupportedStepLists(const QList<Core::Id> &ids)
+void BuildStepFactory::setSupportedStepLists(const QList<Utils::Id> &ids)
 {
     m_supportedStepLists = ids;
 }
 
-void BuildStepFactory::setSupportedConfiguration(Core::Id id)
+void BuildStepFactory::setSupportedConfiguration(Utils::Id id)
 {
     m_supportedConfiguration = id;
 }
 
-void BuildStepFactory::setSupportedProjectType(Core::Id id)
+void BuildStepFactory::setSupportedProjectType(Utils::Id id)
 {
     m_supportedProjectType = id;
 }
 
-void BuildStepFactory::setSupportedDeviceType(Core::Id id)
+void BuildStepFactory::setSupportedDeviceType(Utils::Id id)
 {
     m_supportedDeviceTypes = {id};
 }
 
-void BuildStepFactory::setSupportedDeviceTypes(const QList<Core::Id> &ids)
+void BuildStepFactory::setSupportedDeviceTypes(const QList<Utils::Id> &ids)
 {
     m_supportedDeviceTypes = ids;
 }
@@ -394,22 +468,21 @@ BuildStepInfo BuildStepFactory::stepInfo() const
     return m_info;
 }
 
-Core::Id BuildStepFactory::stepId() const
+Utils::Id BuildStepFactory::stepId() const
 {
     return m_info.id;
 }
 
-BuildStep *BuildStepFactory::create(BuildStepList *parent, Core::Id id)
+BuildStep *BuildStepFactory::create(BuildStepList *parent)
 {
-    BuildStep *bs = nullptr;
-    if (id == m_info.id)
-        bs = m_info.creator(parent);
-    return bs;
+    BuildStep *step = m_info.creator(parent);
+    step->setDefaultDisplayName(m_info.displayName);
+    return step;
 }
 
 BuildStep *BuildStepFactory::restore(BuildStepList *parent, const QVariantMap &map)
 {
-    BuildStep *bs = m_info.creator(parent);
+    BuildStep *bs = create(parent);
     if (!bs)
         return nullptr;
     if (!bs->fromMap(map)) {
@@ -420,37 +493,15 @@ BuildStep *BuildStepFactory::restore(BuildStepList *parent, const QVariantMap &m
     return bs;
 }
 
-// BuildStepConfigWidget
-
-BuildStepConfigWidget::BuildStepConfigWidget(BuildStep *step)
-    : m_step(step)
+QString BuildStep::summaryText() const
 {
-    m_displayName = step->displayName();
-    m_summaryText = "<b>" + m_displayName + "</b>";
-    connect(m_step, &ProjectConfiguration::displayNameChanged,
-            this, &BuildStepConfigWidget::updateSummary);
-    for (auto aspect : step->aspects()) {
-        connect(aspect, &ProjectConfigurationAspect::changed,
-                this, &BuildStepConfigWidget::recreateSummary);
-    }
-}
+    if (m_summaryText.isEmpty())
+        return QString("<b>%1</b>").arg(displayName());
 
-QString BuildStepConfigWidget::summaryText() const
-{
     return m_summaryText;
 }
 
-QString BuildStepConfigWidget::displayName() const
-{
-    return m_displayName;
-}
-
-void BuildStepConfigWidget::setDisplayName(const QString &displayName)
-{
-    m_displayName = displayName;
-}
-
-void BuildStepConfigWidget::setSummaryText(const QString &summaryText)
+void BuildStep::setSummaryText(const QString &summaryText)
 {
     if (summaryText != m_summaryText) {
         m_summaryText = summaryText;
@@ -458,16 +509,9 @@ void BuildStepConfigWidget::setSummaryText(const QString &summaryText)
     }
 }
 
-void BuildStepConfigWidget::setSummaryUpdater(const std::function<QString()> &summaryUpdater)
+void BuildStep::setSummaryUpdater(const std::function<QString()> &summaryUpdater)
 {
     m_summaryUpdater = summaryUpdater;
-    recreateSummary();
-}
-
-void BuildStepConfigWidget::recreateSummary()
-{
-    if (m_summaryUpdater)
-        setSummaryText(m_summaryUpdater());
 }
 
 } // ProjectExplorer

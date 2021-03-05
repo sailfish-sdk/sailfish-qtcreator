@@ -30,12 +30,15 @@
 #include <projectexplorer/buildpropertiessettings.h>
 #include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/kitmanager.h>
+
 #include <utils/infolabel.h>
+#include <utils/layoutbuilder.h>
 
 #include <QCheckBox>
 #include <QLayout>
 
 using namespace ProjectExplorer;
+using namespace Utils;
 
 namespace QtSupport {
 
@@ -48,10 +51,10 @@ QmlDebuggingAspect::QmlDebuggingAspect()
 
 void QmlDebuggingAspect::addToLayout(LayoutBuilder &builder)
 {
-    BaseSelectionAspect::addToLayout(builder);
+    SelectionAspect::addToLayout(builder);
     const auto warningLabel = new Utils::InfoLabel({}, Utils::InfoLabel::Warning);
     warningLabel->setElideMode(Qt::ElideNone);
-    builder.startNewRow().addItems(QString(), warningLabel);
+    builder.addRow({{}, warningLabel});
     const auto changeHandler = [this, warningLabel] {
         QString warningText;
         const bool supported = m_kit && BaseQtVersion::isQmlDebuggingSupported(m_kit, &warningText);
@@ -80,10 +83,10 @@ QtQuickCompilerAspect::QtQuickCompilerAspect()
 
 void QtQuickCompilerAspect::addToLayout(LayoutBuilder &builder)
 {
-    BaseSelectionAspect::addToLayout(builder);
+    SelectionAspect::addToLayout(builder);
     const auto warningLabel = new Utils::InfoLabel({}, Utils::InfoLabel::Warning);
     warningLabel->setElideMode(Qt::ElideNone);
-    builder.startNewRow().addItems(QString(), warningLabel);
+    builder.addRow({{}, warningLabel});
     const auto changeHandler = [this, warningLabel] {
         QString warningText;
         const bool supported = m_kit
@@ -109,7 +112,7 @@ void QtQuickCompilerAspect::addToLayout(LayoutBuilder &builder)
     changeHandler();
 }
 
-void QtQuickCompilerAspect::acquaintSiblings(const ProjectConfigurationAspects &siblings)
+void QtQuickCompilerAspect::acquaintSiblings(const BaseAspects &siblings)
 {
     m_qmlDebuggingAspect = siblings.aspect<QmlDebuggingAspect>();
 }

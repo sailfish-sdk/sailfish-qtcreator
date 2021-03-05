@@ -71,8 +71,11 @@ QStringList ProFileEvaluator::values(const QString &variableName) const
     const ProStringList &values = d->values(ProKey(variableName));
     QStringList ret;
     ret.reserve(values.size());
-    foreach (const ProString &str, values)
-        ret << d->m_option->expandEnvVars(str.toQString());
+    for (const ProString &str : values) {
+        const QString expanded = d->m_option->expandEnvVars(str.toQString());
+        if (!expanded.isEmpty() || str.isEmpty())
+            ret << expanded;
+    }
     return ret;
 }
 
@@ -83,32 +86,32 @@ QVector<ProFileEvaluator::SourceFile> ProFileEvaluator::fixifiedValues(
     QVector<SourceFile> result;
     foreach (const ProString &str, d->values(ProKey(variable))) {
         const QString &el = d->m_option->expandEnvVars(str.toQString());
-        if (IoUtils::isAbsolutePath(el)) {
-            result << SourceFile{QDir::cleanPath(el), str.sourceFile()};
+        const QString fn = IoUtils::isAbsolutePath(el)
+                ? QDir::cleanPath(el) : QDir::cleanPath(baseDirectory + QLatin1Char('/') + el);
+        if (IoUtils::exists(fn)) {
+            result << SourceFile{fn, str.sourceFile()};
+            continue;
+        }
+        QStringView fileNamePattern;
+        if (expandWildcards) {
+            fileNamePattern = IoUtils::fileName(fn);
+            expandWildcards = fileNamePattern.contains('*') || fileNamePattern.contains('?');
+        }
+        if (expandWildcards) {
+            const QString patternBaseDir = IoUtils::pathName(fn).toString();
+            const QDir::Filters filters = QDir::Dirs | QDir::Files | QDir::NoDotAndDotDot;
+            for (const QString &fileName : QDir(patternBaseDir).entryList(
+                     QStringList(fileNamePattern.toString()), filters)) {
+                const QString fullFilePath
+                        = QDir::cleanPath(patternBaseDir + '/' + fileName);
+                result << SourceFile({fullFilePath, str.sourceFile()});
+            }
         } else {
-            QString fn = QDir::cleanPath(baseDirectory + QLatin1Char('/') + el);
-            if (IoUtils::exists(fn)) {
+            if (IoUtils::isAbsolutePath(el)) {
                 result << SourceFile{fn, str.sourceFile()};
             } else {
-                QStringRef fileNamePattern;
-                if (expandWildcards) {
-                    fileNamePattern = IoUtils::fileName(fn);
-                    expandWildcards = fileNamePattern.contains('*')
-                            || fileNamePattern.contains('?');
-                }
-                if (expandWildcards) {
-                    const QString patternBaseDir = IoUtils::pathName(fn).toString();
-                    const QDir::Filters filters = QDir::Dirs | QDir::Files | QDir::NoDotAndDotDot;
-                    for (const QString &fileName : QDir(patternBaseDir).entryList(
-                             QStringList(fileNamePattern.toString()), filters)) {
-                        const QString fullFilePath
-                                = QDir::cleanPath(patternBaseDir + '/' + fileName);
-                        result << SourceFile({fullFilePath, str.sourceFile()});
-                    }
-                } else {
-                    result << SourceFile{QDir::cleanPath(buildDirectory + QLatin1Char('/') + el),
-                              str.sourceFile()};
-                }
+                result << SourceFile{QDir::cleanPath(buildDirectory + QLatin1Char('/') + el),
+                          str.sourceFile()};
             }
         }
     }
@@ -212,7 +215,7 @@ ProFileEvaluator::TemplateType ProFileEvaluator::templateType() const
         if (!t.compare(QLatin1String("app"), Qt::CaseInsensitive))
             return TT_Application;
         if (!t.compare(QLatin1String("lib"), Qt::CaseInsensitive))
-            return d->isActiveConfig(QStringRef(&str_staticlib)) ? TT_StaticLibrary : TT_SharedLibrary;
+            return d->isActiveConfig(Utils::make_stringview(str_staticlib)) ? TT_StaticLibrary : TT_SharedLibrary;
         if (!t.compare(QLatin1String("script"), Qt::CaseInsensitive))
             return TT_Script;
         if (!t.compare(QLatin1String("aux"), Qt::CaseInsensitive))
@@ -246,7 +249,7 @@ bool ProFileEvaluator::accept(ProFile *pro, QMakeEvaluator::LoadFlags flags)
 
         ProStringList &incpath = d->valuesRef(ProKey("INCLUDEPATH"));
         incpath += d->values(ProKey("QMAKE_INCDIR"));
-        if (!d->isActiveConfig(QStringRef(&str_no_include_pwd))) {
+        if (!d->isActiveConfig(Utils::make_stringview(str_no_include_pwd))) {
             incpath.prepend(ProString(pro->directoryName()));
             // It's pretty stupid that this is appended - it should be the second entry.
             if (pro->directoryName() != d->m_outputDir)
@@ -263,8 +266,8 @@ bool ProFileEvaluator::accept(ProFile *pro, QMakeEvaluator::LoadFlags flags)
             break;
         case TT_SharedLibrary:
             {
-                bool plugin = d->isActiveConfig(QStringRef(&str_plugin));
-                if (!plugin || !d->isActiveConfig(QStringRef(&str_plugin_no_share_shlib_cflags)))
+                bool plugin = d->isActiveConfig(Utils::make_stringview(str_plugin));
+                if (!plugin || !d->isActiveConfig(Utils::make_stringview(str_plugin_no_share_shlib_cflags)))
                     cxxflags += d->values(ProKey("QMAKE_CXXFLAGS_SHLIB"));
                 if (plugin)
                     cxxflags += d->values(ProKey("QMAKE_CXXFLAGS_PLUGIN"));

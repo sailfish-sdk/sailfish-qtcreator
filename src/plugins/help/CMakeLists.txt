@@ -27,7 +27,20 @@ add_qtc_plugin(Help
 )
 
 extend_qtc_plugin(Help
-  CONDITION FWWebKit AND FWAppKit
+  CONDITION Qt5_VERSION VERSION_GREATER_EQUAL 5.15.0
+  DEFINES HELP_NEW_FILTER_ENGINE
+)
+
+set(HELPVIEWER_DEFAULT_BACKEND "litehtml" CACHE STRING "Sets default help viewer backend")
+set_property(CACHE HELPVIEWER_DEFAULT_BACKEND PROPERTY STRINGS "litehtml;qtwebengine;textbrowser")
+
+extend_qtc_plugin(Help
+  CONDITION HELPVIEWER_DEFAULT_BACKEND
+  DEFINES QTC_DEFAULT_HELPVIEWER_BACKEND="${HELPVIEWER_DEFAULT_BACKEND}"
+)
+
+extend_qtc_plugin(Help
+  CONDITION FWWebKit AND FWAppKit AND Qt5_VERSION VERSION_LESS 6.0.0
   FEATURE_INFO "Native WebKit help viewer"
   DEPENDS ${FWWebKit} ${FWAppKit}
   DEFINES QTC_MAC_NATIVE_HELPVIEWER
@@ -47,14 +60,8 @@ extend_qtc_plugin(Help
     webenginehelpviewer.h
 )
 
-if (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/qlitehtml/litehtml/CMakeLists.txt)
-  add_subdirectory(qlitehtml)
-else()
-  find_package(litehtml QUIET)
-  if (TARGET litehtml)
-    add_subdirectory(qlitehtml)
-  endif()
-endif()
+find_package(litehtml QUIET)
+add_subdirectory(qlitehtml)
 
 extend_qtc_plugin(Help
   CONDITION TARGET litehtml AND TARGET qlitehtml

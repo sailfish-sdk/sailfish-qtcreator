@@ -35,6 +35,7 @@
 
 #include <utils/algorithm.h>
 #include <utils/qtcassert.h>
+#include <utils/stringutils.h>
 
 #include <QDesktopServices>
 #include <QDialogButtonBox>
@@ -198,13 +199,6 @@ static bool needsLink(ProjectExplorer::Tree *node) {
     return !node->isDir && !node->fullPath.toString().startsWith("clang-analyzer-");
 }
 
-static void selectAll(QAbstractItemView *view)
-{
-    view->setSelectionMode(QAbstractItemView::MultiSelection);
-    view->selectAll();
-    view->setSelectionMode(QAbstractItemView::SingleSelection);
-}
-
 class BaseChecksTreeModel : public ProjectExplorer::SelectableFilesModel
 {
     Q_OBJECT
@@ -308,7 +302,7 @@ public:
         propagateDown(index(0, 0, QModelIndex()));
 
         QStringList checksList = checks.simplified().remove(" ")
-                .split(",", QString::SkipEmptyParts);
+                .split(",", Qt::SkipEmptyParts);
 
         for (QString &check : checksList) {
             Qt::CheckState state;
@@ -627,7 +621,7 @@ public:
         const auto *node = ClazyChecksTree::fromIndex(index);
         if (node->kind == ClazyChecksTree::CheckNode) {
             const QStringList topics = node->check.topics;
-            return Utils::anyOf(m_topics, [topics](const QString &topic) {
+            return m_topics.isEmpty() || Utils::anyOf(m_topics, [topics](const QString &topic) {
                 return topics.contains(topic);
             });
         }
@@ -693,7 +687,7 @@ static void setupTreeView(QTreeView *view, QAbstractItemModel *model, int expand
 }
 
 DiagnosticConfigsWidget::DiagnosticConfigsWidget(const ClangDiagnosticConfigs &configs,
-                                                 const Core::Id &configToSelect,
+                                                 const Utils::Id &configToSelect,
                                                  const ClangTidyInfo &tidyInfo,
                                                  const ClazyStandaloneInfo &clazyInfo)
     : ClangDiagnosticConfigsWidget(configs, configToSelect)
@@ -716,8 +710,9 @@ DiagnosticConfigsWidget::DiagnosticConfigsWidget(const ClangDiagnosticConfigs &c
     topicsModel->sort(0);
     m_clazyChecks->topicsView->setModel(topicsModel);
     connect(m_clazyChecks->topicsResetButton, &QPushButton::clicked, [this](){
-        selectAll(m_clazyChecks->topicsView);
+        m_clazyChecks->topicsView->clearSelection();
     });
+    m_clazyChecks->topicsView->setSelectionMode(QAbstractItemView::MultiSelection);
     connect(m_clazyChecks->topicsView->selectionModel(),
             &QItemSelectionModel::selectionChanged,
             [this, topicsModel](const QItemSelection &, const QItemSelection &) {
@@ -730,7 +725,6 @@ DiagnosticConfigsWidget::DiagnosticConfigsWidget(const ClangDiagnosticConfigs &c
                 this->syncClazyChecksGroupBox();
             });
 
-    selectAll(m_clazyChecks->topicsView);
     connect(m_clazyChecks->checksView,
             &QTreeView::clicked,
             [model = m_clazySortFilterProxyModel](const QModelIndex &index) {
@@ -857,7 +851,7 @@ void DiagnosticConfigsWidget::syncClazyWidgets(const ClangDiagnosticConfig &conf
     const QStringList checkNames = config.clazyMode()
                                            == ClangDiagnosticConfig::ClazyMode::UseDefaultChecks
                                        ? m_clazyInfo.defaultChecks
-                                       : config.clazyChecks().split(',', QString::SkipEmptyParts);
+                                       : config.clazyChecks().split(',', Qt::SkipEmptyParts);
     m_clazyTreeModel->enableChecks(checkNames);
 
     syncClazyChecksGroupBox();
@@ -865,7 +859,7 @@ void DiagnosticConfigsWidget::syncClazyWidgets(const ClangDiagnosticConfig &conf
     const bool enabled = !config.isReadOnly();
     m_clazyChecks->topicsResetButton->setEnabled(enabled);
     m_clazyChecks->enableLowerLevelsCheckBox->setEnabled(enabled);
-    selectAll(m_clazyChecks->topicsView);
+    m_clazyChecks->topicsView->clearSelection();
     m_clazyChecks->topicsView->setEnabled(enabled);
     m_clazyTreeModel->setEnabled(enabled);
 

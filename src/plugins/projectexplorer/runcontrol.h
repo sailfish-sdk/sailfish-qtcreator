@@ -45,6 +45,7 @@
 
 namespace Utils {
 class MacroExpander;
+class OutputLineParser;
 class OutputFormatter;
 } // Utils
 
@@ -74,7 +75,7 @@ public:
     QString workingDirectory;
     Utils::Environment environment;
     IDevice::ConstPtr device; // Override the kit's device. Keep unset by default.
-    QHash<Core::Id, QVariant> extraData;
+    QHash<Utils::Id, QVariant> extraData;
 
     // FIXME: Not necessarily a display name
     QString displayName() const { return executable.toString(); }
@@ -146,13 +147,13 @@ public:
     using WorkerCreator = std::function<RunWorker *(RunControl *)>;
 
     RunWorkerFactory(const WorkerCreator &producer,
-                     const QList<Core::Id> &runModes,
-                     const QList<Core::Id> &runConfigs = {},
-                     const QList<Core::Id> &deviceTypes = {});
+                     const QList<Utils::Id> &runModes,
+                     const QList<Utils::Id> &runConfigs = {},
+                     const QList<Utils::Id> &deviceTypes = {});
 
     ~RunWorkerFactory();
 
-    bool canRun(Core::Id runMode, Core::Id deviceType, const QString &runConfigId) const;
+    bool canRun(Utils::Id runMode, Utils::Id deviceType, const QString &runConfigId) const;
     WorkerCreator producer() const { return m_producer; }
 
     template <typename Worker>
@@ -166,9 +167,9 @@ public:
 
 private:
     WorkerCreator m_producer;
-    QList<Core::Id> m_supportedRunModes;
-    QList<Core::Id> m_supportedRunConfigurations;
-    QList<Core::Id> m_supportedDeviceTypes;
+    QList<Utils::Id> m_supportedRunModes;
+    QList<Utils::Id> m_supportedRunConfigurations;
+    QList<Utils::Id> m_supportedDeviceTypes;
 };
 
 /**
@@ -184,7 +185,7 @@ class PROJECTEXPLORER_EXPORT RunControl : public QObject
     Q_OBJECT
 
 public:
-    explicit RunControl(Core::Id mode);
+    explicit RunControl(Utils::Id mode);
     ~RunControl() override;
 
     void setRunConfiguration(RunConfiguration *runConfig);
@@ -222,8 +223,8 @@ public:
     Target *target() const;
     Project *project() const;
     Kit *kit() const;
-    Utils::MacroExpander *macroExpander() const;
-    ProjectConfigurationAspect *aspect(Core::Id id) const;
+    const Utils::MacroExpander *macroExpander() const;
+    Utils::BaseAspect *aspect(Utils::Id id) const;
     template <typename T> T *aspect() const {
         return runConfiguration() ? runConfiguration()->aspect<T>() : nullptr;
     }
@@ -233,13 +234,13 @@ public:
     Utils::FilePath buildDirectory() const;
     Utils::Environment buildEnvironment() const;
 
-    QVariantMap settingsData(Core::Id id) const;
+    QVariantMap settingsData(Utils::Id id) const;
 
     Utils::FilePath targetFilePath() const;
     Utils::FilePath projectFilePath() const;
 
-    Utils::OutputFormatter *outputFormatter() const;
-    Core::Id runMode() const;
+    void setupFormatter(Utils::OutputFormatter *formatter) const;
+    Utils::Id runMode() const;
 
     const Runnable &runnable() const;
     void setRunnable(const Runnable &runnable);
@@ -249,10 +250,10 @@ public:
                                        const QString &cancelButtonText = QString(),
                                        bool *prompt = nullptr);
 
-    RunWorker *createWorker(Core::Id workerId);
+    RunWorker *createWorker(Utils::Id workerId);
 
     bool createMainWorker();
-    static bool canRun(Core::Id runMode, Core::Id deviceType, Core::Id runConfigId);
+    static bool canRun(Utils::Id runMode, Utils::Id deviceType, Utils::Id runConfigId);
 
 signals:
     void appendMessage(const QString &msg, Utils::OutputFormat format);
@@ -309,13 +310,14 @@ protected:
 public:
     virtual ~OutputFormatterFactory();
 
-    static Utils::OutputFormatter *createFormatter(Target *target);
+    static QList<Utils::OutputLineParser *> createFormatters(Target *target);
 
 protected:
-    void setFormatterCreator(const std::function<Utils::OutputFormatter *(Target *)> &creator);
+    using FormatterCreator = std::function<QList<Utils::OutputLineParser *>(Target *)>;
+    void setFormatterCreator(const FormatterCreator &creator);
 
 private:
-    std::function<Utils::OutputFormatter *(Target *)> m_creator;
+    FormatterCreator m_creator;
 };
 
 } // namespace ProjectExplorer

@@ -43,7 +43,6 @@
 #include <QDebug>
 #include <QRegularExpression>
 #include <QSet>
-#include <QStringRef>
 #include <QTextCursor>
 #include <QTextDocument>
 
@@ -214,7 +213,7 @@ bool isValidIdentifier(const QString &s)
     return true;
 }
 
-bool isQtKeyword(const QStringRef &text)
+bool isQtKeyword(QStringView text)
 {
     switch (text.length()) {
     case 4:

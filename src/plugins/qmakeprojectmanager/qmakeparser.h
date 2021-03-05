@@ -29,20 +29,21 @@
 
 #include <projectexplorer/ioutputparser.h>
 
-#include <QRegExp>
+#include <QRegularExpression>
 
 namespace QmakeProjectManager {
 
-class QMAKEPROJECTMANAGER_EXPORT QMakeParser : public ProjectExplorer::IOutputParser
+class QMAKEPROJECTMANAGER_EXPORT QMakeParser : public ProjectExplorer::OutputTaskParser
 {
     Q_OBJECT
 
 public:
     QMakeParser();
-    void stdError(const QString &line) override;
 
 private:
-    QRegExp m_error;
+    Result handleLine(const QString &line, Utils::OutputFormat type) override;
+
+    const QRegularExpression m_error;
 };
 
 } // namespace QmakeProjectManager

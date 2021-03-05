@@ -27,12 +27,13 @@
 
 #include "texteditor_global.h"
 
+#include <utils/id.h>
+
 #include <QObject>
 
 #include <functional>
 
 namespace Core {
-class Id;
 class IEditor;
 }
 
@@ -55,15 +56,17 @@ public:
         UnCommentSelection = 2,
         UnCollapseAll = 4,
         FollowSymbolUnderCursor = 8,
-        JumpToFileUnderCursor = 16
+        JumpToFileUnderCursor = 16,
+        RenameSymbol = 32,
     };
     using TextEditorWidgetResolver = std::function<TextEditorWidget *(Core::IEditor *)>;
 
-    TextEditorActionHandler(Core::Id editorId,
-                            Core::Id contextId,
+    TextEditorActionHandler(Utils::Id editorId,
+                            Utils::Id contextId,
                             uint optionalActions = None,
                             const TextEditorWidgetResolver &resolver = {});
 
+    uint optionalActions() const;
     ~TextEditorActionHandler();
 
 private:

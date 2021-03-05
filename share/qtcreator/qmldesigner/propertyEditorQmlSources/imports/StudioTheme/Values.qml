@@ -50,7 +50,7 @@ QtObject {
     property real sliderControlSize: 12
     property real sliderControlSizeMulti: values.sliderControlSize * values.scaleFactor
 
-    property int dragLength: 400 // px
+    property int dragThreshold: 10 // px
     property real spinControlIconSize: 8
     property real spinControlIconSizeMulti: values.spinControlIconSize * values.scaleFactor
 
@@ -78,6 +78,8 @@ QtObject {
     property real contextMenuHorizontalPadding: Math.round(6 * values.scaleFactor)
 
     property real inputHorizontalPadding: Math.round(4 * values.scaleFactor)
+
+    property real scrollBarThickness: 10
 
     // Theme Colors
 
@@ -117,6 +119,16 @@ QtObject {
     property string themeTranslationIndicatorBorder: Theme.color(Theme.DStranlsationIndicatorBorder)
     property string themeSectionHeadBackground: Theme.color(Theme.DSsectionHeadBackground)
 
+    property string themeTabDark: Theme.color(Theme.QmlDesigner_TabDark)
+    property string themeTabLight: Theme.color(Theme.QmlDesigner_TabLight)
+
+    property string themeStateDefaultHighlight: "#ffe400"
+
     // Taken out of Constants.js
     property string themeChangedStateText: Theme.color(Theme.DSchangedStateText)
+
+    // 3D
+    property string theme3DAxisXColor: Theme.color(Theme.DS3DAxisXColor)
+    property string theme3DAxisYColor: Theme.color(Theme.DS3DAxisYColor)
+    property string theme3DAxisZColor: Theme.color(Theme.DS3DAxisZColor)
 }

@@ -77,10 +77,10 @@ SessionView::SessionView(QWidget *parent)
         SelectCurrent);
 
     connect(this, &Utils::TreeView::activated, [this](const QModelIndex &index){
-        emit activated(m_sessionModel.sessionAt(index.row()));
+        emit sessionActivated(m_sessionModel.sessionAt(index.row()));
     });
     connect(selectionModel(), &QItemSelectionModel::selectionChanged, [this] {
-        emit selected(selectedSessions());
+        emit sessionsSelected(selectedSessions());
     });
 
     connect(&m_sessionModel, &SessionModel::sessionSwitched,
@@ -152,7 +152,7 @@ void SessionView::showEvent(QShowEvent *event)
 
 void SessionView::keyPressEvent(QKeyEvent *event)
 {
-    if (event->key() != Qt::Key_Delete) {
+    if (event->key() != Qt::Key_Delete && event->key() != Qt::Key_Backspace) {
         TreeView::keyPressEvent(event);
         return;
     }

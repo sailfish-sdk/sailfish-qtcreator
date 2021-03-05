@@ -207,7 +207,7 @@ static bool restoreQtVersions()
         if (!key.startsWith(keyPrefix))
             continue;
         bool ok;
-        int count = key.midRef(keyPrefix.count()).toInt(&ok);
+        int count = key.mid(keyPrefix.count()).toInt(&ok);
         if (!ok || count < 0)
             continue;
 
@@ -281,7 +281,7 @@ void QtVersionManager::updateFromInstaller(bool emitSignal)
         if (!key.startsWith(keyPrefix))
             continue;
         bool ok;
-        int count = key.midRef(keyPrefix.count()).toInt(&ok);
+        int count = key.mid(keyPrefix.count()).toInt(&ok);
         if (!ok || count < 0)
             continue;
 
@@ -386,7 +386,7 @@ static void saveQtVersions()
         data.insert(QString::fromLatin1(QTVERSION_DATA_KEY) + QString::number(count), tmp);
         ++count;
     }
-    m_writer->save(data, Core::ICore::mainWindow());
+    m_writer->save(data, Core::ICore::dialogParent());
 }
 
 // Executes qtchooser with arguments in a process and returns its output
@@ -502,14 +502,18 @@ static QList<std::pair<Path, FileName>> documentationFiles(BaseQtVersion *v)
 
 static QStringList documentationFiles(const QList<BaseQtVersion *> &vs, bool highestOnly = false)
 {
-    QSet<QString> includedFileNames;
+    // if highestOnly is true, register each file only once per major Qt version, even if
+    // multiple minor or patch releases of that major version are installed
+    QHash<int, QSet<QString>> includedFileNames; // major Qt version -> names
     QSet<QString> filePaths;
     const QList<BaseQtVersion *> versions = highestOnly ? QtVersionManager::sortVersions(vs) : vs;
     for (BaseQtVersion *v : versions) {
+        const int majorVersion = v->qtVersion().majorVersion;
+        QSet<QString> &majorVersionFileNames = includedFileNames[majorVersion];
         for (const std::pair<Path, FileName> &file : documentationFiles(v)) {
-            if (!highestOnly || !includedFileNames.contains(file.second)) {
+            if (!highestOnly || !majorVersionFileNames.contains(file.second)) {
                 filePaths.insert(file.first + file.second);
-                includedFileNames.insert(file.second);
+                majorVersionFileNames.insert(file.second);
             }
         }
     }

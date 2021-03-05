@@ -29,6 +29,7 @@
 #include "fileutils.h"
 #include "icore.h"
 #include "iversioncontrol.h"
+#include "mainwindow.h"
 #include "patchtool.h"
 #include "vcsmanager.h"
 
@@ -112,6 +113,8 @@ public:
         m_ui.maxRecentFilesSpinBox->setMinimum(1);
         m_ui.maxRecentFilesSpinBox->setMaximum(99);
         m_ui.maxRecentFilesSpinBox->setValue(EditorManagerPrivate::maxRecentFiles());
+        m_ui.askBeforeExitCheckBox->setChecked(
+                    static_cast<Core::Internal::MainWindow *>(ICore::mainWindow())->askConfirmationBeforeExit());
 
         if (HostOsInfo::isAnyUnixHost()) {
             connect(m_ui.resetTerminalButton, &QAbstractButton::clicked,
@@ -182,7 +185,7 @@ void SystemSettingsWidget::apply()
                                       m_ui.externalFileBrowserEdit->text());
         }
     }
-    PatchTool::setPatchCommand(m_ui.patchChooser->path());
+    PatchTool::setPatchCommand(m_ui.patchChooser->filePath().toString());
     EditorManagerPrivate::setAutoSaveEnabled(m_ui.autoSaveCheckBox->isChecked());
     EditorManagerPrivate::setAutoSaveInterval(m_ui.autoSaveInterval->value());
     EditorManagerPrivate::setAutoSuspendEnabled(m_ui.autoSuspendCheckBox->isChecked());
@@ -191,6 +194,8 @@ void SystemSettingsWidget::apply()
                 m_ui.warnBeforeOpeningBigFiles->isChecked());
     EditorManagerPrivate::setBigFileSizeLimit(m_ui.bigFilesLimitSpinBox->value());
     EditorManagerPrivate::setMaxRecentFiles(m_ui.maxRecentFilesSpinBox->value());
+    static_cast<Core::Internal::MainWindow *>(ICore::mainWindow())->setAskConfirmationBeforeExit(
+                m_ui.askBeforeExitCheckBox->isChecked());
 
     if (HostOsInfo::isMacHost()) {
         Qt::CaseSensitivity defaultSensitivity

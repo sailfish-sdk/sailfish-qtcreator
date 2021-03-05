@@ -33,19 +33,19 @@
 #include "task.h"
 #include "toolchaincache.h"
 
-#include <coreplugin/id.h>
-
 #include <utils/cpplanguage_details.h>
 #include <utils/environment.h>
 #include <utils/fileutils.h>
+#include <utils/id.h>
 
 #include <QObject>
-#include <QSet>
 #include <QStringList>
 #include <QVariantMap>
 
 #include <functional>
 #include <memory>
+
+namespace Utils { class OutputLineParser; }
 
 namespace ProjectExplorer {
 
@@ -64,7 +64,6 @@ QString languageId(Language l);
 } // namespace Deprecated
 
 class Abi;
-class IOutputParser;
 class ToolChainConfigWidget;
 class ToolChainFactory;
 class Kit;
@@ -75,7 +74,7 @@ class PROJECTEXPLORER_EXPORT ToolChainDescription
 {
 public:
     Utils::FilePath compilerPath;
-    Core::Id language;
+    Utils::Id language;
 };
 
 // --------------------------------------------------------------------------
@@ -99,14 +98,14 @@ public:
     QString displayName() const;
     void setDisplayName(const QString &name);
 
-    inline bool isAutoDetected() const { return detection() != ManualDetection; }
+    bool isAutoDetected() const;
     Detection detection() const;
 
     QByteArray id() const;
 
     virtual QStringList suggestedMkspecList() const;
 
-    Core::Id typeId() const;
+    Utils::Id typeId() const;
     QString typeDisplayName() const;
 
     virtual Abi targetAbi() const = 0;
@@ -135,22 +134,18 @@ public:
     // A MacroInspectionRunner is created in the ui thread and runs in another thread.
     using MacroInspectionRunner = std::function<MacroInspectionReport(const QStringList &cxxflags)>;
     virtual MacroInspectionRunner createMacroInspectionRunner() const = 0;
-    virtual Macros predefinedMacros(const QStringList &cxxflags) const = 0;
 
     // A BuiltInHeaderPathsRunner is created in the ui thread and runs in another thread.
     using BuiltInHeaderPathsRunner = std::function<HeaderPaths(
         const QStringList &cxxflags, const QString &sysRoot, const QString &originalTargetTriple)>;
     virtual BuiltInHeaderPathsRunner createBuiltInHeaderPathsRunner(const Utils::Environment &env) const = 0;
-    virtual HeaderPaths builtInHeaderPaths(const QStringList &cxxflags,
-                                           const Utils::FilePath &sysRoot,
-                                           const Utils::Environment &env) const = 0;
     virtual void addToEnvironment(Utils::Environment &env) const = 0;
     virtual Utils::FilePath makeCommand(const Utils::Environment &env) const = 0;
 
-    Core::Id language() const;
+    Utils::Id language() const;
 
     virtual Utils::FilePath compilerCommand() const = 0;
-    virtual IOutputParser *outputParser() const = 0;
+    virtual QList<Utils::OutputLineParser *> createOutputParsers() const = 0;
 
     virtual bool operator ==(const ToolChain &) const;
 
@@ -164,21 +159,21 @@ public:
 
     virtual bool isJobCountSupported() const { return true; }
 
-    void setLanguage(Core::Id language);
+    void setLanguage(Utils::Id language);
     void setDetection(Detection d);
 
     static Utils::LanguageVersion cxxLanguageVersion(const QByteArray &cplusplusMacroValue);
-    static Utils::LanguageVersion languageVersion(const Core::Id &language, const Macros &macros);
+    static Utils::LanguageVersion languageVersion(const Utils::Id &language, const Macros &macros);
 
 protected:
-    explicit ToolChain(Core::Id typeId);
+    explicit ToolChain(Utils::Id typeId);
 
     void setTypeDisplayName(const QString &typeName);
 
     const MacrosCache &predefinedMacrosCache() const;
     const HeaderPathsCache &headerPathsCache() const;
 
-    virtual void toolChainUpdated();
+    void toolChainUpdated();
 
     // Make sure to call this function when deriving!
     virtual bool fromMap(const QVariantMap &data);
@@ -193,18 +188,19 @@ private:
     friend class ToolChainFactory;
 };
 
-class PROJECTEXPLORER_EXPORT ToolChainFactory : public QObject
+class PROJECTEXPLORER_EXPORT ToolChainFactory
 {
-    Q_OBJECT
+    ToolChainFactory(const ToolChainFactory &) = delete;
+    ToolChainFactory &operator=(const ToolChainFactory &) = delete;
 
 public:
     ToolChainFactory();
-    ~ToolChainFactory() override;
+    virtual ~ToolChainFactory();
 
     static const QList<ToolChainFactory *> allToolChainFactories();
 
     QString displayName() const { return m_displayName; }
-    Core::Id supportedToolChainType() const;
+    Utils::Id supportedToolChainType() const;
 
     virtual QList<ToolChain *> autoDetect(const QList<ToolChain *> &alreadyKnown);
     virtual QList<ToolChain *> detectForImport(const ToolChainDescription &tcd);
@@ -215,19 +211,19 @@ public:
     ToolChain *restore(const QVariantMap &data);
 
     static QByteArray idFromMap(const QVariantMap &data);
-    static Core::Id typeIdFromMap(const QVariantMap &data);
+    static Utils::Id typeIdFromMap(const QVariantMap &data);
     static void autoDetectionToMap(QVariantMap &data, bool detected);
 
-    static ToolChain *createToolChain(Core::Id toolChainType);
+    static ToolChain *createToolChain(Utils::Id toolChainType);
 
-    QSet<Core::Id> supportedLanguages() const;
+    QList<Utils::Id> supportedLanguages() const;
 
     void setUserCreatable(bool userCreatable);
 
 protected:
     void setDisplayName(const QString &name) { m_displayName = name; }
-    void setSupportedToolChainType(const Core::Id &supportedToolChainType);
-    void setSupportedLanguages(const QSet<Core::Id> &supportedLanguages);
+    void setSupportedToolChainType(const Utils::Id &supportedToolChainType);
+    void setSupportedLanguages(const QList<Utils::Id> &supportedLanguages);
     void setSupportsAllLanguages(bool supportsAllLanguages);
     void setToolchainConstructor(const std::function<ToolChain *()> &constructor);
 
@@ -246,8 +242,8 @@ protected:
 
 private:
     QString m_displayName;
-    Core::Id m_supportedToolChainType;
-    QSet<Core::Id> m_supportedLanguages;
+    Utils::Id m_supportedToolChainType;
+    QList<Utils::Id> m_supportedLanguages;
     bool m_supportsAllLanguages = false;
     bool m_userCreatable = false;
     std::function<ToolChain *()> m_toolchainConstructor;

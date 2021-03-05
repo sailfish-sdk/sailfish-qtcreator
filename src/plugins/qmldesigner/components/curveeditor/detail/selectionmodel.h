@@ -25,13 +25,13 @@
 
 #pragma once
 
+#include "curveitem.h"
 #include "treeitem.h"
 
 #include <QItemSelectionModel>
 
-namespace DesignTools {
+namespace QmlDesigner {
 
-class CurveItem;
 class TreeItem;
 class NodeTreeItem;
 class PropertyTreeItem;
@@ -41,13 +41,14 @@ class SelectionModel : public QItemSelectionModel
     Q_OBJECT
 
 signals:
-    void curvesSelected(const std::vector<CurveItem *> &curves);
+    void curvesSelected();
 
 public:
     SelectionModel(QAbstractItemModel *model = nullptr);
 
-    void select(const QItemSelection &selection,
-                QItemSelectionModel::SelectionFlags command) override;
+    void select(const QItemSelection &selection, QItemSelectionModel::SelectionFlags command) override;
+
+    bool isSelected(TreeItem *item) const;
 
     std::vector<TreeItem::Path> selectedPaths() const;
 
@@ -59,10 +60,10 @@ public:
 
     std::vector<PropertyTreeItem *> selectedPropertyItems() const;
 
-    void select(const std::vector<TreeItem::Path> &selection);
+    void selectPaths(const std::vector<TreeItem::Path> &selection);
 
 private:
     void changeSelection(const QItemSelection &selected, const QItemSelection &deselected);
 };
 
-} // End namespace DesignTools.
+} // End namespace QmlDesigner.

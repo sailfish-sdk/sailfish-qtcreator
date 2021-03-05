@@ -53,7 +53,7 @@ class ModelNodePositionStorage;
 
 } //Internal
 
-struct CppTypeData
+struct QmlTypeData
 {
     QString superClassName;
     QString importUrl;
@@ -61,6 +61,7 @@ struct CppTypeData
     QString cppClassName;
     QString typeName;
     bool isSingleton = false;
+    bool isCppType = false;
 };
 
 class QMLDESIGNERCORE_EXPORT RewriterView : public AbstractView
@@ -74,7 +75,7 @@ public:
     };
 
 public:
-    RewriterView(DifferenceHandling differenceHandling, QObject *parent);
+    RewriterView(DifferenceHandling differenceHandling = RewriterView::Amend, QObject *parent = nullptr);
     ~RewriterView() override;
 
     void modelAttached(Model *model) override;
@@ -158,7 +159,7 @@ public:
 
     QStringList autoComplete(const QString &text, int pos, bool explicitComplete = true);
 
-    QList<CppTypeData> getCppTypes();
+    QList<QmlTypeData> getQMLTypes() const;
 
     void setWidgetStatusCallback(std::function<void(bool)> setWidgetStatusCallback);
 
@@ -172,6 +173,9 @@ public:
     QString auxiliaryDataAsQML() const;
 
     ModelNode getNodeForCanonicalIndex(int index);
+
+signals:
+    void modelInterfaceProjectUpdated();
 
 protected: // functions
     void importAdded(const Import &import);
@@ -189,6 +193,8 @@ protected: // functions
 private: //variables
     ModelNode nodeAtTextCursorPositionHelper(const ModelNode &root, int cursorPosition) const;
     void setupCanonicalHashes() const;
+    void handleLibraryInfoUpdate();
+    void handleProjectUpdate();
 
     TextModifier *m_textModifier = nullptr;
     int transactionLevel = 0;
@@ -209,6 +215,7 @@ private: //variables
     std::function<void(bool)> m_setWidgetStatusCallback;
     bool m_hasIncompleteTypeInformation = false;
     bool m_restoringAuxData = false;
+    bool m_modelAttachPending = false;
 
     mutable QHash<int, ModelNode> m_canonicalIntModelNode;
     mutable QHash<ModelNode, int> m_canonicalModelNodeInt;

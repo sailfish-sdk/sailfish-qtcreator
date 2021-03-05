@@ -27,6 +27,8 @@
 
 #include "parser/qmljsast_p.h"
 
+#include <utils/stringutils.h>
+
 #include <QColor>
 #include <QDir>
 #include <QRegularExpression>
@@ -81,7 +83,7 @@ QColor QmlJS::toQColor(const QString &qmlColorString)
     QColor color;
     if (qmlColorString.size() == 9 && qmlColorString.at(0) == QLatin1Char('#')) {
         bool ok;
-        const int alpha = qmlColorString.midRef(1, 2).toInt(&ok, 16);
+        const int alpha = qmlColorString.mid(1, 2).toInt(&ok, 16);
         if (ok) {
             const QString name = qmlColorString.at(0) + qmlColorString.right(6);
             if (QColor::isValidColor(name)) {
@@ -104,7 +106,7 @@ QString QmlJS::toString(UiQualifiedId *qualifiedId, QChar delimiter)
         if (iter != qualifiedId)
             result += delimiter;
 
-        result += iter->name;
+        result += iter->name.toString();
     }
 
     return result;
@@ -239,7 +241,7 @@ QString QmlJS::modulePath(const QString &name, const QString &version,
         return QString();
 
     const QString sanitizedVersion = version == undefinedVersion ? QString() : version;
-    const QStringList parts = name.split(QLatin1Char('.'), QString::SkipEmptyParts);
+    const QStringList parts = name.split('.', Qt::SkipEmptyParts);
     auto mkpath = [] (const QStringList &xs) -> QString { return xs.join(QLatin1Char('/')); };
 
     // Regular expression for building candidates by successively removing minor and major

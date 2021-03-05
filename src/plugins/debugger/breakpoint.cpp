@@ -31,6 +31,7 @@
 
 #include <projectexplorer/abi.h>
 #include <utils/qtcassert.h>
+#include <utils/stringutils.h>
 
 #include <QDebug>
 #include <QFileInfo>
@@ -136,7 +137,7 @@ void BreakpointParameters::updateLocation(const QString &location)
 {
     if (!location.isEmpty()) {
         int pos = location.indexOf(':');
-        lineNumber = location.midRef(pos + 1).toInt();
+        lineNumber = location.mid(pos + 1).toInt();
         QString file = location.left(pos);
         if (file.startsWith('"') && file.endsWith('"'))
             file = file.mid(1, file.size() - 2);
@@ -155,9 +156,9 @@ bool BreakpointParameters::isQmlFileAndLineBreakpoint() const
     if (qmlExtensionString.isEmpty())
         qmlExtensionString = ".qml;.js";
 
-    const auto qmlFileExtensions = qmlExtensionString.splitRef(';', QString::SkipEmptyParts);
+    const auto qmlFileExtensions = qmlExtensionString.split(';', Qt::SkipEmptyParts);
     const QString file = fileName.toString();
-    for (const QStringRef &extension : qmlFileExtensions) {
+    for (const QString &extension : qmlFileExtensions) {
         if (file.endsWith(extension, Qt::CaseInsensitive))
             return true;
     }
@@ -346,7 +347,7 @@ void BreakpointParameters::updateFromGdbOutput(const GdbMi &bkpt)
                 QString what = bkpt["what"].data();
                 if (what.startsWith("*0x")) {
                     type = WatchpointAtAddress;
-                    address = what.midRef(1).toULongLong(nullptr, 0);
+                    address = what.mid(1).toULongLong(nullptr, 0);
                 } else {
                     type = WatchpointAtExpression;
                     expression = what;

@@ -36,12 +36,12 @@
 #include <utils/macroexpander.h>
 #include <utils/qtcassert.h>
 #include <utils/qtcprocess.h>
+#include <utils/variablechooser.h>
 
 #include <coreplugin/coreconstants.h>
 #include <coreplugin/externaltool.h>
 #include <coreplugin/externaltoolmanager.h>
 #include <coreplugin/icore.h>
-#include <coreplugin/variablechooser.h>
 
 #include <QDialogButtonBox>
 #include <QDir>
@@ -49,6 +49,7 @@
 #include <QMenu>
 #include <QMimeData>
 #include <QPlainTextEdit>
+#include <QRandomGenerator>
 #include <QTextStream>
 
 using namespace Utils;
@@ -644,7 +645,7 @@ static QString getUserFilePath(const QString &proposalFileName)
         if (++count > 15)
             return QString();
         // add random number
-        const int number = qrand() % 1000;
+        const int number = QRandomGenerator::global()->generate() % 1000;
         tryPath = newFilePath + QString::number(number) + suffix;
     }
     return tryPath;
@@ -653,7 +654,7 @@ static QString getUserFilePath(const QString &proposalFileName)
 static QString idFromDisplayName(const QString &displayName)
 {
     QString id = displayName;
-    id.remove(QRegExp(QLatin1String("&(?!&)")));
+    id.remove(QRegularExpression("&(?!&)"));
     QChar *c = id.data();
     while (!c->isNull()) {
         if (!c->isLetterOrNumber())

@@ -71,6 +71,8 @@ using namespace Utils;
 namespace Qnx {
 namespace Internal {
 
+const char QNX_DEBUG_EXECUTABLE[] = "pdebug";
+
 static QStringList searchPaths(Kit *kit)
 {
     auto qtVersion = dynamic_cast<QnxQtVersion *>(QtSupport::QtKitAspect::qtVersion(kit));
@@ -107,7 +109,7 @@ public:
             QStringList arguments;
             if (portsGatherer->useGdbServer()) {
                 int pdebugPort = portsGatherer->gdbServer().port();
-                r.executable = FilePath::fromString(Constants::QNX_DEBUG_EXECUTABLE);
+                r.executable = FilePath::fromString(QNX_DEBUG_EXECUTABLE);
                 arguments.append(QString::number(pdebugPort));
             }
             if (portsGatherer->useQmlServer()) {
@@ -177,8 +179,8 @@ public:
         mainLayout->insertLayout(mainLayout->count() - 2, formLayout);
     }
 
-    QString projectSource() const { return m_projectSource->path(); }
-    FilePath localExecutable() const { return m_localExecutable->fileName(); }
+    QString projectSource() const { return m_projectSource->filePath().toString(); }
+    FilePath localExecutable() const { return m_localExecutable->filePath(); }
 
 private:
     PathChooser *m_projectSource;
@@ -201,7 +203,7 @@ public:
             const int pdebugPort = portsGatherer->gdbServer().port();
 
             Runnable r;
-            r.executable = FilePath::fromString(Constants::QNX_DEBUG_EXECUTABLE);
+            r.executable = FilePath::fromString(QNX_DEBUG_EXECUTABLE);
             r.commandLineArguments = QString::number(pdebugPort);
             doStart(r, runControl->device());
         });

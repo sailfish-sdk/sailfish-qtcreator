@@ -24,6 +24,7 @@
 ****************************************************************************/
 
 #include "gtest-creator-printing.h"
+#include "gtest-std-printing.h"
 
 #include "gtest-qt-printing.h"
 
@@ -37,6 +38,7 @@
 #include <clangcodemodelservermessages.h>
 #include <clangpathwatcher.h>
 #include <clangrefactoringmessages.h>
+#include <clangtools/clangtoolsdiagnostic.h>
 #include <coreplugin/find/searchresultitem.h>
 #include <coreplugin/locator/ilocatorfilter.h>
 #include <cpptools/usages.h>
@@ -45,6 +47,7 @@
 #include <filepathview.h>
 #include <filestatus.h>
 #include <includesearchpath.h>
+#include <modelnode.h>
 #include <nativefilepath.h>
 #include <pchpaths.h>
 #include <pchtask.h>
@@ -57,6 +60,8 @@
 #include <sourcedependency.h>
 #include <sourcelocationentry.h>
 #include <sourcelocationscontainer.h>
+#include <sqlitesessionchangeset.h>
+#include <sqlitevalue.h>
 #include <symbol.h>
 #include <symbolentry.h>
 #include <symbolindexertaskqueue.h>
@@ -64,12 +69,10 @@
 #include <tooltipinfo.h>
 #include <usedmacro.h>
 #include <utils/link.h>
-#include <cpptools/usages.h>
-#include <projectexplorer/projectmacro.h>
-#include <projectexplorer/headerpath.h>
-#include <coreplugin/find/searchresultitem.h>
-#include <coreplugin/locator/ilocatorfilter.h>
-#include <clangtools/clangtoolsdiagnostic.h>
+#include <variantproperty.h>
+#include <qmldesigner/designercore/imagecache/imagecachestorageinterface.h>
+
+#include <sqlite3ext.h>
 
 namespace {
 ClangBackEnd::FilePathCaching *filePathCache = nullptr;
@@ -106,8 +109,7 @@ void PrintTo(const TextPosition &position, ::std::ostream *os)
 {
     *os << "("
         << position.line << ", "
-        << position.column << ", "
-        << position.offset << ")";
+        << position.column << ")";
 }
 
 void PrintTo(const TextRange &range, ::std::ostream *os)
@@ -305,6 +307,209 @@ void PrintTo(const Utils::PathString &text, ::std::ostream *os)
 }
 
 } // namespace Utils
+
+namespace Sqlite {
+std::ostream &operator<<(std::ostream &out, const Value &value)
+{
+    out << "(";
+
+    switch (value.type()) {
+    case Sqlite::ValueType::Integer:
+        out << value.toInteger();
+        break;
+    case Sqlite::ValueType::Float:
+        out << value.toFloat();
+        break;
+    case Sqlite::ValueType::String:
+        out << "\"" << value.toStringView() << "\"";
+        break;
+    case Sqlite::ValueType::Null:
+        out << "null";
+        break;
+    }
+
+    return out << ")";
+}
+
+std::ostream &operator<<(std::ostream &out, const ValueView &value)
+{
+    out << "(";
+
+    switch (value.type()) {
+    case Sqlite::ValueType::Integer:
+        out << value.toInteger();
+        break;
+    case Sqlite::ValueType::Float:
+        out << value.toFloat();
+        break;
+    case Sqlite::ValueType::String:
+        out << "\"" << value.toStringView() << "\"";
+        break;
+    case Sqlite::ValueType::Null:
+        out << "null";
+        break;
+    }
+
+    return out << ")";
+}
+
+namespace {
+Utils::SmallStringView operationText(int operation)
+{
+    switch (operation) {
+    case SQLITE_INSERT:
+        return "INSERT";
+    case SQLITE_UPDATE:
+        return "UPDATE";
+    case SQLITE_DELETE:
+        return "DELETE";
+    }
+
+    return {};
+}
+
+std::ostream &operator<<(std::ostream &out, sqlite3_changeset_iter *iter)
+{
+    out << "(";
+
+    const char *tableName = nullptr;
+    int columns = 0;
+    int operation = 0;
+    sqlite3_value *value = nullptr;
+
+    sqlite3changeset_op(iter, &tableName, &columns, &operation, 0);
+
+    out << operationText(operation) << " " << tableName << " {";
+
+    if (operation == SQLITE_UPDATE || operation == SQLITE_DELETE) {
+        out << "Old: [";
+
+        for (int i = 0; i < columns; i++) {
+            sqlite3changeset_old(iter, i, &value);
+
+            if (value)
+                out << " " << sqlite3_value_text(value);
+            else
+                out << " -";
+        }
+        out << "]";
+    }
+
+    if (operation == SQLITE_UPDATE)
+        out << ", ";
+
+    if (operation == SQLITE_UPDATE || operation == SQLITE_INSERT) {
+        out << "New: [";
+        for (int i = 0; i < columns; i++) {
+            sqlite3changeset_new(iter, i, &value);
+
+            if (value)
+                out << " " << sqlite3_value_text(value);
+            else
+                out << " -";
+        }
+        out << "]";
+    }
+
+    out << "})";
+
+    return out;
+}
+
+const char *toText(Operation operation)
+{
+    switch (operation) {
+    case Operation::Invalid:
+        return "Invalid";
+    case Operation::Insert:
+        return "Invalid";
+    case Operation::Update:
+        return "Invalid";
+    case Operation::Delete:
+        return "Invalid";
+    }
+
+    return "";
+}
+} // namespace
+
+std::ostream &operator<<(std::ostream &out, const SessionChangeSet &changeset)
+{
+    sqlite3_changeset_iter *iter = nullptr;
+    sqlite3changeset_start(&iter, changeset.size(), const_cast<void *>(changeset.data()));
+
+    out << "ChangeSets([";
+
+    if (SQLITE_ROW == sqlite3changeset_next(iter)) {
+        out << iter;
+        while (SQLITE_ROW == sqlite3changeset_next(iter))
+            out << ", " << iter;
+    }
+
+    sqlite3changeset_finalize(iter);
+
+    out << "])";
+
+    return out;
+}
+
+std::ostream &operator<<(std::ostream &out, Operation operation)
+{
+    return out << toText(operation);
+}
+
+namespace SessionChangeSetInternal {
+namespace {
+
+const char *toText(State state)
+{
+    switch (state) {
+    case State::Invalid:
+        return "Invalid";
+    case State::Row:
+        return "Row";
+    case State::Done:
+        return "Done";
+    }
+
+    return "";
+}
+} // namespace
+
+std::ostream &operator<<(std::ostream &out, SentinelIterator)
+{
+    return out << "sentinel";
+}
+
+std::ostream &operator<<(std::ostream &out, State state)
+{
+    return out << toText(state);
+}
+
+std::ostream &operator<<(std::ostream &out, const Tuple &tuple)
+{
+    return out << "(" << tuple.operation << ", " << tuple.columnCount << ")";
+}
+
+std::ostream &operator<<(std::ostream &out, const ValueViews &valueViews)
+{
+    return out << "(" << valueViews.newValue << ", " << valueViews.oldValue << ")";
+}
+
+std::ostream &operator<<(std::ostream &out, const ConstIterator &iterator)
+{
+    return out << "(" << (*iterator) << ", " << iterator.state() << ")";
+}
+
+std::ostream &operator<<(std::ostream &out, const ConstTupleIterator &iterator)
+{
+    auto value = *iterator;
+
+    return out << "(" << value.newValue << ", " << value.newValue << ")";
+}
+
+} // namespace SessionChangeSetInternal
+} // namespace Sqlite
 
 namespace ClangBackEnd {
 
@@ -1330,6 +1535,7 @@ std::ostream &operator<<(std::ostream &out, const ExplainingStep &step)
 
 std::ostream &operator<<(std::ostream &out, const Diagnostic &diag) {
     return out << "("
+               << diag.name << ", "
                << diag.description << ", "
                << diag.category << ", "
                << diag.type << ", "
@@ -1340,6 +1546,34 @@ std::ostream &operator<<(std::ostream &out, const Diagnostic &diag) {
 }
 } // namespace Internal
 } // namespace ClangTools
+
+namespace QmlDesigner {
+
+std::ostream &operator<<(std::ostream &out, const ModelNode &node)
+{
+    if (!node.isValid())
+        return out << "(invalid)";
+
+    return out << "(" << node.id() << ")";
+}
+std::ostream &operator<<(std::ostream &out, const VariantProperty &property)
+{
+    if (!property.isValid())
+        return out << "(invalid)";
+
+    return out << "(" << property.parentModelNode() << ", " << property.name() << ", "
+               << property.value() << ")";
+}
+
+namespace Internal {
+std::ostream &operator<<(std::ostream &out, const ImageCacheStorageEntry &entry)
+{
+    return out << "(" << entry.image << ", " << entry.hasEntry << ")";
+}
+
+} // namespace Internal
+
+} // namespace QmlDesigner
 
 void setFilePathCache(ClangBackEnd::FilePathCaching *cache)
 {

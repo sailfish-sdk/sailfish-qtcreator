@@ -110,6 +110,7 @@ const char KITS_SETTINGS_PAGE_ID[] = "D.ProjectExplorer.KitsOptions";
 const char SSH_SETTINGS_PAGE_ID[] = "F.ProjectExplorer.SshOptions";
 const char TOOLCHAIN_SETTINGS_PAGE_ID[] = "M.ProjectExplorer.ToolChainOptions";
 const char DEBUGGER_SETTINGS_PAGE_ID[] = "N.ProjectExplorer.DebuggerOptions";
+const char CUSTOM_PARSERS_SETTINGS_PAGE_ID[] = "X.ProjectExplorer.CustomParsersSettingsPage";
 
 // Build and Run settings category
 const char BUILD_AND_RUN_SETTINGS_CATEGORY[]  = "K.BuildAndRun";
@@ -158,6 +159,7 @@ const char BUILDSTEPS_DEPLOY[] = "ProjectExplorer.BuildSteps.Deploy";
 const char C_LANGUAGE_ID[] = "C";
 const char CXX_LANGUAGE_ID[] = "Cxx";
 const char QMLJS_LANGUAGE_ID[] = "QMLJS";
+const char PYTHON_LANGUAGE_ID[] = "Python";
 
 // ToolChain TypeIds
 const char CLANG_TOOLCHAIN_TYPEID[] = "ProjectExplorer.ToolChain.Clang";
@@ -178,17 +180,18 @@ const char DESKTOP_DEVICE_TYPE[] = "Desktop";
 const int DESKTOP_PORT_START = 30000;
 const int DESKTOP_PORT_END = 31000;
 
+// Android ABIs
+const char ANDROID_ABI_ARMEABI[] = "armeabi";
+const char ANDROID_ABI_ARMEABI_V7A[] = "armeabi-v7a";
+const char ANDROID_ABI_ARM64_V8A[] = "arm64-v8a";
+const char ANDROID_ABI_X86[] = "x86";
+const char ANDROID_ABI_X86_64[] = "x86_64";
+
 // Variable Names:
 const char VAR_CURRENTPROJECT_PREFIX[] = "CurrentProject";
 const char VAR_CURRENTPROJECT_NAME[] = "CurrentProject:Name";
-const char VAR_CURRENTKIT_NAME[] = "CurrentKit:Name";
-const char VAR_CURRENTKIT_FILESYSTEMNAME[] = "CurrentKit:FileSystemName";
-const char VAR_CURRENTKIT_ID[] = "CurrentKit:Id";
 const char VAR_CURRENTBUILD_NAME[] = "CurrentBuild:Name";
-const char VAR_CURRENTBUILD_TYPE[] = "CurrentBuild:Type";
 const char VAR_CURRENTBUILD_ENV[] = "CurrentBuild:Env";
-const char VAR_CURRENTRUN_NAME[] = "CurrentRun:Name";
-const char VAR_CURRENTRUN_WORKINGDIR[] = "CurrentRun:WorkingDir";
 
 // JsonWizard:
 const char PAGE_ID_PREFIX[] = "PE.Wizard.Page.";
@@ -210,6 +213,8 @@ const char PROJECTTREE_ID[] = "Projects";
 
 // File icon overlays
 const char FILEOVERLAY_QT[]=":/projectexplorer/images/fileoverlay_qt.png";
+const char FILEOVERLAY_GROUP[] = ":/projectexplorer/images/fileoverlay_group.png";
+const char FILEOVERLAY_PRODUCT[] = ":/projectexplorer/images/fileoverlay_product.png";
 const char FILEOVERLAY_QML[]=":/projectexplorer/images/fileoverlay_qml.png";
 const char FILEOVERLAY_UI[]=":/projectexplorer/images/fileoverlay_ui.png";
 const char FILEOVERLAY_QRC[]=":/projectexplorer/images/fileoverlay_qrc.png";

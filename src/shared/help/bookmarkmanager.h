@@ -70,8 +70,8 @@ private:
     void toolButtonClicked();
     void itemChanged(QStandardItem *item);
     void textChanged(const QString& string);
-    void selectBookmarkFolder(const QString &folderName);
-    void customContextMenuRequested(const QPoint &point);
+    void selectBookmarkFolder(int index);
+    void showContextMenu(const QPoint &point);
     void currentChanged(const QModelIndex& current);
     bool eventFilter(QObject *object, QEvent *e);
 
@@ -122,7 +122,7 @@ private:
     void expandItems();
     bool eventFilter(QObject *object, QEvent *event);
 
-    QRegExp regExp;
+    QRegularExpression regExp;
     TreeView *treeView;
     Utils::FancyLineEdit *searchField;
     BookmarkManager *bookmarkManager;

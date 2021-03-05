@@ -31,11 +31,14 @@ Model {
     id: rootModel
 
     property View3D view3D
-    property alias color: material.emissiveColor
+    property alias color: material.diffuseColor
     property Node targetNode: null
     property bool dragging: mouseAreaYZ.dragging || mouseAreaXZ.dragging
     property bool active: false
     property MouseArea3D dragHelper: null
+    property alias material: material
+    property real length: 12
+    property real offset: 0
 
     readonly property bool hovering: mouseAreaYZ.hovering || mouseAreaXZ.hovering
 
@@ -43,17 +46,19 @@ Model {
     property real _posPressed
     property vector3d _targetStartPos
 
-    signal pressed(var mouseArea)
-    signal dragged(var mouseArea, vector3d sceneRelativeDistance, real relativeDistance)
-    signal released(var mouseArea, vector3d sceneRelativeDistance, real relativeDistance)
+    signal pressed(var mouseArea, point screenPos)
+    signal dragged(var mouseArea, vector3d sceneRelativeDistance, real relativeDistance, point screenPos)
+    signal released(var mouseArea, vector3d sceneRelativeDistance, real relativeDistance, point screenPos)
 
-    materials: DefaultMaterial {
+    DefaultMaterial {
         id: material
-        emissiveColor: "white"
+        diffuseColor: "white"
         lighting: DefaultMaterial.NoLighting
     }
 
-    function handlePressed(mouseArea, planePos)
+    materials: [ material ]
+
+    function handlePressed(mouseArea, planePos, screenPos)
     {
         if (!targetNode)
             return;
@@ -62,7 +67,7 @@ Model {
         _posPressed = planePos.x;
         _scenePosPressed = mouseArea.dragHelper.mapPositionToScene(maskedPosition);
         _targetStartPos = mouseArea.pivotScenePosition(targetNode);
-        pressed(mouseArea);
+        pressed(mouseArea, screenPos);
     }
 
     function calcRelativeDistance(mouseArea, planePos)
@@ -72,54 +77,56 @@ Model {
         return scenePointerPos.minus(_scenePosPressed);
     }
 
-    function handleDragged(mouseArea, planePos)
+    function handleDragged(mouseArea, planePos, screenPos)
     {
         if (!targetNode)
             return;
 
-        dragged(mouseArea, calcRelativeDistance(mouseArea, planePos), planePos.x - _posPressed);
+        dragged(mouseArea, calcRelativeDistance(mouseArea, planePos), planePos.x - _posPressed, screenPos);
     }
 
-    function handleReleased(mouseArea, planePos)
+    function handleReleased(mouseArea, planePos, screenPos)
     {
         if (!targetNode)
             return;
 
-        released(mouseArea, calcRelativeDistance(mouseArea, planePos), planePos.x - _posPressed);
+        released(mouseArea, calcRelativeDistance(mouseArea, planePos), planePos.x - _posPressed, screenPos);
     }
 
     MouseArea3D {
         id: mouseAreaYZ
         view3D: rootModel.view3D
-        x: 0
+        x: rootModel.offset
         y: -1.5
-        width: 12
+        width: rootModel.length
         height: 3
         eulerRotation: Qt.vector3d(0, 0, 90)
         grabsMouse: targetNode
         active: rootModel.active
         dragHelper: rootModel.dragHelper
+        priority: 5
 
-        onPressed: rootModel.handlePressed(mouseAreaYZ, planePos)
-        onDragged: rootModel.handleDragged(mouseAreaYZ, planePos)
-        onReleased: rootModel.handleReleased(mouseAreaYZ, planePos)
+        onPressed: rootModel.handlePressed(mouseAreaYZ, planePos, screenPos)
+        onDragged: rootModel.handleDragged(mouseAreaYZ, planePos, screenPos)
+        onReleased: rootModel.handleReleased(mouseAreaYZ, planePos, screenPos)
     }
 
     MouseArea3D {
         id: mouseAreaXZ
         view3D: rootModel.view3D
-        x: 0
+        x: rootModel.offset
         y: -1.5
-        width: 12
+        width: rootModel.length
         height: 3
         eulerRotation: Qt.vector3d(0, 90, 90)
         grabsMouse: targetNode
         active: rootModel.active
         dragHelper: rootModel.dragHelper
+        priority: 5
 
-        onPressed: rootModel.handlePressed(mouseAreaXZ, planePos)
-        onDragged: rootModel.handleDragged(mouseAreaXZ, planePos)
-        onReleased: rootModel.handleReleased(mouseAreaXZ, planePos)
+        onPressed: rootModel.handlePressed(mouseAreaXZ, planePos, screenPos)
+        onDragged: rootModel.handleDragged(mouseAreaXZ, planePos, screenPos)
+        onReleased: rootModel.handleReleased(mouseAreaXZ, planePos, screenPos)
     }
 }
 

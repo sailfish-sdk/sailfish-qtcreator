@@ -207,7 +207,8 @@ void ModelTreeView::dropEvent(QDropEvent *event)
                     QString key;
                     dataStream >> key;
                     if (!key.isEmpty()) {
-                        MElement *modelElement = treeModel->modelController()->findElement(Uid(key));
+                        MElement *modelElement = treeModel->modelController()->findElement(
+                            Uid(QUuid(key)));
                         if (modelElement) {
                             if (auto modelObject = dynamic_cast<MObject*>(modelElement)) {
                                 if (auto targetModelPackage = dynamic_cast<MPackage *>(targetModelObject)) {
@@ -259,8 +260,10 @@ void ModelTreeView::contextMenuEvent(QContextMenuEvent *event)
         if (melement->owner()) {
             if (addSeparator)
                 menu.addSeparator();
-            menu.addAction(new ContextMenuAction(tr("Delete"), "delete",
-                                                 QKeySequence(Qt::CTRL + Qt::Key_D), &menu));
+            menu.addAction(new ContextMenuAction(tr("Delete"),
+                                                 "delete",
+                                                 QKeySequence(Qt::CTRL | Qt::Key_D),
+                                                 &menu));
         }
         QAction *selectedAction = menu.exec(event->globalPos());
         if (selectedAction) {

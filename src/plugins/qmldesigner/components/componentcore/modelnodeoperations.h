@@ -30,7 +30,7 @@
 namespace QmlDesigner {
 namespace ModelNodeOperations {
 
-void goIntoComponent(const ModelNode &modelNode);
+bool goIntoComponent(const ModelNode &modelNode);
 
 void select(const SelectionContext &selectionState);
 void deSelect(const SelectionContext &selectionState);
@@ -52,6 +52,7 @@ void resetPosition(const SelectionContext &selectionState);
 void goIntoComponentOperation(const SelectionContext &selectionState);
 void setId(const SelectionContext &selectionState);
 void resetZ(const SelectionContext &selectionState);
+void reverse(const SelectionContext &selectionState);
 void anchorsFill(const SelectionContext &selectionState);
 void anchorsReset(const SelectionContext &selectionState);
 void layoutRowPositioner(const SelectionContext &selectionState);
@@ -77,6 +78,19 @@ bool addFontToProject(const QStringList &fileNames, const QString &directory);
 void createFlowActionArea(const SelectionContext &selectionContext);
 void addTransition(const SelectionContext &selectionState);
 void addFlowEffect(const SelectionContext &selectionState, const TypeName &typeName);
+void addCustomFlowEffect(const SelectionContext &selectionState);
+void setFlowStartItem(const SelectionContext &selectionContext);
+void addToGroupItem(const SelectionContext &selectionContext);
+void selectFlowEffect(const SelectionContext &selectionContext);
+void mergeWithTemplate(const SelectionContext &selectionContext);
+void removeGroup(const SelectionContext &selectionContext);
+void editAnnotation(const SelectionContext &selectionContext);
+
+void openSignalDialog(const SelectionContext &selectionContext);
+
+// ModelNodePreviewImageOperations
+QVariant previewImageDataForGenericNode(const ModelNode &modelNode);
+QVariant previewImageDataForImageNode(const ModelNode &modelNode);
 
 } // namespace ModelNodeOperationso
 } //QmlDesigner

@@ -30,7 +30,7 @@
     \else
     \previouspage quick-connections-backend.html
     \endif
-    \nextpage qmldesigner-pathview-editor.html
+    \nextpage studio-3d.html
 
     \title Adding States
 
@@ -63,14 +63,20 @@
 
     \section1 Creating States
 
+    To open the \uicontrol States view, select \uicontrol View >
+    \uicontrol Views > \uicontrol States. To collapse or expand
+    the open view, select \uicontrol {Toggle States} or press
+    \key {Ctr+Alt+S}. You can also right-click the view and select
+    \uicontrol Collapse or \uicontrol Expand.
+
     The \uicontrol States view displays the different \l{State}{states}
     of a UI, beginning with a \e {base state}.
 
     \image qmldesigner-transitions.png "States view"
 
-    To add states, click the \inlineimage plus.png
-    button. Click the new state to switch to it in \uicontrol {Form Editor},
-    and then modify the properties of components in \uicontrol Properties.
+    To add states, select \uicontrol {Create New State}. Click the new state to
+    switch to it in \uicontrol {Form Editor}, and then modify the properties of
+    components in \uicontrol Properties.
 
     For example, to change the appearance of a button, you can hide the button
     image and show another image in its place. Or, to add movement to the view,
@@ -82,6 +88,14 @@
     to the base state.
 
     \image qmldesigner-states.png "States and Properties views"
+
+    \note If you have \l{Locking Items}{locked an item} in \uicontrol Navigator,
+    and you attempt to remove states where you change the values of its
+    properties, you are prompted to confirm the removal.
+
+    For more information, watch the following video:
+
+    \youtube FzmLuRHQXaw
 
     \section1 Setting the Default State
 
@@ -98,14 +112,58 @@
     To determine when a state should be applied, select \uicontrol Actions >
     \uicontrol {Set when Condition}. In \uicontrol {Binding Editor}, specify
     a \l [QtQuick]{State::when}{when} property for the state. Set the value of
-    the property to an expression that evaluates to \c true when you want the
-    state to be applied.
+    the property to a boolean expression that evaluates to \c true when you want
+    the state to be applied.
+
+    This enables you to evaluate the truthfulness of several components'
+    properties and move the UI to the state in which these conditions apply.
+    You can evaluate whether something is true or false, greater than or equal
+    to something else, and so on. You can also use operators, such as AND or
+    OR, to evaluate the truthfulness of several components.
+
+    The when conditions are evaluated from left to right and in order of
+    appearance in the code. Therefore, if you have two conditions for two
+    different states that both evaluate to \c true, the first state is applied.
 
     In \uicontrol {Binding Editor}, select the component and property to
     create the expression. For example, to change the state when a button is
     pressed, you could select a button component and its pressed property.
 
     \image qtquick-states-binding-editor.png "Binding Editor in States view"
+
+    When you compose the expressions in \uicontrol {Binding Editor}, the
+    \l{Completing Code}{code completion} feature lists the components and
+    their properties you can use in the expressions.
+
+    \include creator-logical-operators.qdocinc logical operators
+
+    \section2 Examples of when Conditions
+
+    To apply a state to a button when the button is pressed, you could simply
+    write:
+
+    \badcode
+    when: control.pressed
+    \endcode
+
+    To apply a state when the button is not pressed, select the \uicontrol NOT
+    check box.
+
+    \image qtquick-states-binding-editor-not.png "NOT check box in Binding Editor"
+
+    To apply a state when the button is not pressed, selected, nor hovered on,
+    you could combine conditions, as follows:
+
+    \badcode
+    when: !control.pressed && !control.checked && !control.hovered
+    \endcode
+
+    To apply a state when the button is pressed or selected, but not hovered on,
+    you could write:
+
+    \badcode
+    when: control.pressed || control.checked && !control.hovered
+    \endcode
 
     \section1 Using States
 
@@ -150,53 +208,5 @@
     \include qtquick-states-scxml.qdocinc scxml state machines
     \endif
 
-    \section1 Animating Transitions Between States
-
-    To make movement between states smooth, you can animate transitions.
-    Animations are created by applying animation types to property values.
-    Animation types interpolate property values to create smooth transitions.
-    As well, state transitions may assign animations to state changes.
-
-    To create an animation, use an appropriate animation type for the type of
-    the property that is to be animated, and apply the animation depending on
-    the type of behavior that is required.
-
-    You can drag and drop the following QML types from \uicontrol Library
-    > \uicontrol {QML Types} > \uicontrol {Qt Quick - Animation} to
-    \uicontrol Navigator or \uicontrol {Form Editor}:
-
-    \list
-        \li \l [QML] {ColorAnimation}{Color Animation} is a specialized
-            property animation that defines an animation to be applied when a
-            color value changes.
-        \li \l [QML] {NumberAnimation}{Number Animation} is a specialized
-            property animation that defines an animation to be applied when a
-            numerical value changes.
-        \li \l [QML] {ParallelAnimation}{Parallel Animation} enables
-            animations to be run in parallel.
-        \li \l [QML] {PauseAnimation}{Pause Animation} is used in a
-            sequential animation to create a step where nothing happens, for
-            a specified duration.
-        \li \l [QML] {PropertyAction}{Property Action} immediately changes
-             a property value during an animation, without animating the
-             property change.
-        \li \l [QML] {PropertyAnimation}{Property Animation} animates
-             changes in the value of a property.
-        \li \l [QML] {ScriptAction}{Script Action} defines scripts to be
-            run during an animation.
-        \li \l [QML] {SequentialAnimation}{Sequential Animation} enables
-            animations to be run sequentially.
-    \endlist
-
-    For more information, see \l{Animation and Transitions in Qt Quick}.
-
-    \if defined(qtcreator)
-    For an example of assigning number animations to states, see
-    \l {Creating a Qt Quick Application}.
-    \endif
-
-
-    Alternatively, you can use the \uicontrol Timeline view to animate the
-    properties of UI components and to bind the animations to states. For more
-    information, see \l {Binding Animations to States}.
+    \include qtquick-transition-editor.qdocinc transition editor
 */

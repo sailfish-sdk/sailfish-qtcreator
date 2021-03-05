@@ -48,6 +48,7 @@
 #include <QtConcurrentMap>
 #include <QCheckBox>
 #include <QDir>
+#include <QFutureWatcher>
 
 #include <functional>
 
@@ -338,6 +339,9 @@ void CppFindReferences::findUsages(CPlusPlus::Symbol *symbol,
                                                 SearchResultWindow::PreserveCaseDisabled,
                                                 QLatin1String("CppEditor"));
     search->setTextToReplace(replacement);
+    auto renameFilesCheckBox = new QCheckBox();
+    renameFilesCheckBox->setVisible(false);
+    search->setAdditionalReplaceWidget(renameFilesCheckBox);
     connect(search, &SearchResult::replaceButtonClicked,
             this, &CppFindReferences::onReplaceButtonClicked);
     search->setSearchAgainSupported(true);
@@ -548,13 +552,24 @@ static void displayResults(SearchResult *search, QFutureWatcher<CPlusPlus::Usage
 {
     CppFindReferencesParameters parameters = search->userData().value<CppFindReferencesParameters>();
 
+    static const auto colorStyleForUsageType = [](CPlusPlus::Usage::Type type) {
+        switch (type) {
+        case CPlusPlus::Usage::Type::Read:
+            return SearchResultColor::Style::Alt1;
+        case CPlusPlus::Usage::Type::Initialization:
+        case CPlusPlus::Usage::Type::Write:
+        case CPlusPlus::Usage::Type::WritableRef:
+            return SearchResultColor::Style::Alt2;
+        case CPlusPlus::Usage::Type::Declaration:
+        case CPlusPlus::Usage::Type::Other:
+            return SearchResultColor::Style::Default;
+        }
+        return SearchResultColor::Style::Default; // For dumb compilers.
+    };
     for (int index = first; index != last; ++index) {
-        CPlusPlus::Usage result = watcher->future().resultAt(index);
-        search->addResult(result.path.toString(),
-                          result.line,
-                          result.lineText,
-                          result.col,
-                          result.len);
+        const CPlusPlus::Usage result = watcher->future().resultAt(index);
+        search->addResult(result.path.toString(), result.line, result.lineText,
+                          result.col, result.len, {}, colorStyleForUsageType(result.type));
 
         if (parameters.prettySymbolName.isEmpty())
             continue;
@@ -647,8 +662,9 @@ restart_search:
                 if (macro.name() == useMacro.name()) {
                     unsigned column;
                     const QString &lineSource = matchingLine(use.bytesBegin(), source, &column);
-                    usages.append(CPlusPlus::Usage(fileName, lineSource, use.beginLine(), column,
-                                        useMacro.nameToQString().size()));
+                    usages.append(CPlusPlus::Usage(fileName, lineSource,
+                                                   CPlusPlus::Usage::Type::Other, use.beginLine(),
+                                                   column, useMacro.nameToQString().size()));
                 }
             }
         }
@@ -721,6 +737,9 @@ void CppFindReferences::findMacroUses(const CPlusPlus::Macro &macro, const QStri
                 QLatin1String("CppEditor"));
 
     search->setTextToReplace(replacement);
+    auto renameFilesCheckBox = new QCheckBox();
+    renameFilesCheckBox->setVisible(false);
+    search->setAdditionalReplaceWidget(renameFilesCheckBox);
     connect(search, &SearchResult::replaceButtonClicked,
             this, &CppFindReferences::onReplaceButtonClicked);
 

@@ -41,18 +41,18 @@ namespace Internal {
 class MakeStep : public ProjectExplorer::MakeStep
 {
 public:
-    MakeStep(ProjectExplorer::BuildStepList *bsl, Core::Id id);
+    MakeStep(ProjectExplorer::BuildStepList *bsl, Utils::Id id);
 };
 
-MakeStep::MakeStep(ProjectExplorer::BuildStepList *bsl, Core::Id id)
+MakeStep::MakeStep(ProjectExplorer::BuildStepList *bsl, Utils::Id id)
     : ProjectExplorer::MakeStep(bsl, id)
 {
     setAvailableBuildTargets({"all", "clean"});
     if (bsl->id() == ProjectExplorer::Constants::BUILDSTEPS_CLEAN) {
-        setBuildTarget("clean", true);
-        setClean(true);
+        setSelectedBuildTarget("clean");
+        setIgnoreReturnValue(true);
     } else {
-        setBuildTarget("all", true);
+        setSelectedBuildTarget("all");
     }
 }
 

@@ -31,7 +31,6 @@
 #include <QMap>
 
 QT_BEGIN_NAMESPACE
-class QStringList;
 class QUrl;
 QT_END_NAMESPACE
 
@@ -63,8 +62,8 @@ CORE_EXPORT QString documentationPath();
 CORE_EXPORT void registerDocumentation(const QStringList &fileNames);
 CORE_EXPORT void unregisterDocumentation(const QStringList &fileNames);
 
-CORE_EXPORT QMap<QString, QUrl> linksForIdentifier(const QString &id);
-CORE_EXPORT QMap<QString, QUrl> linksForKeyword(const QString &id);
+CORE_EXPORT QMultiMap<QString, QUrl> linksForIdentifier(const QString &id);
+CORE_EXPORT QMultiMap<QString, QUrl> linksForKeyword(const QString &id);
 CORE_EXPORT QByteArray fileData(const QUrl &url);
 
 CORE_EXPORT void showHelpUrl(const QUrl &url, HelpViewerLocation location = HelpModeAlways);

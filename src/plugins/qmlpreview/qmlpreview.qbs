@@ -24,6 +24,10 @@ QtcPlugin {
         files: [
             "qmlpreviewclient.cpp",
             "qmlpreviewclient.h",
+            "qmldebugtranslationclient.cpp",
+            "qmldebugtranslationclient.h",
+            "qmldebugtranslationwidget.cpp",
+            "qmldebugtranslationwidget.h",
             "qmlpreviewconnectionmanager.cpp",
             "qmlpreviewconnectionmanager.h",
             "qmlpreviewfileontargetfinder.cpp",
@@ -33,6 +37,8 @@ QtcPlugin {
             "qmlpreviewplugin.h",
             "qmlpreviewruncontrol.cpp",
             "qmlpreviewruncontrol.h",
+            "projectfileselectionswidget.cpp",
+            "projectfileselectionswidget.h"
         ]
     }
 

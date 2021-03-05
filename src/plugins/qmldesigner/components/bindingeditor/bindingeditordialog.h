@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of Qt Creator.
@@ -26,21 +26,16 @@
 #ifndef BINDINGEDITORDIALOG_H
 #define BINDINGEDITORDIALOG_H
 
-#include <bindingeditor/bindingeditorwidget.h>
-#include <texteditor/texteditor.h>
-
-#include <QDialog>
+#include <bindingeditor/abstracteditordialog.h>
 
 QT_BEGIN_NAMESPACE
-class QDialogButtonBox;
-class QVBoxLayout;
-class QHBoxLayout;
 class QComboBox;
+class QCheckBox;
 QT_END_NAMESPACE
 
 namespace QmlDesigner {
 
-class BindingEditorDialog : public QDialog
+class BindingEditorDialog : public AbstractEditorDialog
 {
     Q_OBJECT
 
@@ -57,51 +52,30 @@ public:
         QStringList properties;
     };
 
-    enum DialogType {
-        Unknown = 0,
-        BindingDialog = 1,
-        ActionDialog = 2
-    };
-
-public:
-    BindingEditorDialog(QWidget *parent = nullptr, DialogType type = DialogType::BindingDialog);
+    BindingEditorDialog(QWidget *parent = nullptr);
     ~BindingEditorDialog() override;
 
-    void showWidget(int x, int y);
+    void adjustProperties() override;
 
-    QString editorValue() const;
-    void setEditorValue(const QString &text);
-
-    void setAllBindings(QList<BindingEditorDialog::BindingOption> bindings);
-    void adjustProperties();
-
-    void unregisterAutoCompletion();
-
-    QString defaultTitle() const;
+    void setAllBindings(const QList<BindingOption> &bindings, const TypeName &type);
 
 private:
-    void setupJSEditor();
     void setupUIComponents();
     void setupComboBoxes();
+    void setupCheckBox();
 
 public slots:
     void itemIDChanged(int);
     void propertyIDChanged(int);
-    void textChanged();
+    void checkBoxChanged(int);
 
 private:
-    DialogType m_dialogType = DialogType::BindingDialog;
-    TextEditor::BaseTextEditor *m_editor = nullptr;
-    BindingEditorWidget *m_editorWidget = nullptr;
-    QVBoxLayout *m_verticalLayout = nullptr;
-    QDialogButtonBox *m_buttonBox = nullptr;
-    QHBoxLayout *m_comboBoxLayout = nullptr;
     QComboBox *m_comboBoxItem = nullptr;
     QComboBox *m_comboBoxProperty = nullptr;
-    QList<BindingEditorDialog::BindingOption> m_bindings;
-    bool m_lock = false;
-    const QString undefinedString = {"[Undefined]"};
-    const QString titleString = {tr("Binding Editor")};
+    QCheckBox *m_checkBoxNot = nullptr;
+
+    QList<BindingOption> m_bindings;
+    TypeName m_type;
 };
 
 }

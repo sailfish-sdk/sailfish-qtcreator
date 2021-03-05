@@ -59,25 +59,10 @@ class AndroidDeployQtStep : public ProjectExplorer::BuildStep
     };
 
 public:
-    enum UninstallType {
-        Keep,
-        Uninstall,
-        ForceUnintall
-    };
-
-    AndroidDeployQtStep(ProjectExplorer::BuildStepList *bc, Core::Id id);
-
-    static Core::Id stepId();
-
-    bool fromMap(const QVariantMap &map) override;
-    QVariantMap toMap() const override;
-
-    UninstallType uninstallPreviousPackage();
-    void setUninstallPreviousPackage(bool uninstall);
+    AndroidDeployQtStep(ProjectExplorer::BuildStepList *bc, Utils::Id id);
 
 signals:
     void askForUninstall(DeployErrorCode errorCode);
-    void setSerialNumber(const QString &serialNumber);
 
 private:
     void runCommand(const Utils::CommandLine &command);
@@ -87,20 +72,16 @@ private:
     void gatherFilesToPull();
     DeployErrorCode runDeploy();
     void slotAskForUninstall(DeployErrorCode errorCode);
-    void slotSetSerialNumber(const QString &serialNumber);
 
     bool runImpl();
 
-    ProjectExplorer::BuildStepConfigWidget *createConfigWidget() override;
+    QWidget *createConfigWidget() override;
 
     void processReadyReadStdOutput(DeployErrorCode &errorCode);
     void stdOutput(const QString &line);
     void processReadyReadStdError(DeployErrorCode &errorCode);
     void stdError(const QString &line);
     DeployErrorCode parseDeployErrors(QString &deployOutputLine) const;
-
-    void slotProcessFinished(int, QProcess::ExitStatus);
-    void processFinished(int exitCode, QProcess::ExitStatus status);
 
     friend void operator|=(DeployErrorCode &e1, const DeployErrorCode &e2) { e1 = static_cast<AndroidDeployQtStep::DeployErrorCode>((int)e1 | (int)e2); }
     friend DeployErrorCode operator|(const DeployErrorCode &e1, const DeployErrorCode &e2) { return static_cast<AndroidDeployQtStep::DeployErrorCode>((int)e1 | (int)e2); }
@@ -112,11 +93,11 @@ private:
     QMap<QString, QString> m_filesToPull;
 
     QStringList m_androidABIs;
-    bool m_uninstallPreviousPackage = false;
+    Utils::BoolAspect *m_uninstallPreviousPackage = nullptr;
     bool m_uninstallPreviousPackageRun = false;
     bool m_useAndroiddeployqt = false;
     bool m_askForUninstall = false;
-    static const Core::Id Id;
+    static const Utils::Id Id;
     Utils::CommandLine m_androiddeployqtArgs;
     Utils::FilePath m_adbPath;
     Utils::FilePath m_command;

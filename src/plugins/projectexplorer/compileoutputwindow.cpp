@@ -24,12 +24,14 @@
 ****************************************************************************/
 
 #include "compileoutputwindow.h"
+
 #include "buildmanager.h"
-#include "showoutputtaskhandler.h"
-#include "task.h"
+#include "ioutputparser.h"
 #include "projectexplorer.h"
 #include "projectexplorericons.h"
 #include "projectexplorersettings.h"
+#include "showoutputtaskhandler.h"
+#include "task.h"
 #include "taskhub.h"
 
 #include <coreplugin/outputwindow.h>
@@ -40,6 +42,7 @@
 #include <texteditor/texteditorsettings.h>
 #include <texteditor/fontsettings.h>
 #include <texteditor/behaviorsettings.h>
+#include <utils/algorithm.h>
 #include <utils/outputformatter.h>
 #include <utils/proxyaction.h>
 #include <utils/theme/theme.h>
@@ -67,75 +70,28 @@ const char WRAP_OUTPUT_KEY[] = "ProjectExplorer/Settings/WrapBuildOutput";
 const char MAX_LINES_KEY[] = "ProjectExplorer/Settings/MaxBuildOutputLines";
 const char OPTIONS_PAGE_ID[] = "C.ProjectExplorer.CompileOutputOptions";
 
-class CompileOutputTextEdit : public Core::OutputWindow
-{
-    Q_OBJECT
-public:
-    CompileOutputTextEdit(const Core::Context &context) : Core::OutputWindow(context, SETTINGS_KEY)
-    {
-        setMouseTracking(true);
-    }
-
-    void addTask(const Task &task, int blocknumber)
-    {
-        m_taskids.insert(blocknumber, task.taskId);
-    }
-
-    void clearTasks()
-    {
-        m_taskids.clear();
-    }
-
-protected:
-    void mouseMoveEvent(QMouseEvent *ev) override
-    {
-        const int line = cursorForPosition(ev->pos()).block().blockNumber();
-        if (m_taskids.contains(line) && m_mousePressButton == Qt::NoButton)
-            viewport()->setCursor(Qt::PointingHandCursor);
-        else
-            viewport()->setCursor(Qt::IBeamCursor);
-        QPlainTextEdit::mouseMoveEvent(ev);
-    }
-
-    void mousePressEvent(QMouseEvent *ev) override
-    {
-        m_mousePressPosition = ev->pos();
-        m_mousePressButton = ev->button();
-        QPlainTextEdit::mousePressEvent(ev);
-    }
-
-    void mouseReleaseEvent(QMouseEvent *ev) override
-    {
-        if ((m_mousePressPosition - ev->pos()).manhattanLength() < 4
-                && m_mousePressButton == Qt::LeftButton) {
-            int line = cursorForPosition(ev->pos()).block().blockNumber();
-            if (unsigned taskid = m_taskids.value(line, 0))
-                TaskHub::showTaskInEditor(taskid);
-        }
-
-        m_mousePressButton = Qt::NoButton;
-        QPlainTextEdit::mouseReleaseEvent(ev);
-    }
-
-private:
-    QHash<int, unsigned int> m_taskids;   //Map blocknumber to taskId
-    QPoint m_mousePressPosition;
-    Qt::MouseButton m_mousePressButton = Qt::NoButton;
-};
-
 CompileOutputWindow::CompileOutputWindow(QAction *cancelBuildAction) :
     m_cancelBuildButton(new QToolButton),
-    m_settingsButton(new QToolButton),
-    m_formatter(new Utils::OutputFormatter)
+    m_settingsButton(new QToolButton)
 {
     Core::Context context(C_COMPILE_OUTPUT);
-    m_outputWindow = new CompileOutputTextEdit(context);
+    m_outputWindow = new Core::OutputWindow(context, SETTINGS_KEY);
     m_outputWindow->setWindowTitle(displayName());
     m_outputWindow->setWindowIcon(Icons::WINDOW.icon());
     m_outputWindow->setReadOnly(true);
     m_outputWindow->setUndoRedoEnabled(false);
     m_outputWindow->setMaxCharCount(Core::Constants::DEFAULT_MAX_CHAR_COUNT);
-    m_outputWindow->setFormatter(m_formatter);
+
+    outputFormatter()->overridePostPrintAction([this](Utils::OutputLineParser *parser) {
+        if (const auto taskParser = qobject_cast<OutputTaskParser *>(parser)) {
+            int offset = 0;
+            Utils::reverseForeach(taskParser->taskInfo(), [this, &offset](const OutputTaskParser::TaskInfo &ti) {
+                registerPositionOf(ti.task, ti.linkedLines, ti.skippedLines, offset);
+                offset += ti.linkedLines;
+            });
+        }
+        parser->runPostPrintActions();
+    });
 
     // Let selected text be colored as if the text edit was editable,
     // otherwise the highlight for searching is too light
@@ -167,9 +123,9 @@ CompileOutputWindow::CompileOutputWindow(QAction *cancelBuildAction) :
     setupFilterUi("CompileOutputPane.Filter");
     setFilteringEnabled(true);
 
-    connect(this, &IOutputPane::zoomIn, m_outputWindow, &Core::OutputWindow::zoomIn);
-    connect(this, &IOutputPane::zoomOut, m_outputWindow, &Core::OutputWindow::zoomOut);
-    connect(this, &IOutputPane::resetZoom, m_outputWindow, &Core::OutputWindow::resetZoom);
+    connect(this, &IOutputPane::zoomInRequested, m_outputWindow, &Core::OutputWindow::zoomIn);
+    connect(this, &IOutputPane::zoomOutRequested, m_outputWindow, &Core::OutputWindow::zoomOut);
+    connect(this, &IOutputPane::resetZoomRequested, m_outputWindow, &Core::OutputWindow::resetZoom);
     connect(TextEditor::TextEditorSettings::instance(), &TextEditor::TextEditorSettings::fontSettingsChanged,
             this, updateFontSettings);
     connect(TextEditor::TextEditorSettings::instance(), &TextEditor::TextEditorSettings::behaviorSettingsChanged,
@@ -198,7 +154,6 @@ CompileOutputWindow::~CompileOutputWindow()
     delete m_handler;
     delete m_cancelBuildButton;
     delete m_settingsButton;
-    delete m_formatter;
 }
 
 void CompileOutputWindow::updateFromSettings()
@@ -257,12 +212,8 @@ void CompileOutputWindow::appendText(const QString &text, BuildStep::OutputForma
 void CompileOutputWindow::clearContents()
 {
     m_outputWindow->clear();
-    m_outputWindow->clearTasks();
     m_taskPositions.clear();
 }
-
-void CompileOutputWindow::visibilityChanged(bool)
-{ }
 
 int CompileOutputWindow::priorityInStatusBar() const
 {
@@ -290,22 +241,17 @@ bool CompileOutputWindow::canNavigate() const
     return false;
 }
 
-void CompileOutputWindow::registerPositionOf(const Task &task, int linkedOutputLines, int skipLines)
+void CompileOutputWindow::registerPositionOf(const Task &task, int linkedOutputLines, int skipLines,
+                                             int offset)
 {
     if (linkedOutputLines <= 0)
         return;
-    const int charNumber = m_outputWindow->document()->characterCount();
-    if (charNumber > m_outputWindow->maxCharCount())
-        return;
 
-    const int blocknumber = m_outputWindow->document()->blockCount();
-    const int startLine = blocknumber - linkedOutputLines + 1 - skipLines;
-    const int endLine = blocknumber - skipLines;
+    const int blocknumber = m_outputWindow->document()->blockCount() - offset - 1;
+    const int firstLine = blocknumber - linkedOutputLines - skipLines;
+    const int lastLine = firstLine + linkedOutputLines - 1;
 
-    m_taskPositions.insert(task.taskId, qMakePair(startLine, endLine));
-
-    for (int i = startLine; i <= endLine; ++i)
-        m_outputWindow->addTask(task, i);
+    m_taskPositions.insert(task.taskId, qMakePair(firstLine, lastLine));
 }
 
 bool CompileOutputWindow::knowsPositionOf(const Task &task)
@@ -333,7 +279,12 @@ void CompileOutputWindow::showPositionOf(const Task &task)
 
 void CompileOutputWindow::flush()
 {
-    m_formatter->flush();
+    m_outputWindow->flush();
+}
+
+void CompileOutputWindow::reset()
+{
+    m_outputWindow->reset();
 }
 
 void CompileOutputWindow::setSettings(const CompileOutputSettings &settings)
@@ -341,6 +292,11 @@ void CompileOutputWindow::setSettings(const CompileOutputSettings &settings)
     m_settings = settings;
     storeSettings();
     updateFromSettings();
+}
+
+Utils::OutputFormatter *CompileOutputWindow::outputFormatter() const
+{
+    return m_outputWindow->outputFormatter();
 }
 
 void CompileOutputWindow::updateFilter()
@@ -418,5 +374,3 @@ CompileOutputSettingsPage::CompileOutputSettingsPage()
 
 } // Internal
 } // ProjectExplorer
-
-#include "compileoutputwindow.moc"

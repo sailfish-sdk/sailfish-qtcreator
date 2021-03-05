@@ -29,6 +29,7 @@
 
 #include <utils/qtcassert.h>
 #include <utils/qtcprocess.h>
+#include <utils/stringutils.h>
 
 #include <QDir>
 #include <QFile>
@@ -153,7 +154,7 @@ MakefileParser::TopTarget MakefileParser::topTarget() const
         return BuiltSources;
     if (id == QLatin1String("SUBDIRS") || id == QLatin1String("DIST_SUBDIRS"))
         return SubDirs;
-    if (id.endsWith(QLatin1String("_SOURCES")))
+    if (id.endsWith("_SOURCES") || id.endsWith("_HEADERS"))
         return Sources;
 
     return Undefined;
@@ -173,7 +174,7 @@ void MakefileParser::parseBinPrograms()
 
 void MakefileParser::parseSources()
 {
-    QTC_ASSERT(m_line.contains(QLatin1String("_SOURCES")), return);
+    QTC_ASSERT(m_line.contains("_SOURCES") || m_line.contains("_HEADERS"), return);
 
     bool hasVariables = false;
     m_sources.append(targetValues(&hasVariables));
@@ -375,7 +376,7 @@ QStringList MakefileParser::targetValues(bool *hasVariables)
         // Get all values of a line separated by spaces.
         // Values representing a variable like $(value) get
         // removed currently.
-        QStringList lineValues = m_line.split(QLatin1Char(' '), QString::SkipEmptyParts);
+        QStringList lineValues = m_line.split(QLatin1Char(' '), Qt::SkipEmptyParts);
         QStringList::iterator it = lineValues.begin();
         while (it != lineValues.end()) {
             if ((*it).startsWith(QLatin1String("$("))) {

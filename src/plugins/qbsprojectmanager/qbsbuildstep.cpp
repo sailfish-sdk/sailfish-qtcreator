@@ -26,23 +26,23 @@
 #include "qbsbuildstep.h"
 
 #include "qbsbuildconfiguration.h"
-#include "qbsparser.h"
 #include "qbsproject.h"
 #include "qbsprojectmanagerconstants.h"
 #include "qbssession.h"
 #include "qbssettings.h"
 
 #include <coreplugin/icore.h>
-#include <coreplugin/variablechooser.h>
 #include <projectexplorer/buildsteplist.h>
 #include <projectexplorer/kit.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/target.h>
 #include <qtsupport/qtversionmanager.h>
 #include <utils/macroexpander.h>
+#include <utils/outputformatter.h>
 #include <utils/pathchooser.h>
 #include <utils/qtcassert.h>
 #include <utils/qtcprocess.h>
+#include <utils/variablechooser.h>
 
 #include <QBoxLayout>
 #include <QCheckBox>
@@ -60,7 +60,6 @@
 // --------------------------------------------------------------------
 
 const char QBS_CONFIG[] = "Qbs.Configuration";
-const char QBS_DRY_RUN[] = "Qbs.DryRun";
 const char QBS_KEEP_GOING[] = "Qbs.DryKeepGoing";
 const char QBS_MAXJOBCOUNT[] = "Qbs.MaxJobs";
 const char QBS_SHOWCOMMANDLINES[] = "Qbs.ShowCommandLines";
@@ -73,7 +72,7 @@ using namespace Utils;
 namespace QbsProjectManager {
 namespace Internal {
 
-class QbsBuildStepConfigWidget : public ProjectExplorer::BuildStepConfigWidget
+class QbsBuildStepConfigWidget : public QWidget
 {
     Q_OBJECT
 public:
@@ -117,6 +116,7 @@ private:
         QString effectiveValue;
     };
 
+    QbsBuildStep *m_qbsStep;
     QList<Property> m_propertyCache;
     bool m_ignoreChange = false;
 
@@ -137,10 +137,12 @@ private:
 // QbsBuildStep:
 // --------------------------------------------------------------------
 
-QbsBuildStep::QbsBuildStep(BuildStepList *bsl, Core::Id id) :
+QbsBuildStep::QbsBuildStep(BuildStepList *bsl, Utils::Id id) :
     BuildStep(bsl, id)
 {
     setDisplayName(tr("Qbs Build"));
+    setSummaryText(tr("<b>Qbs:</b> %1").arg("build"));
+
     setQbsConfiguration(QVariantMap());
 
     auto qbsBuildConfig = qobject_cast<QbsBuildConfiguration *>(buildConfiguration());
@@ -156,7 +158,6 @@ QbsBuildStep::~QbsBuildStep()
     doCancel();
     if (m_session)
         m_session->disconnect(this);
-    delete m_parser;
 }
 
 bool QbsBuildStep::init()
@@ -169,23 +170,17 @@ bool QbsBuildStep::init()
     if (!bc)
         return false;
 
-    delete m_parser;
-    m_parser = new Internal::QbsParser;
-    ProjectExplorer::IOutputParser *parser = target()->kit()->createOutputParser();
-    if (parser)
-        m_parser->appendOutputParser(parser);
-
     m_changedFiles = bc->changedFiles();
     m_activeFileTags = bc->activeFileTags();
     m_products = bc->products();
 
-    connect(m_parser, &ProjectExplorer::IOutputParser::addOutput,
-            this, [this](const QString &string, ProjectExplorer::BuildStep::OutputFormat format) {
-        emit addOutput(string, format);
-    });
-    connect(m_parser, &ProjectExplorer::IOutputParser::addTask, this, &QbsBuildStep::addTask);
-
     return true;
+}
+
+void QbsBuildStep::setupOutputFormatter(OutputFormatter *formatter)
+{
+    formatter->addLineParsers(target()->kit()->createOutputParsers());
+    BuildStep::setupOutputFormatter(formatter);
 }
 
 void QbsBuildStep::doRun()
@@ -196,7 +191,7 @@ void QbsBuildStep::doRun()
     parseProject();
 }
 
-ProjectExplorer::BuildStepConfigWidget *QbsBuildStep::createConfigWidget()
+QWidget *QbsBuildStep::createConfigWidget()
 {
     return new QbsBuildStepConfigWidget(this);
 }
@@ -234,7 +229,7 @@ QVariantMap QbsBuildStep::qbsConfiguration(VariableHandling variableHandling) co
           Constants::QBS_CONFIG_QUICK_COMPILER_KEY);
 
     if (variableHandling == ExpandVariables) {
-        const MacroExpander * const expander = buildConfiguration()->macroExpander();
+        const MacroExpander * const expander = macroExpander();
         for (auto it = config.begin(), end = config.end(); it != end; ++it) {
             const QString rawString = it.value().toString();
             const QString expandedString = expander->expand(rawString);
@@ -273,7 +268,7 @@ Utils::FilePath QbsBuildStep::installRoot(VariableHandling variableHandling) con
         return Utils::FilePath::fromString(root);
     QString defaultInstallDir = QbsSettings::defaultInstallDirTemplate();
     if (variableHandling == VariableHandling::ExpandVariables)
-        defaultInstallDir = buildConfiguration()->macroExpander()->expand(defaultInstallDir);
+        defaultInstallDir = macroExpander()->expand(defaultInstallDir);
     return FilePath::fromString(defaultInstallDir);
 }
 
@@ -379,29 +374,24 @@ void QbsBuildStep::handleProcessResult(
         const QStringList &stdErr,
         bool success)
 {
+    Q_UNUSED(workingDir);
     const bool hasOutput = !stdOut.isEmpty() || !stdErr.isEmpty();
     if (success && !hasOutput)
         return;
 
-    m_parser->setWorkingDirectory(workingDir.toString());
     emit addOutput(executable.toUserOutput() + ' '  + QtcProcess::joinArgs(arguments),
                    OutputFormat::Stdout);
-    for (const QString &line : stdErr) {
-        m_parser->stdError(line);
+    for (const QString &line : stdErr)
         emit addOutput(line, OutputFormat::Stderr);
-    }
-    for (const QString &line : stdOut) {
-        m_parser->stdOutput(line);
+    for (const QString &line : stdOut)
         emit addOutput(line, OutputFormat::Stdout);
-    }
-    m_parser->flush();
 }
 
 void QbsBuildStep::createTaskAndOutput(ProjectExplorer::Task::TaskType type, const QString &message,
                                        const QString &file, int line)
 {
-    emit addTask(CompileTask(type, message, FilePath::fromString(file), line), 1);
     emit addOutput(message, OutputFormat::Stdout);
+    emit addTask(CompileTask(type, message, FilePath::fromString(file), line), 1);
 }
 
 QString QbsBuildStep::buildVariant() const
@@ -411,7 +401,7 @@ QString QbsBuildStep::buildVariant() const
 
 QbsBuildSystem *QbsBuildStep::qbsBuildSystem() const
 {
-    return static_cast<QbsBuildSystem *>(buildConfiguration()->buildSystem());
+    return static_cast<QbsBuildSystem *>(buildSystem());
 }
 
 void QbsBuildStep::setBuildVariant(const QString &variant)
@@ -554,7 +544,7 @@ void QbsBuildStep::dropSession()
 // --------------------------------------------------------------------
 
 QbsBuildStepConfigWidget::QbsBuildStepConfigWidget(QbsBuildStep *step) :
-    BuildStepConfigWidget(step),
+    m_qbsStep(step),
     m_ignoreChange(false)
 {
     connect(step, &ProjectConfiguration::displayNameChanged,
@@ -650,12 +640,10 @@ QbsBuildStepConfigWidget::QbsBuildStepConfigWidget(QbsBuildStep *step) :
     cleanInstallRootCheckBox->setText(tr("Clean install root"));
     defaultInstallDirCheckBox->setText(tr("Use default location"));
 
-    auto chooser = new Core::VariableChooser(this);
+    auto chooser = new VariableChooser(this);
     chooser->addSupportedWidget(propertyEdit);
     chooser->addSupportedWidget(installDirChooser->lineEdit());
-    chooser->addMacroExpanderProvider([step] {
-        return step->buildConfiguration()->macroExpander();
-    });
+    chooser->addMacroExpanderProvider([step] { return step->macroExpander(); });
     propertyEdit->setValidationFunction([this](FancyLineEdit *edit, QString *errorMessage) {
         return validateProperties(edit, errorMessage);
     });
@@ -680,7 +668,6 @@ QbsBuildStepConfigWidget::QbsBuildStepConfigWidget(QbsBuildStep *step) :
     connect(forceProbesCheckBox, &QCheckBox::toggled, this,
             &QbsBuildStepConfigWidget::changeForceProbes);
     updateState();
-    setSummaryText(tr("<b>Qbs:</b> %1").arg("build"));
 }
 
 void QbsBuildStepConfigWidget::updateState()
@@ -693,14 +680,14 @@ void QbsBuildStepConfigWidget::updateState()
         cleanInstallRootCheckBox->setChecked(qbsStep()->cleanInstallRoot());
         forceProbesCheckBox->setChecked(qbsStep()->forceProbes());
         updatePropertyEdit(qbsStep()->qbsConfiguration(QbsBuildStep::PreserveVariables));
-        installDirChooser->setFileName(qbsStep()->installRoot(QbsBuildStep::PreserveVariables));
+        installDirChooser->setFilePath(qbsStep()->installRoot(QbsBuildStep::PreserveVariables));
         defaultInstallDirCheckBox->setChecked(!qbsStep()->hasCustomInstallRoot());
     }
 
     const QString buildVariant = qbsStep()->buildVariant();
     const int idx = (buildVariant == Constants::QBS_VARIANT_DEBUG) ? 0 : 1;
     buildVariantComboBox->setCurrentIndex(idx);
-    const auto qbsBuildConfig = static_cast<QbsBuildConfiguration *>(step()->buildConfiguration());
+    const auto qbsBuildConfig = static_cast<QbsBuildConfiguration *>(qbsStep()->buildConfiguration());
 
     QString command = qbsBuildConfig->equivalentCommandLine(qbsStep()->stepData());
 
@@ -861,7 +848,7 @@ void QbsBuildStepConfigWidget::applyCachedProperties()
 
 QbsBuildStep *QbsBuildStepConfigWidget::qbsStep() const
 {
-    return static_cast<QbsBuildStep *>(step());
+    return m_qbsStep;
 }
 
 bool QbsBuildStepConfigWidget::validateProperties(Utils::FancyLineEdit *edit, QString *errorMessage)
@@ -876,7 +863,7 @@ bool QbsBuildStepConfigWidget::validateProperties(Utils::FancyLineEdit *edit, QS
     }
 
     QList<Property> properties;
-    const MacroExpander * const expander = step()->buildConfiguration()->macroExpander();
+    const MacroExpander * const expander = qbsStep()->macroExpander();
     foreach (const QString &rawArg, argList) {
         int pos = rawArg.indexOf(':');
         if (pos > 0) {

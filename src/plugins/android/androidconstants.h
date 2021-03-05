@@ -64,11 +64,14 @@ const char JAVA_MIMETYPE[] = "text/x-java";
 const char ANDROID_ARCHITECTURE[] = "Android.Architecture";
 const char ANDROID_PACKAGE_SOURCE_DIR[] = "AndroidPackageSourceDir";
 const char ANDROID_EXTRA_LIBS[] = "AndroidExtraLibs";
+const char ANDROID_ABIS[] = "ANDROID_ABIS";
+const char ANDROID_APPLICATION_ARGUMENTS[] = "ANDROID_APPLICATION_ARGUMENTS";
 
 const char ANDROID_PACKAGENAME[] = "Android.PackageName";
 const char ANDROID_PACKAGE_INSTALLATION_STEP_ID[]
     = "Qt4ProjectManager.AndroidPackageInstallationStep";
 const char ANDROID_BUILD_APK_ID[] = "QmakeProjectManager.AndroidBuildApkStep";
+const char ANDROID_DEPLOY_QT_ID[] = "Qt4ProjectManager.AndroidDeployQtStep";
 
 const char AndroidPackageSourceDir[] = "AndroidPackageSourceDir"; // QString
 const char AndroidDeploySettingsFile[] = "AndroidDeploySettingsFile"; // QString

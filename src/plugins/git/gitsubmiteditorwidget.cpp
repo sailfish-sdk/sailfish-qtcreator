@@ -33,12 +33,11 @@
 #include <utils/theme/theme.h>
 #include <utils/utilsicons.h>
 
-#include <QRegExpValidator>
+#include <QRegularExpressionValidator>
 #include <QTextEdit>
 
 #include <QDir>
 #include <QGroupBox>
-#include <QRegExp>
 #include <QVBoxLayout>
 #include <QMenu>
 
@@ -52,7 +51,7 @@ GitSubmitEditorWidget::GitSubmitEditorWidget() :
     m_gitSubmitPanelUi.setupUi(m_gitSubmitPanel);
     new GitSubmitHighlighter(descriptionEdit());
 
-    m_emailValidator = new QRegExpValidator(QRegExp("[^@ ]+@[^@ ]+\\.[a-zA-Z]+"), this);
+    m_emailValidator = new QRegularExpressionValidator(QRegularExpression("[^@ ]+@[^@ ]+\\.[a-zA-Z]+"), this);
     const QPixmap error = Utils::Icons::CRITICAL.pixmap();
     m_gitSubmitPanelUi.invalidAuthorLabel->setPixmap(error);
     m_gitSubmitPanelUi.invalidEmailLabel->setToolTip(tr("Provide a valid email to commit."));
@@ -102,7 +101,7 @@ void GitSubmitEditorWidget::initialize(CommitType commitType,
         logChangeGroupBox->setLayout(logChangeLayout);
         m_logChangeWidget = new LogChangeWidget;
         m_logChangeWidget->init(repository);
-        connect(m_logChangeWidget, &LogChangeWidget::commitActivated, this, &GitSubmitEditorWidget::show);
+        connect(m_logChangeWidget, &LogChangeWidget::commitActivated, this, &GitSubmitEditorWidget::showRequested);
         logChangeLayout->addWidget(m_logChangeWidget);
         insertLeftWidget(logChangeGroupBox);
         m_gitSubmitPanelUi.editGroup->hide();

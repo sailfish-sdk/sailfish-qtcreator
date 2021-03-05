@@ -27,7 +27,6 @@
 
 #include "clangtoolssettings.h"
 
-#include <coreplugin/id.h>
 #include <projectexplorer/project.h>
 
 #include <utils/fileutils.h>
@@ -71,18 +70,19 @@ public:
     ~ClangToolsProjectSettings() override;
 
     bool useGlobalSettings() const { return m_useGlobalSettings; }
-    void setUseGlobalSettings(bool useGlobalSettings) { m_useGlobalSettings = useGlobalSettings; }
+    void setUseGlobalSettings(bool useGlobalSettings);
 
     RunSettings runSettings() const { return m_runSettings; }
-    void setRunSettings(const RunSettings &settings) { m_runSettings = settings; }
+    void setRunSettings(const RunSettings &settings);
 
     QSet<Utils::FilePath> selectedDirs() const { return m_selectedDirs; }
-    void setSelectedDirs(const QSet<Utils::FilePath> &value) { m_selectedDirs = value; }
+    void setSelectedDirs(const QSet<Utils::FilePath> &value);
 
     QSet<Utils::FilePath> selectedFiles() const { return m_selectedFiles; }
-    void setSelectedFiles(const QSet<Utils::FilePath> &value) { m_selectedFiles = value; }
+    void setSelectedFiles(const QSet<Utils::FilePath> &value);
 
     SuppressedDiagnosticsList suppressedDiagnostics() const { return m_suppressedDiagnostics; }
+    void addSuppressedDiagnostics(const SuppressedDiagnosticsList &diags);
     void addSuppressedDiagnostic(const SuppressedDiagnostic &diag);
     void removeSuppressedDiagnostic(const SuppressedDiagnostic &diag);
     void removeAllSuppressedDiagnostics();
@@ -92,6 +92,7 @@ public:
 
 signals:
     void suppressedDiagnosticsChanged();
+    void changed();
 
 private:
     void load();

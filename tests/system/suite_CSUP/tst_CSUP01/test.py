@@ -81,9 +81,11 @@ def main():
             try:
                 proposalListView = waitForObject(":popupFrame_Proposal_QListView")
                 waitForObjectItem(proposalListView, "unsigned")
-                if useClang and platform.system() == 'Linux':    # QTCREATORBUG-23159
-                    test.compare(proposalListView.model().rowCount(), 1,
-                                 'Only one proposal for "unsi"?')
+                model = proposalListView.model()
+                if test.verify(model.rowCount() >= 1,
+                               'At least one proposal for "unsi"?'):
+                    test.compare(dumpItems(model)[0], 'unsigned',
+                                 '"unsigned" is the first proposal for "unsi"?')
                 type(proposalListView, "<Tab>")
                 test.compare(str(lineUnderCursor(editorWidget)).strip(), "unsigned",
                              "Step 4: Verifying if: Word 'unsigned' is completed because only one option is available.")
@@ -111,7 +113,7 @@ def main():
                 proposal = "return"
                 if useClang:
                     # clang adds a whitespace because the function needs to return a value
-                    proposal += " "
+                    proposal += " ;"
                 waitForObjectItem(":popupFrame_Proposal_QListView", proposal)
             except:
                 test.fail("Could not find proposal popup.")
@@ -123,6 +125,5 @@ def main():
             invokeMenuItem('File', 'Revert "main.cpp" to Saved')
             clickButton(waitForObject(":Revert to Saved.Proceed_QPushButton"))
             # exit qt creator
-            invokeMenuItem("File", "Save All")
             invokeMenuItem("File", "Exit")
             waitForCleanShutdown()

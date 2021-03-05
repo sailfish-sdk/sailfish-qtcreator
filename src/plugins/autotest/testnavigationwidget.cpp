@@ -43,6 +43,7 @@
 #include <utils/utilsicons.h>
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <projectexplorer/buildmanager.h>
+#include <projectexplorer/session.h>
 
 #include <QAction>
 #include <QMenu>
@@ -76,7 +77,9 @@ TestNavigationWidget::TestNavigationWidget(QWidget *parent) :
     QHBoxLayout *hLayout = new QHBoxLayout;
     m_missingFrameworksWidget->setLayout(hLayout);
     hLayout->addWidget(new QLabel(tr("No active test frameworks.")));
-    m_missingFrameworksWidget->setVisible(!TestFrameworkManager::instance()->hasActiveFrameworks());
+    const bool hasActiveFrameworks = Utils::anyOf(TestFrameworkManager::registeredFrameworks(),
+                                                  &ITestFramework::active);
+    m_missingFrameworksWidget->setVisible(!hasActiveFrameworks);
     QVBoxLayout *layout = new QVBoxLayout;
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
@@ -104,8 +107,17 @@ TestNavigationWidget::TestNavigationWidget(QWidget *parent) :
             this, [this] (int numberOfActive) {
         m_missingFrameworksWidget->setVisible(numberOfActive == 0);
     });
+    ProjectExplorer::SessionManager *sm = ProjectExplorer::SessionManager::instance();
+    connect(sm, &ProjectExplorer::SessionManager::startupProjectChanged,
+            this, [this](ProjectExplorer::Project * /*project*/) {
+        m_expandedStateCache.clear();
+    });
+    connect(m_model, &TestTreeModel::testTreeModelChanged,
+            this, &TestNavigationWidget::reapplyCachedExpandedState);
     connect(m_progressTimer, &QTimer::timeout,
             m_progressIndicator, &Utils::ProgressIndicator::show);
+    connect(m_view, &TestTreeView::expanded, this, &TestNavigationWidget::updateExpandedStateCache);
+    connect(m_view, &TestTreeView::collapsed, this, &TestNavigationWidget::updateExpandedStateCache);
 }
 
 void TestNavigationWidget::contextMenuEvent(QContextMenuEvent *event)
@@ -216,12 +228,34 @@ QList<QToolButton *> TestNavigationWidget::createToolButtons()
     collapse->setIcon(Utils::Icons::COLLAPSE_TOOLBAR.icon());
     collapse->setToolTip(tr("Collapse All"));
 
-    connect(expand, &QToolButton::clicked, m_view, &TestTreeView::expandAll);
-    connect(collapse, &QToolButton::clicked, m_view, &TestTreeView::collapseAll);
+    connect(expand, &QToolButton::clicked, m_view, [this]() {
+        m_view->blockSignals(true);
+        m_view->expandAll();
+        m_view->blockSignals(false);
+        updateExpandedStateCache();
+    });
+    connect(collapse, &QToolButton::clicked, m_view, [this]() {
+        m_view->blockSignals(true);
+        m_view->collapseAll();
+        m_view->blockSignals(false);
+        updateExpandedStateCache();
+    });
     connect(m_sort, &QToolButton::clicked, this, &TestNavigationWidget::onSortClicked);
 
     list << m_filterButton << m_sort << expand << collapse;
     return list;
+}
+
+void TestNavigationWidget::updateExpandedStateCache()
+{
+    m_expandedStateCache.evolve();
+
+    for (Utils::TreeItem *rootNode : *m_model->rootItem()) {
+        rootNode->forAllChildren([this](Utils::TreeItem *child) {
+            m_expandedStateCache.insert(static_cast<TestTreeItem *>(child),
+                                        m_view->isExpanded(child->index()));
+        });
+    }
 }
 
 void TestNavigationWidget::onItemActivated(const QModelIndex &index)
@@ -291,6 +325,21 @@ void TestNavigationWidget::onRunThisTestTriggered(TestRunMode runMode)
 
     TestTreeItem *item = static_cast<TestTreeItem *>(sourceIndex.internalPointer());
     TestRunner::instance()->runTest(runMode, item);
+}
+
+void TestNavigationWidget::reapplyCachedExpandedState()
+{
+    using namespace Utils;
+    for (TreeItem *rootNode : *m_model->rootItem()) {
+        rootNode->forAllChildren([this](TreeItem *child) {
+            optional<bool> cached = m_expandedStateCache.get(static_cast<TestTreeItem *>(child));
+            if (cached.has_value()) {
+                QModelIndex index = child->index();
+                if (m_view->isExpanded(index) != cached.value())
+                    m_view->setExpanded(index, cached.value());
+            }
+        });
+    }
 }
 
 TestNavigationWidgetFactory::TestNavigationWidgetFactory()

@@ -42,6 +42,11 @@ public:
     StringInputStream &operator<<(char a)              { m_target.append(a); return *this; }
     StringInputStream &operator<<(const char *a)       { m_target.append(QString::fromUtf8(a)); return *this; }
     StringInputStream &operator<<(const QString &a)    { m_target.append(a); return *this; }
+    StringInputStream &operator<<(const QStringView &a)
+    {
+        m_target.append(a.toString());
+        return *this;
+    }
 
     StringInputStream &operator<<(int i) { appendInt(i); return *this; }
     StringInputStream &operator<<(unsigned i) { appendInt(i); return *this; }
@@ -79,7 +84,7 @@ void StringInputStream::appendInt(IntType i)
         if (hexPrefix)
             pad -= 2;
         if (pad > 0)
-            m_target.append(QString('0', pad));
+            m_target.append(QString('0', QLatin1Char(pad)));
     }
     m_target.append(n);
 }

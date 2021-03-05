@@ -47,9 +47,9 @@
 #include <QVBoxLayout>
 #include <QListView>
 #include <QAbstractItemView>
+#include <QScreen>
 #include <QScrollBar>
 #include <QKeyEvent>
-#include <QDesktopWidget>
 #include <QLabel>
 #include <QStyledItemDelegate>
 
@@ -95,7 +95,7 @@ QVariant ModelAdapter::data(const QModelIndex &index, int role) const
         const int lineBreakPos = text.indexOf('\n');
         if (lineBreakPos < 0)
             return text;
-        return QString(text.leftRef(lineBreakPos) + QLatin1String(" (...)"));
+        return QString(text.left(lineBreakPos) + QLatin1String(" (...)"));
     } else if (role == Qt::DecorationRole) {
         return m_completionModel->icon(index.row());
     } else if (role == Qt::WhatsThisRole) {
@@ -143,10 +143,7 @@ public:
     // Workaround QTCREATORBUG-11653
     void calculateMaximumWidth()
     {
-        const QDesktopWidget *desktopWidget = QApplication::desktop();
-        const int desktopWidth = desktopWidget->isVirtualDesktop()
-                ? desktopWidget->width()
-                : desktopWidget->availableGeometry(desktopWidget->primaryScreen()).width();
+        const int desktopWidth = screen()->availableGeometry().width();
         const QMargins widgetMargins = contentsMargins();
         const QMargins layoutMargins = layout()->contentsMargins();
         const int margins = widgetMargins.left() + widgetMargins.right()
@@ -235,10 +232,9 @@ QSize GenericProposalListView::calculateSize() const
     const int visibleItems = qMin(model()->rowCount(), maxVisibleItems);
     const int firstVisibleRow = verticalScrollBar()->value();
 
-    const QStyleOptionViewItem &option = viewOptions();
     QSize shint;
     for (int i = 0; i < visibleItems; ++i) {
-        QSize tmp = itemDelegate()->sizeHint(option, model()->index(i + firstVisibleRow, 0));
+        QSize tmp = sizeHintForIndex(model()->index(i + firstVisibleRow, 0));
         if (shint.width() < tmp.width())
             shint = tmp;
     }
@@ -531,10 +527,7 @@ void GenericProposalWidget::updatePositionAndSize()
     const int height = shint.height() + fw * 2;
 
     // Determine the position, keeping the popup on the screen
-    const QDesktopWidget *desktop = QApplication::desktop();
-    const QRect screen = HostOsInfo::isMacHost()
-            ? desktop->availableGeometry(desktop->screenNumber(d->m_underlyingWidget))
-            : desktop->screenGeometry(desktop->screenNumber(d->m_underlyingWidget));
+    const QRect screen = d->m_underlyingWidget->screen()->availableGeometry();
 
     QPoint pos = d->m_displayRect.bottomLeft();
     pos.rx() -= 16 + fw;    // Space for the icons
@@ -641,7 +634,10 @@ bool GenericProposalWidget::eventFilter(QObject *o, QEvent *e)
         case Qt::Key_End:
         case Qt::Key_Backspace:
             // We want these navigation keys to work in the editor.
-            break;
+            QApplication::sendEvent(const_cast<QWidget *>(d->m_underlyingWidget), e);
+            if (isVisible())
+                d->m_assistant->notifyChange();
+            return true;
 
         default:
             // Only forward keys that insert text and refine the completion.

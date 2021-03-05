@@ -26,6 +26,8 @@
 #pragma once
 
 #include "projectconfiguration.h"
+
+#include "buildconfiguration.h"
 #include "projectexplorer_export.h"
 
 #include <utils/optional.h>
@@ -38,15 +40,20 @@
 #include <functional>
 #include <memory>
 
+namespace Utils {
+class Environment;
+class FilePath;
+class MacroExpander;
+class OutputFormatter;
+} // Utils
+
 namespace ProjectExplorer {
 
 class BuildConfiguration;
-class BuildStepConfigWidget;
 class BuildStepFactory;
 class BuildStepList;
 class BuildSystem;
 class DeployConfiguration;
-class Target;
 class Task;
 
 // Documentation inside.
@@ -56,13 +63,13 @@ class PROJECTEXPLORER_EXPORT BuildStep : public ProjectConfiguration
 
 protected:
     friend class BuildStepFactory;
-    explicit BuildStep(BuildStepList *bsl, Core::Id id);
+    explicit BuildStep(BuildStepList *bsl, Utils::Id id);
 
 public:
+    ~BuildStep() override;
     virtual bool init() = 0;
     void run();
     void cancel();
-    virtual BuildStepConfigWidget *createConfigWidget();
 
     bool fromMap(const QVariantMap &map) override;
     QVariantMap toMap() const override;
@@ -77,6 +84,13 @@ public:
     ProjectConfiguration *projectConfiguration() const;
 
     BuildSystem *buildSystem() const;
+    Utils::Environment buildEnvironment() const;
+    Utils::FilePath buildDirectory() const;
+    BuildConfiguration::BuildType buildType() const;
+    Utils::MacroExpander *macroExpander() const;
+    QString fallbackWorkingDirectory() const;
+
+    virtual void setupOutputFormatter(Utils::OutputFormatter *formatter);
 
     enum class OutputFormat {
         Stdout, Stderr, // These are for forwarded output from external tools
@@ -97,15 +111,22 @@ public:
     bool isImmutable() const { return m_immutable; }
     void setImmutable(bool immutable) { m_immutable = immutable; }
 
-    virtual QVariant data(Core::Id id) const;
+    virtual QVariant data(Utils::Id id) const;
     void setSummaryUpdater(const std::function<QString ()> &summaryUpdater);
 
     void addMacroExpander();
 
+    QString summaryText() const;
+    void setSummaryText(const QString &summaryText);
+
+    QWidget *doCreateConfigWidget();
+
 signals:
+    void updateSummary();
+
     /// Adds a \p task to the Issues pane.
-    /// Do note that for linking compile output with tasks, you should first emit the task
-    /// and then emit the output. \p linkedOutput lines will be linked. And the last \p skipLines will
+    /// Do note that for linking compile output with tasks, you should first emit the output
+    /// and then emit the task. \p linkedOutput lines will be linked. And the last \p skipLines will
     /// be skipped.
     void addTask(const ProjectExplorer::Task &task, int linkedOutputLines = 0, int skipLines = 0);
 
@@ -119,6 +140,8 @@ signals:
     void finished(bool result);
 
 protected:
+    virtual QWidget *createConfigWidget();
+
     void runInThread(const std::function<bool()> &syncImpl);
 
     std::function<bool()> cancelChecker() const;
@@ -138,6 +161,8 @@ private:
     bool m_addMacroExpander = false;
     Utils::optional<bool> m_wasExpanded;
     std::function<QString()> m_summaryUpdater;
+
+    QString m_summaryText;
 };
 
 class PROJECTEXPLORER_EXPORT BuildStepInfo
@@ -151,7 +176,7 @@ public:
 
     using BuildStepCreator = std::function<BuildStep *(BuildStepList *)>;
 
-    Core::Id id;
+    Utils::Id id;
     QString displayName;
     Flags flags = Flags();
     BuildStepCreator creator;
@@ -168,8 +193,8 @@ public:
     static const QList<BuildStepFactory *> allBuildStepFactories();
 
     BuildStepInfo stepInfo() const;
-    Core::Id stepId() const;
-    BuildStep *create(BuildStepList *parent, Core::Id id);
+    Utils::Id stepId() const;
+    BuildStep *create(BuildStepList *parent);
     BuildStep *restore(BuildStepList *parent, const QVariantMap &map);
 
     bool canHandle(BuildStepList *bsl) const;
@@ -178,19 +203,19 @@ protected:
     using BuildStepCreator = std::function<BuildStep *(BuildStepList *)>;
 
     template <class BuildStepType>
-    void registerStep(Core::Id id)
+    void registerStep(Utils::Id id)
     {
         QTC_CHECK(!m_info.creator);
         m_info.id = id;
         m_info.creator = [id](BuildStepList *bsl) { return new BuildStepType(bsl, id); };
     }
 
-    void setSupportedStepList(Core::Id id);
-    void setSupportedStepLists(const QList<Core::Id> &ids);
-    void setSupportedConfiguration(Core::Id id);
-    void setSupportedProjectType(Core::Id id);
-    void setSupportedDeviceType(Core::Id id);
-    void setSupportedDeviceTypes(const QList<Core::Id> &ids);
+    void setSupportedStepList(Utils::Id id);
+    void setSupportedStepLists(const QList<Utils::Id> &ids);
+    void setSupportedConfiguration(Utils::Id id);
+    void setSupportedProjectType(Utils::Id id);
+    void setSupportedDeviceType(Utils::Id id);
+    void setSupportedDeviceTypes(const QList<Utils::Id> &ids);
     void setRepeatable(bool on) { m_isRepeatable = on; }
     void setDisplayName(const QString &displayName);
     void setFlags(BuildStepInfo::Flags flags);
@@ -198,37 +223,11 @@ protected:
 private:
     BuildStepInfo m_info;
 
-    Core::Id m_supportedProjectType;
-    QList<Core::Id> m_supportedDeviceTypes;
-    QList<Core::Id> m_supportedStepLists;
-    Core::Id m_supportedConfiguration;
+    Utils::Id m_supportedProjectType;
+    QList<Utils::Id> m_supportedDeviceTypes;
+    QList<Utils::Id> m_supportedStepLists;
+    Utils::Id m_supportedConfiguration;
     bool m_isRepeatable = true;
-};
-
-class PROJECTEXPLORER_EXPORT BuildStepConfigWidget : public QWidget
-{
-    Q_OBJECT
-public:
-    explicit BuildStepConfigWidget(BuildStep *step);
-
-    QString summaryText() const;
-    QString displayName() const;
-    BuildStep *step() const { return m_step; }
-
-    void setDisplayName(const QString &displayName);
-    void setSummaryText(const QString &summaryText);
-
-    void setSummaryUpdater(const std::function<QString()> &summaryUpdater);
-    void recreateSummary();
-
-signals:
-    void updateSummary();
-
-private:
-    BuildStep *m_step = nullptr;
-    QString m_displayName;
-    QString m_summaryText;
-    std::function<QString()> m_summaryUpdater;
 };
 
 } // namespace ProjectExplorer

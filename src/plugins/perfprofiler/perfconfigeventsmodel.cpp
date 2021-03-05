@@ -355,7 +355,7 @@ PerfConfigEventsModel::EventDescription PerfConfigEventsModel::parseEvent(
 
     if (event.startsWith('r') && event.length() == 4) {
         bool ok = false;
-        const uint eventNumber = event.midRef(1).toUInt(&ok, 16);
+        const uint eventNumber = event.mid(1).toUInt(&ok, 16);
         if (ok) {
             description.eventType = EventTypeRaw;
             description.numericEvent = eventNumber;
@@ -395,15 +395,16 @@ PerfConfigEventsModel::EventDescription PerfConfigEventsModel::parseEvent(
 
         if (!extras.isEmpty()) {
             QMetaEnum operationMeta = QMetaEnum::fromType<Operation>();
-            int operation = operationMeta.keyToValue(QByteArray("Operation")
-                                                     + extras.takeFirst().toLatin1());
+            int operation = operationMeta.keyToValue(
+                        QByteArray{"Operation" + extras.takeFirst().toLatin1()});
             if (operation != -1)
                 description.operation = operation;
         }
 
         if (!extras.isEmpty()) {
             QMetaEnum resultMeta = QMetaEnum::fromType<Result>();
-            int result = resultMeta.keyToValue(QByteArray("Result") + extras.takeFirst().toLatin1());
+            int result = resultMeta.keyToValue(
+                        QByteArray{"Result" + extras.takeFirst().toLatin1()});
             if (result != -1)
                 description.result = Result(result);
         }

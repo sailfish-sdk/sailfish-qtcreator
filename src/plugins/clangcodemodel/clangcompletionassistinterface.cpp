@@ -30,16 +30,16 @@
 namespace ClangCodeModel {
 namespace Internal {
 
-ClangCompletionAssistInterface::ClangCompletionAssistInterface(
-        BackendCommunicator &communicator,
+ClangCompletionAssistInterface::ClangCompletionAssistInterface(BackendCommunicator &communicator, CompletionType type,
         const TextEditor::TextEditorWidget *textEditorWidget,
         int position,
-        const QString &fileName,
+        const Utils::FilePath &fileName,
         TextEditor::AssistReason reason,
         const ProjectExplorer::HeaderPaths &headerPaths,
         const CPlusPlus::LanguageFeatures &features)
     : AssistInterface(textEditorWidget->document(), position, fileName, reason)
     , m_communicator(communicator)
+    , m_type(type)
     , m_headerPaths(headerPaths)
     , m_languageFeatures(features)
     , m_textEditorWidget(textEditorWidget)

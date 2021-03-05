@@ -28,7 +28,7 @@
 #include "../testtreeitem.h"
 #include "../quick/quicktestframework.h" // FIXME BAD! - but avoids declaring QuickTestResult
 
-#include <coreplugin/id.h>
+#include <utils/id.h>
 #include <utils/qtcassert.h>
 
 namespace Autotest {
@@ -67,7 +67,7 @@ const QString QtTestResult::outputString(bool selected) const
             int breakPos = desc.indexOf('(');
             output.append(": ").append(desc.left(breakPos));
             if (selected)
-                output.append('\n').append(desc.midRef(breakPos));
+                output.append('\n').append(desc.mid(breakPos));
         }
         break;
     default:
@@ -131,12 +131,14 @@ TestResult *QtTestResult::createIntermediateResultFor(const TestResult *other)
 
 const TestTreeItem *QtTestResult::findTestTreeItem() const
 {
-    Core::Id id;
+    Utils::Id id;
     if (m_type == TestType::QtTest)
-        id = Core::Id(Constants::FRAMEWORK_PREFIX).withSuffix(QtTest::Constants::FRAMEWORK_NAME);
+        id = Utils::Id(Constants::FRAMEWORK_PREFIX).withSuffix(QtTest::Constants::FRAMEWORK_NAME);
     else
-        id = Core::Id(Constants::FRAMEWORK_PREFIX).withSuffix(QuickTest::Constants::FRAMEWORK_NAME);
-    const TestTreeItem *rootNode = TestFrameworkManager::instance()->rootNodeForTestFramework(id);
+        id = Utils::Id(Constants::FRAMEWORK_PREFIX).withSuffix(QuickTest::Constants::FRAMEWORK_NAME);
+    ITestFramework *framework = TestFrameworkManager::frameworkForId(id);
+    QTC_ASSERT(framework, return nullptr);
+    const TestTreeItem *rootNode = framework->rootNode();
     QTC_ASSERT(rootNode, return nullptr);
 
     const auto item = rootNode->findAnyChild([this](const Utils::TreeItem *item) {
@@ -162,7 +164,8 @@ bool QtTestResult::matches(const TestTreeItem *item) const
         return matchesTestCase(item);
     case TestTreeItem::TestFunction:
     case TestTreeItem::TestSpecialFunction:
-        if (!isTestFunction())
+        // QuickTest data tags have no dedicated TestTreeItem, so treat these results as function
+        if (!isTestFunction() && !(m_type == TestType::QuickTest && isDataTag()))
             return false;
         if (parentItem->proFile() != m_projectFile)
             return false;

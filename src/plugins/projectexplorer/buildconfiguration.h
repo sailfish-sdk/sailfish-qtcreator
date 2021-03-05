@@ -32,6 +32,14 @@
 #include <utils/environment.h>
 #include <utils/fileutils.h>
 
+#include <functional>
+
+QT_BEGIN_NAMESPACE
+class QVBoxLayout;
+QT_END_NAMESPACE
+
+namespace Utils { class MacroExpander; }
+
 namespace ProjectExplorer {
 
 namespace Internal { class BuildConfigurationPrivate; }
@@ -52,7 +60,7 @@ class PROJECTEXPLORER_EXPORT BuildConfiguration : public ProjectConfiguration
 
 protected:
     friend class BuildConfigurationFactory;
-    explicit BuildConfiguration(Target *target, Core::Id id);
+    explicit BuildConfiguration(Target *target, Utils::Id id);
 
 public:
     ~BuildConfiguration() override;
@@ -77,11 +85,14 @@ public:
 
     virtual void addToEnvironment(Utils::Environment &env) const;
 
+    const QList<Utils::Id> customParsers() const;
+    void setCustomParsers(const QList<Utils::Id> &parsers);
+
     BuildStepList *buildSteps() const;
     BuildStepList *cleanSteps() const;
 
-    void appendInitialBuildStep(Core::Id id);
-    void appendInitialCleanStep(Core::Id id);
+    void appendInitialBuildStep(Utils::Id id);
+    void appendInitialCleanStep(Utils::Id id);
 
     bool fromMap(const QVariantMap &map) override;
     QVariantMap toMap() const override;
@@ -107,6 +118,7 @@ public:
 
     static void prependCompilerPathToEnvironment(Kit *k, Utils::Environment &env);
     void updateCacheAndEmitEnvironmentChanged();
+    static void setEnvironmentWidgetExtender(const std::function<void(QVBoxLayout *)> &extender);
 
     ProjectExplorer::BuildDirectoryAspect *buildDirectoryAspect() const;
     void setConfigWidgetDisplayName(const QString &display);
@@ -117,6 +129,10 @@ public:
     void addConfigWidgets(const std::function<void (NamedWidget *)> &adder);
 
     virtual void doInitialize(const BuildInfo &info);
+
+    Utils::MacroExpander *macroExpander() const;
+
+    bool createBuildDirectory();
 
 signals:
     void environmentChanged();
@@ -168,16 +184,16 @@ protected:
         = std::function<QList<BuildInfo>(const Kit *, const Utils::FilePath &, bool)>;
     void setBuildGenerator(const BuildGenerator &buildGenerator);
 
-    bool supportsTargetDeviceType(Core::Id id) const;
-    void setSupportedProjectType(Core::Id id);
+    bool supportsTargetDeviceType(Utils::Id id) const;
+    void setSupportedProjectType(Utils::Id id);
     void setSupportedProjectMimeTypeName(const QString &mimeTypeName);
-    void addSupportedTargetDeviceType(Core::Id id);
+    void addSupportedTargetDeviceType(Utils::Id id);
     void setDefaultDisplayName(const QString &defaultDisplayName);
 
     using BuildConfigurationCreator = std::function<BuildConfiguration *(Target *)>;
 
     template <class BuildConfig>
-    void registerBuildConfiguration(Core::Id buildConfigId)
+    void registerBuildConfiguration(Utils::Id buildConfigId)
     {
         m_creator = [buildConfigId](Target *t) { return new BuildConfig(t, buildConfigId); };
         m_buildConfigId = buildConfigId;
@@ -187,9 +203,9 @@ private:
     bool canHandle(const ProjectExplorer::Target *t) const;
 
     BuildConfigurationCreator m_creator;
-    Core::Id m_buildConfigId;
-    Core::Id m_supportedProjectType;
-    QList<Core::Id> m_supportedTargetDeviceTypes;
+    Utils::Id m_buildConfigId;
+    Utils::Id m_supportedProjectType;
+    QList<Utils::Id> m_supportedTargetDeviceTypes;
     QString m_supportedProjectMimeTypeName;
     IssueReporter m_issueReporter;
     BuildGenerator m_buildGenerator;

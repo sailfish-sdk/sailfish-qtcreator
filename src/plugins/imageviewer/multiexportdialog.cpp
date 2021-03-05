@@ -31,31 +31,21 @@
 #include <coreplugin/icore.h>
 
 #include <utils/pathchooser.h>
+#include <utils/stringutils.h>
 #include <utils/utilsicons.h>
 
-#include <QApplication>
-#include <QDesktopWidget>
 #include <QDialogButtonBox>
-#include <QFileDialog>
-#include <QFormLayout>
-#include <QHBoxLayout>
-#include <QMessageBox>
-#include <QMenu>
-#include <QLabel>
-#include <QLineEdit>
-#include <QPushButton>
-#include <QSpinBox>
-#include <QToolButton>
-#include <QVBoxLayout>
-#include <QWidgetAction>
-
-#include <QImageWriter>
-
-#include <QDebug>
 #include <QDir>
 #include <QFileInfo>
+#include <QFormLayout>
+#include <QLabel>
+#include <QLineEdit>
+#include <QMenu>
+#include <QMessageBox>
+#include <QScreen>
 #include <QSettings>
-#include <QTextStream>
+#include <QToolButton>
+#include <QWidgetAction>
 
 namespace ImageViewer {
 namespace Internal {
@@ -64,7 +54,7 @@ static const int standardIconSizesValues[] = {16, 24, 32, 48, 64, 128, 256};
 
 // Helpers to convert a size specifications from QString to QSize
 // and vv. The format is '2x4' or '4' as shortcut for '4x4'.
-static QSize sizeFromString(const QStringRef &r)
+static QSize sizeFromString(const QString &r)
 {
     if (r.isEmpty())
         return {};
@@ -114,9 +104,9 @@ static QVector<QSize> stringToSizes(const QString &s)
 {
     QVector<QSize> result;
     const QString trimmed = s.trimmed();
-    const QVector<QStringRef> &sizes = trimmed.splitRef(',', QString::SkipEmptyParts);
+    const QStringList &sizes = trimmed.split(',', Qt::SkipEmptyParts);
     result.reserve(sizes.size());
-    for (const QStringRef &sizeSpec : sizes) {
+    for (const QString &sizeSpec : sizes) {
         const QSize size = sizeFromString(sizeSpec);
         if (!size.isValid() || size.isEmpty())
             return {};
@@ -186,7 +176,7 @@ MultiExportDialog::MultiExportDialog(QWidget *parent)
 {
     auto formLayout = new QFormLayout(this);
 
-    m_pathChooser->setMinimumWidth(QApplication::desktop()->availableGeometry(this).width() / 5);
+    m_pathChooser->setMinimumWidth(screen()->availableGeometry().width() / 5);
     m_pathChooser->setExpectedKind(Utils::PathChooser::SaveFile);
     m_pathChooser->setPromptDialogFilter(ExportDialog::imageNameFilterString());
     const QString pathChooserToolTip =
@@ -301,7 +291,8 @@ void MultiExportDialog::accept()
     }
     if (data.size() > 1 && data.at(0).fileName == data.at(1).fileName) {
         QMessageBox::warning(this, windowTitle(),
-                             tr("The file name must contain one of the placeholders %1, %2.").arg("%1", "%2"));
+                             tr("The file name must contain one of the placeholders %1, %2.")
+                                .arg(QString("%1"), QString("%2")));
         return;
     }
 
@@ -329,7 +320,7 @@ void MultiExportDialog::accept()
 
 QString MultiExportDialog::exportFileName() const
 {
-    return m_pathChooser->fileName().toString();
+    return m_pathChooser->filePath().toString();
 }
 
 void MultiExportDialog::setExportFileName(QString f)
@@ -337,7 +328,7 @@ void MultiExportDialog::setExportFileName(QString f)
     const int lastDot = f.lastIndexOf('.');
     if (lastDot != -1)
         f.insert(lastDot, "-%1");
-    m_pathChooser->setFileName(Utils::FilePath::fromString(f));
+    m_pathChooser->setFilePath(Utils::FilePath::fromString(f));
 }
 
 } // namespace Internal

@@ -31,6 +31,7 @@
 #include <cpptools/projectinfo.h>
 
 #include <projectexplorer/buildconfiguration.h>
+#include <projectexplorer/buildsystem.h>
 #include <projectexplorer/buildtargetinfo.h>
 #include <projectexplorer/deploymentdata.h>
 #include <projectexplorer/environmentaspect.h>
@@ -47,6 +48,11 @@ using namespace ProjectExplorer;
 using namespace Utils;
 
 namespace Autotest {
+
+TestConfiguration::TestConfiguration(ITestFramework *framework)
+    : m_framework(framework)
+{
+}
 
 TestConfiguration::~TestConfiguration()
 {
@@ -137,22 +143,24 @@ void TestConfiguration::completeTestInformation(TestRunMode runMode)
 
     const QSet<QString> buildSystemTargets = m_buildTargets;
     qCDebug(LOG) << "BuildSystemTargets\n    " << buildSystemTargets;
-    BuildTargetInfo targetInfo
-            = Utils::findOrDefault(target->applicationTargets(),
-                                   [&buildSystemTargets] (const BuildTargetInfo &bti) {
+    const QList<BuildTargetInfo> buildTargets
+            = Utils::filtered(target->buildSystem()->applicationTargets(),
+                              [&buildSystemTargets](const BuildTargetInfo &bti) {
         return buildSystemTargets.contains(bti.buildKey);
     });
+    if (buildTargets.size() > 1 )  // there are multiple executables with the same build target
+        return;                    // let the user decide which one to run
+
+    const BuildTargetInfo targetInfo = buildTargets.size() ? buildTargets.first()
+                                                           : BuildTargetInfo();
+
     // we might end up with an empty targetFilePath - e.g. when having a library we just link to
     // there would be no BuildTargetInfo that could match
     if (targetInfo.targetFilePath.isEmpty()) {
         qCDebug(LOG) << "BuildTargetInfos";
-        const QList<BuildTargetInfo> buildTargets = target->applicationTargets();
         // if there is only one build target just use it (but be honest that we're deducing)
-        if (buildTargets.size() == 1) {
-            targetInfo = buildTargets.first();
-            m_deducedConfiguration = true;
-            m_deducedFrom = targetInfo.buildKey;
-        }
+        m_deducedConfiguration = true;
+        m_deducedFrom = targetInfo.buildKey;
     }
 
     const FilePath localExecutable = ensureExeEnding(targetInfo.targetFilePath);
@@ -177,8 +185,11 @@ void TestConfiguration::completeTestInformation(TestRunMode runMode)
 
     qCDebug(LOG) << " LocalExecutable" << localExecutable;
     qCDebug(LOG) << " DeployedExecutable" << deployedExecutable;
-    qCDebug(LOG) << "Iterating run configurations";
-    for (RunConfiguration *runConfig : target->runConfigurations()) {
+    qCDebug(LOG) << "Iterating run configurations - prefer active over others";
+    QList<RunConfiguration *> runConfigurations = target->runConfigurations();
+    runConfigurations.removeOne(target->activeRunConfiguration());
+    runConfigurations.prepend(target->activeRunConfiguration());
+    for (RunConfiguration *runConfig : qAsConst(runConfigurations)) {
         qCDebug(LOG) << "RunConfiguration" << runConfig->id();
         if (!isLocal(target)) { // TODO add device support
             qCDebug(LOG) << " Skipped as not being local";
@@ -348,6 +359,11 @@ bool DebuggableTestConfiguration::isDebugRunMode() const
 bool TestConfiguration::hasExecutable() const
 {
     return !m_runnable.executable.isEmpty();
+}
+
+ITestFramework *TestConfiguration::framework() const
+{
+    return m_framework;
 }
 
 } // namespace Autotest

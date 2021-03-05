@@ -25,8 +25,9 @@
 
 #pragma once
 
-#include <coreplugin/id.h>
+#include <coreplugin/core_global.h>
 
+#include <utils/id.h>
 #include <utils/optional.h>
 
 #include <QVariant>
@@ -120,8 +121,8 @@ public:
 
     static const QList<ILocatorFilter *> allLocatorFilters();
 
-    Id id() const;
-    Id actionId() const;
+    Utils::Id id() const;
+    Utils::Id actionId() const;
 
     QString displayName() const;
 
@@ -169,13 +170,13 @@ public slots:
 
 protected:
     void setHidden(bool hidden);
-    void setId(Id id);
+    void setId(Utils::Id id);
     void setPriority(Priority priority);
     void setDisplayName(const QString &displayString);
     void setConfigurable(bool configurable);
 
 private:
-    Id m_id;
+    Utils::Id m_id;
     QString m_shortcut;
     Priority m_priority = Medium;
     QString m_displayName;

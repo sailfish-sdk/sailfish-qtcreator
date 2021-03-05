@@ -40,6 +40,8 @@
 #include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/toolchain.h>
 
+#include <qtsupport/qtkitinformation.h>
+
 #include <utils/executeondestruction.h>
 #include <utils/fileutils.h>
 
@@ -60,10 +62,16 @@ namespace Internal {
 void ClangToolsUnitTests::initTestCase()
 {
     const QList<Kit *> allKits = KitManager::kits();
-    if (allKits.count() != 1)
-        QSKIP("This test requires exactly one kit to be present");
-    const ToolChain *const toolchain = ToolChainKitAspect::toolChain(allKits.first(),
-                                                                     Constants::CXX_LANGUAGE_ID);
+    if (allKits.count() == 0)
+        QSKIP("This test requires at least one kit to be present");
+
+    m_kit = findOr(allKits, nullptr, [](Kit *k) {
+            return k->isValid() && QtSupport::QtKitAspect::qtVersion(k) != nullptr;
+    });
+    if (!m_kit)
+        QSKIP("This test requires at least one valid kit with a valid Qt");
+
+    const ToolChain *const toolchain = ToolChainKitAspect::cxxToolChain(m_kit);
     if (!toolchain)
         QSKIP("This test requires that there is a kit with a toolchain.");
 
@@ -100,26 +108,24 @@ void ClangToolsUnitTests::testProject()
     QFETCH(int, expectedDiagCount);
     QFETCH(ClangDiagnosticConfig, diagnosticConfig);
     if (projectFilePath.contains("mingw")) {
-        const ToolChain *const toolchain
-            = ToolChainKitAspect::toolChain(KitManager::kits().constFirst(),
-                                            Constants::CXX_LANGUAGE_ID);
+        const auto toolchain = ToolChainKitAspect::cxxToolChain(m_kit);
         if (toolchain->typeId() != ProjectExplorer::Constants::MINGW_TOOLCHAIN_TYPEID)
             QSKIP("This test is mingw specific, does not run for other toolchains");
     }
 
     // Open project
     Tests::ProjectOpenerAndCloser projectManager;
-    const ProjectInfo projectInfo = projectManager.open(projectFilePath, true);
+    const ProjectInfo projectInfo = projectManager.open(projectFilePath, true, m_kit);
     const bool isProjectOpen = projectInfo.isValid();
     QVERIFY(isProjectOpen);
 
     // Run tool
     ClangTool *tool = ClangTool::instance();
-    tool->startTool(ClangTool::FileSelection::AllFiles,
+    tool->startTool(ClangTool::FileSelectionType::AllFiles,
                     ClangToolsSettings::instance()->runSettings(),
                     diagnosticConfig);
     QSignalSpy waitForFinishedTool(tool, &ClangTool::finished);
-    QVERIFY(waitForFinishedTool.wait(30000));
+    QVERIFY(waitForFinishedTool.wait(m_timeout));
 
     // Check for errors
     const QString errorText = waitForFinishedTool.takeFirst().first().toString();
@@ -178,6 +184,12 @@ void ClangToolsUnitTests::addTestRow(const QByteArray &relativeFilePath,
 
     QTest::newRow(fileName.toUtf8().constData())
         << absoluteFilePath << expectedDiagCount << diagnosticConfig;
+}
+
+int ClangToolsUnitTests::getTimeout()
+{
+    const int t = qEnvironmentVariableIntValue("QTC_CLANGTOOLS_TEST_TIMEOUT");
+    return t > 0 ? t : 480000;
 }
 
 } // namespace Internal

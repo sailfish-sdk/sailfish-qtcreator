@@ -36,7 +36,6 @@
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/actionmanager/command.h>
-#include <coreplugin/id.h>
 #include <coreplugin/coreconstants.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/documentmanager.h>
@@ -66,6 +65,7 @@
 #include <QMainWindow>
 #include <QMenu>
 #include <QMessageBox>
+#include <QRegularExpression>
 #include <QSettings>
 #include <QTextCodec>
 
@@ -223,7 +223,8 @@ public:
     bool vcsDelete(const QString &filename) final;
     bool vcsMove(const QString &from, const QString &to) final;
     bool vcsCreateRepository(const QString &directory) final;
-    bool vcsAnnotate(const QString &file, int line) final;
+    void vcsAnnotate(const QString &file, int line) final;
+    void vcsDescribe(const QString &source, const QString &n) final;
     QString vcsOpenText() const final;
     QString vcsMakeWritableText() const final;
 
@@ -236,10 +237,6 @@ public:
     void p4Diff(const QString &workingDir, const QStringList &files);
 
     IEditor *openPerforceSubmitEditor(const QString &fileName, const QStringList &depotFileNames);
-
-    void describe(const QString &source, const QString &n);
-    void vcsAnnotate(const QString &workingDirectory, const QString &file,
-                     const QString &revision, int lineNumber);
 
     void getTopLevel(const QString &workingDirectory = QString(), bool isSync = false);
 
@@ -374,19 +371,19 @@ public:
     VcsEditorFactory logEditorFactory {
         &logEditorParameters,
         [] { return new PerforceEditorWidget; },
-        std::bind(&PerforcePluginPrivate::describe, this, _1, _2)
+        std::bind(&PerforcePluginPrivate::vcsDescribe, this, _1, _2)
     };
 
     VcsEditorFactory annotateEditorFactory {
         &annotateEditorParameters,
         [] { return new PerforceEditorWidget; },
-        std::bind(&PerforcePluginPrivate::describe, this, _1, _2)
+        std::bind(&PerforcePluginPrivate::vcsDescribe, this, _1, _2)
     };
 
     VcsEditorFactory diffEditorFactory {
         &diffEditorParameters,
         [] { return new PerforceEditorWidget; },
-        std::bind(&PerforcePluginPrivate::describe, this, _1, _2)
+        std::bind(&PerforcePluginPrivate::vcsDescribe, this, _1, _2)
     };
 };
 
@@ -786,7 +783,7 @@ void PerforcePluginPrivate::startSubmitProject()
     QStringList filesLines = filesResult.stdOut.split(QLatin1Char('\n'));
     QStringList depotFileNames;
     foreach (const QString &line, filesLines) {
-        depotFileNames.append(line.left(line.lastIndexOf(QRegExp(QLatin1String("#[0-9]+\\s-\\s")))));
+        depotFileNames.append(line.left(line.lastIndexOf(QRegularExpression("#[0-9]+\\s-\\s"))));
     }
     if (depotFileNames.isEmpty()) {
         VcsOutputWindow::appendWarning(tr("Project has no files"));
@@ -812,7 +809,7 @@ IEditor *PerforcePluginPrivate::openPerforceSubmitEditor(const QString &fileName
 void PerforcePluginPrivate::printPendingChanges()
 {
     QGuiApplication::setOverrideCursor(Qt::WaitCursor);
-    PendingChangesDialog dia(pendingChangesData(), ICore::mainWindow());
+    PendingChangesDialog dia(pendingChangesData(), ICore::dialogParent());
     QGuiApplication::restoreOverrideCursor();
     if (dia.exec() == QDialog::Accepted) {
         const int i = dia.changeNumber();
@@ -827,7 +824,7 @@ void PerforcePluginPrivate::describeChange()
 {
     ChangeNumberDialog dia;
     if (dia.exec() == QDialog::Accepted && dia.number() > 0)
-        describe(QString(), QString::number(dia.number()));
+        vcsDescribe(QString(), QString::number(dia.number()));
 }
 
 void PerforcePluginPrivate::annotateCurrentFile()
@@ -844,12 +841,6 @@ void PerforcePluginPrivate::annotateFile()
         const QFileInfo fi(file);
         annotate(fi.absolutePath(), fi.fileName());
     }
-}
-
-void PerforcePluginPrivate::vcsAnnotate(const QString &workingDirectory, const QString &file,
-                                 const QString &revision, int lineNumber)
-{
-    annotate(workingDirectory, file, revision, lineNumber);
 }
 
 void PerforcePluginPrivate::annotate(const QString &workingDir,
@@ -1204,11 +1195,10 @@ bool PerforcePluginPrivate::vcsCreateRepository(const QString &)
     return false;
 }
 
-bool PerforcePluginPrivate::vcsAnnotate(const QString &file, int line)
+void PerforcePluginPrivate::vcsAnnotate(const QString &file, int line)
 {
     const QFileInfo fi(file);
-    vcsAnnotate(fi.absolutePath(), fi.fileName(), QString(), line);
-    return true;
+    annotate(fi.absolutePath(), fi.fileName(), QString(), line);
 }
 
 QString PerforcePluginPrivate::vcsOpenText() const
@@ -1428,7 +1418,7 @@ PerforceResponse PerforcePluginPrivate::runP4Cmd(const QString &workingDir,
 
 IEditor *PerforcePluginPrivate::showOutputInEditor(const QString &title,
                                                    const QString &output,
-                                                   Core::Id id,
+                                                   Utils::Id id,
                                                    const QString &source,
                                                    QTextCodec *codec)
 {
@@ -1549,7 +1539,7 @@ void PerforcePluginPrivate::p4Diff(const PerforceDiffParameters &p)
     diffEditorWidget->setEditorConfig(pw);
 }
 
-void PerforcePluginPrivate::describe(const QString & source, const QString &n)
+void PerforcePluginPrivate::vcsDescribe(const QString & source, const QString &n)
 {
     QTextCodec *codec = source.isEmpty() ? static_cast<QTextCodec *>(nullptr)
                                          : VcsBaseEditor::getCodec(source);
@@ -1565,7 +1555,7 @@ void PerforcePluginPrivate::commitFromEditor()
 {
     m_submitActionTriggered = true;
     QTC_ASSERT(submitEditor(), return);
-    EditorManager::closeDocument(submitEditor()->document());
+    EditorManager::closeDocuments({submitEditor()->document()});
 }
 
 void PerforcePluginPrivate::cleanCommitMessageFile()
@@ -1645,9 +1635,9 @@ QString PerforcePluginPrivate::clientFilePath(const QString &serverFilePath)
     if (response.error)
         return QString();
 
-    QRegExp r(QLatin1String("\\.\\.\\.\\sclientFile\\s(.+)\n"));
-    r.setMinimal(true);
-    return r.indexIn(response.stdOut) != -1 ? r.cap(1).trimmed() : QString();
+    const QRegularExpression r("\\.\\.\\.\\sclientFile\\s(.+?)\n");
+    const QRegularExpressionMatch match = r.match(response.stdOut);
+    return match.hasMatch() ? match.captured(1).trimmed() : QString();
 }
 
 QString PerforcePluginPrivate::pendingChangesData()
@@ -1660,10 +1650,10 @@ QString PerforcePluginPrivate::pendingChangesData()
     if (userResponse.error)
         return QString();
 
-    QRegExp r(QLatin1String("User\\sname:\\s(\\S+)\\s*\n"));
+    const QRegularExpression r("User\\sname:\\s(\\S+?)\\s*?\n");
     QTC_ASSERT(r.isValid(), return QString());
-    r.setMinimal(true);
-    const QString user = r.indexIn(userResponse.stdOut) != -1 ? r.cap(1).trimmed() : QString();
+    const QRegularExpressionMatch match = r.match(userResponse.stdOut);
+    const QString user = match.hasMatch() ? match.captured(1).trimmed() : QString();
     if (user.isEmpty())
         return QString();
     args.clear();

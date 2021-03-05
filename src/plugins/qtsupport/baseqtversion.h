@@ -64,7 +64,7 @@ public:
     QtVersionNumber(int ma = -1, int mi = -1, int p = -1);
     QtVersionNumber(const QString &versionString);
 
-    QSet<Core::Id> features() const;
+    QSet<Utils::Id> features() const;
 
     int majorVersion;
     int minorVersion;
@@ -119,7 +119,6 @@ public:
     virtual QString toHtml(bool verbose) const;
 
     ProjectExplorer::Abis qtAbis() const;
-    virtual ProjectExplorer::Abis detectQtAbis() const;
 
     void applyProperties(QMakeGlobals *qmakeGlobals) const;
     virtual void addToEnvironment(const ProjectExplorer::Kit *k, Utils::Environment &env) const;
@@ -191,7 +190,7 @@ public:
 
     QString defaultUnexpandedDisplayName() const;
 
-    virtual QSet<Core::Id> targetDeviceTypes() const = 0;
+    virtual QSet<Utils::Id> targetDeviceTypes() const = 0;
 
     virtual ProjectExplorer::Tasks validateKit(const ProjectExplorer::Kit *k);
 
@@ -213,6 +212,7 @@ public:
 
     Utils::FilePath hostBinPath() const;
     Utils::FilePath hostDataPath() const;
+    Utils::FilePath hostPrefixPath() const;
 
     Utils::FilePath mkspecsPath() const;
     Utils::FilePath qmlBinPath() const;
@@ -234,14 +234,18 @@ public:
     static void populateQmlFileFinder(Utils::FileInProjectFinder *finder,
                                       const ProjectExplorer::Target *target);
 
-    QSet<Core::Id> features() const;
+    QSet<Utils::Id> features() const;
+
+    virtual bool supportsMultipleQtAbis() const;
 
 protected:
     BaseQtVersion();
     BaseQtVersion(const BaseQtVersion &other) = delete;
 
-    virtual QSet<Core::Id> availableFeatures() const;
+    virtual QSet<Utils::Id> availableFeatures() const;
     virtual ProjectExplorer::Tasks reportIssuesImpl(const QString &proFile, const QString &buildDir) const;
+
+    virtual ProjectExplorer::Abis detectQtAbis() const;
 
     // helper function for desktop and simulator to figure out the supported abis based on the libraries
     static ProjectExplorer::Abis qtAbisFromLibrary(const Utils::FilePaths &coreLibraries);

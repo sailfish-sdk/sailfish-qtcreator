@@ -27,8 +27,9 @@
 
 #include "cmakeconfigitem.h"
 
-#include <QAbstractTableModel>
 #include <utils/treemodel.h>
+
+#include <QString>
 
 namespace CMakeProjectManager {
 
@@ -71,7 +72,7 @@ public:
     void setConfiguration(const CMakeConfig &config);
     void setConfiguration(const QList<DataItem> &config);
     void setConfigurationFromKit(const QHash<QString, QString> &kitConfig);
-    void setConfigurationForCMake(const QHash<QString, QString> &config);
+
     void flush();
     void resetAllChanges();
 

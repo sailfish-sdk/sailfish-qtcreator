@@ -220,10 +220,10 @@ public:
         QMenu *menu = createStandardContextMenu();
         menu->addAction(m_clearContentsAction);
         menu->addAction(m_saveContentsAction); // X11 clipboard is unreliable for long texts
-        menu->addAction(action(LogTimeStamps));
+        menu->addAction(action(LogTimeStamps)->action());
         menu->addAction(m_reloadDebuggingHelpersAction);
         menu->addSeparator();
-        menu->addAction(action(SettingsDialog));
+        menu->addAction(action(SettingsDialog)->action());
         menu->exec(ev->globalPos());
         delete menu;
     }
@@ -536,14 +536,14 @@ void LogWindow::showOutput(int channel, const QString &output)
         const int npos = output.indexOf(nchar, pos);
         const int nnpos = npos == -1 ? n : npos;
         const int l = nnpos - pos;
-        if (l != 6 || output.midRef(pos, 6) != "(gdb) ")  {
+        if (l != 6 || QStringView(output).mid(pos, 6) != QLatin1String("(gdb) ")) {
             out.append(cchar);
             if (l > 30000) {
                 // FIXME: QTextEdit asserts on really long lines...
-                out.append(output.midRef(pos, 30000));
+                out.append(output.mid(pos, 30000));
                 out.append(" [...] <cut off>\n");
             } else {
-                out.append(output.midRef(pos, l + 1));
+                out.append(output.mid(pos, l + 1));
             }
         }
         pos = nnpos + 1;

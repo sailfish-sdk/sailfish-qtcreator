@@ -30,7 +30,7 @@
 namespace WinRt {
 namespace Internal {
 
-class UninstallAfterStopAspect : public ProjectExplorer::BaseBoolAspect
+class UninstallAfterStopAspect : public Utils::BoolAspect
 {
     Q_OBJECT
 
@@ -38,7 +38,7 @@ public:
     UninstallAfterStopAspect();
 };
 
-class LoopbackExemptClientAspect : public ProjectExplorer::BaseBoolAspect
+class LoopbackExemptClientAspect : public Utils::BoolAspect
 {
     Q_OBJECT
 
@@ -46,7 +46,7 @@ public:
     LoopbackExemptClientAspect();
 };
 
-class LoopbackExemptServerAspect : public ProjectExplorer::BaseBoolAspect
+class LoopbackExemptServerAspect : public Utils::BoolAspect
 {
     Q_OBJECT
 
@@ -59,7 +59,7 @@ class WinRtRunConfiguration : public ProjectExplorer::RunConfiguration
     Q_OBJECT
 
 public:
-    WinRtRunConfiguration(ProjectExplorer::Target *target, Core::Id id);
+    WinRtRunConfiguration(ProjectExplorer::Target *target, Utils::Id id);
 };
 
 class WinRtRunConfigurationFactory  : public ProjectExplorer::RunConfigurationFactory

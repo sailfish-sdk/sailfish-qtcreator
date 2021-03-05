@@ -115,11 +115,11 @@ public:
      *
      * Since 3.6.0
      */
-    Utils::optional<LanguageClientArray<WorkSpaceFolder>> workSpaceFolders() const
-    { return optionalClientArray<WorkSpaceFolder>(workSpaceFoldersKey); }
+    Utils::optional<LanguageClientArray<WorkSpaceFolder>> workspaceFolders() const
+    { return optionalClientArray<WorkSpaceFolder>(workspaceFoldersKey); }
     void setWorkSpaceFolders(const LanguageClientArray<WorkSpaceFolder> &folders)
-    { insert(workSpaceFoldersKey, folders.toJson()); }
-    void clearWorkSpaceFolders() { remove(workSpaceFoldersKey); }
+    { insert(workspaceFoldersKey, folders.toJson()); }
+    void clearWorkSpaceFolders() { remove(workspaceFoldersKey); }
 
     bool isValid(ErrorHierarchy *error) const override;
 };
@@ -129,7 +129,7 @@ using InitializedParams = JsonObject;
 class LANGUAGESERVERPROTOCOL_EXPORT InitializeNotification : public Notification<InitializedParams>
 {
 public:
-    InitializeNotification();
+    explicit InitializeNotification(const InitializedParams &params);
     using Notification::Notification;
     constexpr static const char methodName[] = "initialized";
 
@@ -173,7 +173,7 @@ class LANGUAGESERVERPROTOCOL_EXPORT InitializeRequest : public Request<
         InitializeResult, InitializeError, InitializeParams>
 {
 public:
-    InitializeRequest(const InitializeParams &params = InitializeParams());
+    explicit InitializeRequest(const InitializeParams &params);
     using Request::Request;
     constexpr static const char methodName[] = "initialize";
 };

@@ -36,9 +36,7 @@ SOURCES += \
     easingcurve.cpp \
     timelinesettingsmodel.cpp \
     timelinetooldelegate.cpp \
-    timelinecontrols.cpp \
-    animationcurveeditormodel.cpp \
-    animationcurvedialog.cpp
+    timelinecontrols.cpp
 
 HEADERS += \
     timelineview.h \
@@ -71,9 +69,7 @@ HEADERS += \
     canvasstyledialog.h \
     easingcurve.h \
     timelinesettingsmodel.h \
-    timelinecontrols.h \
-    animationcurveeditormodel.h \
-    animationcurvedialog.h
+    timelinecontrols.h
 
 RESOURCES += \
     timeline.qrc

@@ -8,6 +8,7 @@ set(syntax_highlighting_srcs
     foldingregion.cpp
     format.cpp
     htmlhighlighter.cpp
+    ansihighlighter.cpp
     keywordlist.cpp
     rule.cpp
     definition.cpp
@@ -17,12 +18,16 @@ set(syntax_highlighting_srcs
     theme.cpp
     wildcardmatcher.cpp
     themedata.cpp
+    worddelimiters.cpp
     ${syntax_highlighting_QM_LOADER}
 )
 ecm_qt_declare_logging_category(syntax_highlighting_srcs
     HEADER ksyntaxhighlighting_logging.h
     IDENTIFIER KSyntaxHighlighting::Log
-    CATEGORY_NAME org.kde.ksyntaxhighlighting
+    CATEGORY_NAME kf.syntaxhighlighting
+    OLD_CATEGORY_NAMES org.kde.ksyntaxhighlighting
+    DESCRIPTION "Syntax Highlighting"
+    EXPORT KSYNTAXHIGHLIGHTING
 )
 
 add_library(KF5SyntaxHighlighting ${syntax_highlighting_srcs} $<TARGET_OBJECTS:SyntaxHighlightingData>)

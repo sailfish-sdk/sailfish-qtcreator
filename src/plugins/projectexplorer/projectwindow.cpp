@@ -48,6 +48,7 @@
 
 #include <utils/algorithm.h>
 #include <utils/basetreeview.h>
+#include <utils/hostosinfo.h>
 #include <utils/navigationtreeview.h>
 #include <utils/qtcassert.h>
 #include <utils/styledbar.h>
@@ -287,7 +288,7 @@ public:
         return activeItem ? activeItem->index() : QModelIndex();
     }
 
-    TreeItem *itemForProjectPanel(Core::Id panelId)
+    TreeItem *itemForProjectPanel(Utils::Id panelId)
     {
         return m_miscItem->findChildAtLevel(1, [panelId](const TreeItem *item){
             return static_cast<const MiscSettingsPanelItem *>(item)->factory()->id() == panelId;
@@ -341,10 +342,30 @@ public:
         setContextMenuPolicy(Qt::CustomContextMenu);
     }
 
+private:
     // remove branch indicators
     void drawBranches(QPainter *, const QRect &, const QModelIndex &) const final
     {
         return;
+    }
+
+    bool userWantsContextMenu(const QMouseEvent *e) const
+    {
+        // On Windows, we get additional mouse events for the item view when right-clicking,
+        // causing unwanted kit activation (QTCREATORBUG-24156). Let's suppress these.
+        return HostOsInfo::isWindowsHost() && e->button() == Qt::RightButton;
+    }
+
+    void mousePressEvent(QMouseEvent *e)
+    {
+        if (!userWantsContextMenu(e))
+            BaseTreeView::mousePressEvent(e);
+    }
+
+    void mouseReleaseEvent(QMouseEvent *e)
+    {
+        if (!userWantsContextMenu(e))
+            BaseTreeView::mouseReleaseEvent(e);
     }
 };
 
@@ -518,7 +539,7 @@ public:
             item->setData(0, QVariant(), ItemActivatedDirectlyRole);
     }
 
-    void activateProjectPanel(Core::Id panelId)
+    void activateProjectPanel(Utils::Id panelId)
     {
         if (ProjectItem *projectItem = m_projectsModel.rootItem()->childAt(0)) {
             if (TreeItem *item = projectItem->itemForProjectPanel(panelId))
@@ -559,7 +580,7 @@ public:
             if (auto kitPage = KitOptionsPage::instance())
                 kitPage->showKit(KitManager::kit(Id::fromSetting(projectItem->data(0, KitIdRole))));
         }
-        ICore::showOptionsDialog(Constants::KITS_SETTINGS_PAGE_ID, ICore::mainWindow());
+        ICore::showOptionsDialog(Constants::KITS_SETTINGS_PAGE_ID);
     }
 
     void handleImportBuild()
@@ -570,7 +591,7 @@ public:
         QTC_ASSERT(projectImporter, return);
 
         QString dir = project->projectDirectory().toString();
-        QString importDir = QFileDialog::getExistingDirectory(ICore::mainWindow(),
+        QString importDir = QFileDialog::getExistingDirectory(ICore::dialogParent(),
                                                               ProjectWindow::tr("Import Directory"),
                                                               dir);
         FilePath path = FilePath::fromString(importDir);
@@ -635,12 +656,44 @@ ProjectWindow::ProjectWindow()
     setContextMenuPolicy(Qt::CustomContextMenu);
 }
 
-void ProjectWindow::activateProjectPanel(Core::Id panelId)
+void ProjectWindow::activateProjectPanel(Utils::Id panelId)
 {
     d->activateProjectPanel(panelId);
 }
 
+void ProjectWindow::hideEvent(QHideEvent *event)
+{
+    savePersistentSettings();
+    FancyMainWindow::hideEvent(event);
+}
+
+void ProjectWindow::showEvent(QShowEvent *event)
+{
+    FancyMainWindow::showEvent(event);
+
+    // Delay appears to be necessary for the target setup page to have the correct layout.
+    QTimer::singleShot(0, this, &ProjectWindow::loadPersistentSettings);
+}
+
 ProjectWindow::~ProjectWindow() = default;
+
+const char PROJECT_WINDOW_KEY[] = "ProjectExplorer.ProjectWindow";
+
+void ProjectWindow::savePersistentSettings() const
+{
+    QSettings * const settings = ICore::settings();
+    settings->beginGroup(PROJECT_WINDOW_KEY);
+    saveSettings(settings);
+    settings->endGroup();
+}
+
+void ProjectWindow::loadPersistentSettings()
+{
+    QSettings * const settings = ICore::settings();
+    settings->beginGroup(PROJECT_WINDOW_KEY);
+    restoreSettings(settings);
+    settings->endGroup();
+}
 
 QSize SelectorDelegate::sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const
 {

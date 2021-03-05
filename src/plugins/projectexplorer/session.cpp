@@ -294,7 +294,7 @@ void SessionManager::setActiveTarget(Project *project, Target *target, SetActive
     if (cascade != SetActive::Cascade || !d->m_casadeSetActive)
         return;
 
-    Core::Id kitId = target->kit()->id();
+    Utils::Id kitId = target->kit()->id();
     for (Project *otherProject : SessionManager::projects()) {
         if (otherProject == project)
             continue;
@@ -314,7 +314,7 @@ void SessionManager::setActiveBuildConfiguration(Target *target, BuildConfigurat
     if (cascade != SetActive::Cascade || !d->m_casadeSetActive)
         return;
 
-    Core::Id kitId = target->kit()->id();
+    Utils::Id kitId = target->kit()->id();
     QString name = bc->displayName(); // We match on displayname
     for (Project *otherProject : SessionManager::projects()) {
         if (otherProject == target->project())
@@ -342,7 +342,7 @@ void SessionManager::setActiveDeployConfiguration(Target *target, DeployConfigur
     if (cascade != SetActive::Cascade || !d->m_casadeSetActive)
         return;
 
-    Core::Id kitId = target->kit()->id();
+    Utils::Id kitId = target->kit()->id();
     QString name = dc->displayName(); // We match on displayname
     for (Project *otherProject : SessionManager::projects()) {
         if (otherProject == target->project())
@@ -527,7 +527,7 @@ bool SessionManager::save()
         delete d->m_writer;
         d->m_writer = new PersistentSettingsWriter(filePath, "QtCreatorSession");
     }
-    const bool result = d->m_writer->save(data, ICore::mainWindow());
+    const bool result = d->m_writer->save(data, ICore::dialogParent());
     if (result) {
         if (!isDefaultVirgin())
             d->m_sessionDateTimes.insert(activeSession(), QDateTime::currentDateTime());
@@ -823,7 +823,7 @@ bool SessionManager::confirmSessionDelete(const QStringList &sessions)
     const QString question = sessions.size() == 1
             ? tr("Delete session %1?").arg(sessions.first())
             : tr("Delete these sessions?\n    %1").arg(sessions.join("\n    "));
-    return QMessageBox::question(ICore::mainWindow(),
+    return QMessageBox::question(ICore::dialogParent(),
                                  title,
                                  question,
                                  QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes;

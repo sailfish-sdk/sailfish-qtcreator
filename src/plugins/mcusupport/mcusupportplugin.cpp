@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of Qt Creator.
@@ -33,11 +33,12 @@
 #include <coreplugin/coreconstants.h>
 #include <coreplugin/icontext.h>
 #include <coreplugin/icore.h>
-#include <coreplugin/infobar.h>
 
 #include <projectexplorer/devicesupport/devicemanager.h>
 #include <projectexplorer/jsonwizard/jsonwizardfactory.h>
 #include <projectexplorer/kitmanager.h>
+
+#include <utils/infobar.h>
 
 #include <QTimer>
 
@@ -94,6 +95,7 @@ void McuSupportPlugin::extensionsInitialized()
 
     connect(KitManager::instance(), &KitManager::kitsLoaded, [](){
         McuSupportOptions::removeOutdatedKits();
+        McuSupportOptions::createAutomaticKits();
         McuSupportPlugin::askUserAboutMcuSupportKitsSetup();
     });
 }
@@ -107,11 +109,10 @@ void McuSupportPlugin::askUserAboutMcuSupportKitsSetup()
         || !McuSupportOptions::existingKits(nullptr).isEmpty())
         return;
 
-    InfoBarEntry info(
-                setupMcuSupportKits,
-                tr("Create Kits for Qt for MCUs? "
-                "To do it later, select Options > Devices > MCU."),
-                InfoBarEntry::GlobalSuppression::Enabled);
+    Utils::InfoBarEntry info(setupMcuSupportKits,
+                             tr("Create Kits for Qt for MCUs? "
+                                "To do it later, select Options > Devices > MCU."),
+                             Utils::InfoBarEntry::GlobalSuppression::Enabled);
     info.setCustomButtonInfo(tr("Create Kits for Qt for MCUs"), [setupMcuSupportKits] {
         ICore::infoBar()->removeInfo(setupMcuSupportKits);
         QTimer::singleShot(0, []() { ICore::showOptionsDialog(Constants::SETTINGS_ID); });

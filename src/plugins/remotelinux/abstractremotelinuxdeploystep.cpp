@@ -47,7 +47,7 @@ public:
 
 } // namespace Internal
 
-AbstractRemoteLinuxDeployStep::AbstractRemoteLinuxDeployStep(BuildStepList *bsl, Core::Id id)
+AbstractRemoteLinuxDeployStep::AbstractRemoteLinuxDeployStep(BuildStepList *bsl, Utils::Id id)
     : BuildStep(bsl, id), d(new Internal::AbstractRemoteLinuxDeployStepPrivate)
 {
 }
@@ -83,7 +83,13 @@ bool AbstractRemoteLinuxDeployStep::fromMap(const QVariantMap &map)
 
 QVariantMap AbstractRemoteLinuxDeployStep::toMap() const
 {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QVariantMap map = BuildStep::toMap();
+    map.insert(d->deployService->exportDeployTimes());
+    return map;
+#else
     return BuildStep::toMap().unite(d->deployService->exportDeployTimes());
+#endif
 }
 
 bool AbstractRemoteLinuxDeployStep::init()
@@ -139,15 +145,15 @@ void AbstractRemoteLinuxDeployStep::handleProgressMessage(const QString &message
 
 void AbstractRemoteLinuxDeployStep::handleErrorMessage(const QString &message)
 {
-    emit addTask(DeploymentTask(Task::Error, message), 1); // TODO correct?
     emit addOutput(message, OutputFormat::ErrorMessage);
+    emit addTask(DeploymentTask(Task::Error, message), 1); // TODO correct?
     d->hasError = true;
 }
 
 void AbstractRemoteLinuxDeployStep::handleWarningMessage(const QString &message)
 {
-    emit addTask(DeploymentTask(Task::Warning, message), 1); // TODO correct?
     emit addOutput(message, OutputFormat::ErrorMessage);
+    emit addTask(DeploymentTask(Task::Warning, message), 1); // TODO correct?
 }
 
 void AbstractRemoteLinuxDeployStep::handleFinished()

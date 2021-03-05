@@ -24,9 +24,8 @@
 ****************************************************************************/
 #include "androidavdmanager.h"
 
-#include "androidtoolmanager.h"
-
 #include <coreplugin/icore.h>
+#include <projectexplorer/projectexplorerconstants.h>
 #include <utils/algorithm.h>
 #include <utils/qtcassert.h>
 #include <utils/runextensions.h>
@@ -62,7 +61,6 @@ const char avdInfoSdcardKey[] = "Sdcard";
 const char avdInfoTargetTypeKey[] = "Target";
 const char avdInfoDeviceKey[] = "Device";
 const char avdInfoSkinKey[] = "Skin";
-const char googleApiTag[] = "google_apis";
 
 const int avdCreateTimeoutMs = 30000;
 
@@ -77,7 +75,7 @@ bool AndroidAvdManager::avdManagerCommand(const AndroidConfig &config, const QSt
     Utils::SynchronousProcess proc;
     auto env = AndroidConfigurations::toolsEnvironment(config).toStringList();
     proc.setEnvironment(env);
-    qCDebug(avdManagerLog) << "Running command:" << cmd.toUserOutput();
+    qCDebug(avdManagerLog) << "Running AVD Manager command:" << cmd.toUserOutput();
     SynchronousProcessResponse response = proc.runBlocking(cmd);
     if (response.result == Utils::SynchronousProcessResponse::Finished) {
         if (output)
@@ -139,7 +137,7 @@ static CreateAvdInfo createAvdCommand(const AndroidConfig &config, const CreateA
 
     const QString avdManagerTool = config.avdManagerToolPath().toString();
     qCDebug(avdManagerLog)
-            << "Running command:" << CommandLine(avdManagerTool, arguments).toUserOutput();
+            << "Running AVD Manager command:" << CommandLine(avdManagerTool, arguments).toUserOutput();
     QProcess proc;
     proc.start(avdManagerTool, arguments);
     if (!proc.waitForStarted()) {
@@ -223,7 +221,6 @@ private:
 
 AndroidAvdManager::AndroidAvdManager(const AndroidConfig &config):
     m_config(config),
-    m_androidTool(new AndroidToolManager(m_config)),
     m_parser(new AvdManagerOutputParser)
 {
 
@@ -231,29 +228,13 @@ AndroidAvdManager::AndroidAvdManager(const AndroidConfig &config):
 
 AndroidAvdManager::~AndroidAvdManager() = default;
 
-void AndroidAvdManager::launchAvdManagerUiTool() const
-{
-    if (m_config.useNativeUiTools()) {
-        m_androidTool->launchAvdManager();
-     } else {
-        qCDebug(avdManagerLog) << "AVD Ui tool launch failed. UI tool not available"
-                               << m_config.sdkToolsVersion();
-    }
-}
-
 QFuture<CreateAvdInfo> AndroidAvdManager::createAvd(CreateAvdInfo info) const
 {
-    if (m_config.useNativeUiTools())
-        return m_androidTool->createAvd(info);
-
     return Utils::runAsync(&createAvdCommand, m_config, info);
 }
 
 bool AndroidAvdManager::removeAvd(const QString &name) const
 {
-    if (m_config.useNativeUiTools())
-        return m_androidTool->removeAvd(name);
-
     const CommandLine command(m_config.avdManagerToolPath(), {"delete", "avd", "-n", name});
     qCDebug(avdManagerLog) << "Running command (removeAvd):" << command.toUserOutput();
     Utils::SynchronousProcess proc;
@@ -264,9 +245,6 @@ bool AndroidAvdManager::removeAvd(const QString &name) const
 
 QFuture<AndroidDeviceInfoList> AndroidAvdManager::avdList() const
 {
-    if (m_config.useNativeUiTools())
-        return m_androidTool->androidVirtualDevicesFuture();
-
     return Utils::runAsync(&AvdManagerOutputParser::listVirtualDevices, m_parser.get(), m_config);
 }
 
@@ -300,7 +278,7 @@ bool AndroidAvdManager::startAvdAsync(const QString &avdName) const
     if (AndroidConfigurations::force32bitEmulator())
         arguments << "-force-32bit";
 
-    arguments << "-partition-size" << QString::number(m_config.partitionSize())
+    arguments << m_config.emulatorArgs()
               << "-avd" << avdName;
     qCDebug(avdManagerLog) << "Running command (startAvdAsync):"
                            << CommandLine(m_config.emulatorToolPath(), arguments).toUserOutput();
@@ -447,8 +425,8 @@ AndroidDeviceInfoList AvdManagerOutputParser::parseAvdList(const QString &output
             }
         } else if (parseAvd(avdInfo, &avd)) {
             // armeabi-v7a devices can also run armeabi code
-            if (avd.cpuAbi.contains("armeabi-v7a"))
-                avd.cpuAbi << "armeabi";
+            if (avd.cpuAbi.contains(ProjectExplorer::Constants::ANDROID_ABI_ARMEABI_V7A))
+                avd.cpuAbi << ProjectExplorer::Constants::ANDROID_ABI_ARMEABI;
             avd.state = AndroidDeviceInfo::OkState;
             avd.type = AndroidDeviceInfo::Emulator;
             avdList << avd;

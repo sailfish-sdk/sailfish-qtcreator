@@ -93,15 +93,14 @@ void LspLogger::log(const LspLogMessage::MessageSender sender,
                     const QString &clientName,
                     const BaseMessage &message)
 {
-    QLinkedList<LspLogMessage> &clientLog = m_logs[clientName];
-    auto delta = clientLog.size() - m_logSize + 1;
-    if (delta > 0)
-        clientLog.erase(clientLog.begin(), clientLog.begin() + delta);
-    m_logs[clientName].append({sender, QTime::currentTime(), message});
-    emit newMessage(clientName, m_logs[clientName].last());
+    std::list<LspLogMessage> &clientLog = m_logs[clientName];
+    while (clientLog.size() >= static_cast<std::size_t>(m_logSize))
+        clientLog.pop_front();
+    clientLog.push_back({sender, QTime::currentTime(), message});
+    emit newMessage(clientName, clientLog.back());
 }
 
-QLinkedList<LspLogMessage> LspLogger::messages(const QString &clientName) const
+std::list<LspLogMessage> LspLogger::messages(const QString &clientName) const
 {
     return m_logs[clientName];
 }
@@ -251,10 +250,10 @@ void LspLoggerWidget::selectMatchingMessage(LspLogMessage::MessageSender sender,
         [&](const LspLogMessage &message) { return matches(sender, id, message); });
     if (!matchingMessage)
         return;
-    auto item = m_model.findItemByData(
+    auto index = m_model.findIndex(
         [&](const LspLogMessage &message) { return &message == matchingMessage; });
 
-    m_messages->selectionModel()->select(m_model.indexForItem(item), QItemSelectionModel::Select);
+    m_messages->selectionModel()->select(index, QItemSelectionModel::Select);
     if (matchingMessage->sender == LspLogMessage::ServerMessage)
         m_serverDetails->setMessage(matchingMessage->message);
     else
@@ -265,7 +264,7 @@ void LspLoggerWidget::saveLog()
 {
     QString contents;
     QTextStream stream(&contents);
-    m_model.forItems([&](const LspLogMessage &message) {
+    m_model.forAllData([&](const LspLogMessage &message) {
         stream << message.time.toString("hh:mm:ss.zzz") << ' ';
         stream << (message.sender == LspLogMessage::ClientMessage ? QString{"Client"}
                                                                   : QString{"Server"});

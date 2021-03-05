@@ -1,0 +1,123 @@
+/****************************************************************************
+**
+** Copyright (C) 2020 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the Qt Creator documentation.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU Free Documentation License Usage
+** Alternatively, this file may be used under the terms of the GNU Free
+** Documentation License version 1.3 as published by the Free Software
+** Foundation and appearing in the file included in the packaging of
+** this file. Please review the following information to ensure
+** the GNU Free Documentation License version 1.3 requirements
+** will be met: https://www.gnu.org/licenses/fdl-1.3.html.
+**
+****************************************************************************/
+
+// **********************************************************************
+// NOTE: the sections are not ordered by their logical order to avoid
+// reshuffling the file each time the index order changes (i.e., often).
+// Run the fixnavi.pl script to adjust the links to the index order.
+// **********************************************************************
+
+/*!
+    \page creator-project-managing-sessions.html
+    \if defined(qtdesignstudio)
+    \previouspage creator-project-managing-workspaces.html
+    \nextpage {Tutorials}
+    \else
+    \previouspage creator-sharing-project-settings.html
+    \nextpage creator-design-mode.html
+    \endif
+
+    \title Managing Sessions
+
+    When you exit \QC, a snapshot of your current workspace is stored as a
+    \e session. To restore the session automatically when you start \QC,
+    select \uicontrol File > \uicontrol Sessions > \uicontrol Manage >
+    \uicontrol {Restore last session on startup}.
+
+    When you open or create any of the following items, they automatically
+    become a part of the session:
+
+    \list
+
+        \li Projects
+            \if defined(qtcreator)
+            with their dependencies (including SUBDIRS projects)
+            \endif
+
+        \li Editors
+
+        \li Breakpoints and expressions
+
+        \li Bookmarks
+
+    \endlist
+
+    A session is personal, that is, not meant to be shared. It is not supposed
+    to reflect the project structure. It contains personal data, such as
+    bookmarks and breakpoints that are usually not of interest to other
+    developers working on the same projects.
+
+    For example, if you work on a project and need to switch to another project
+    for a while, you can clone the current session to save it under a name and
+    create a new session for the other project. Everything that you open after
+    switching to the new session becomes a part of it. When you want to return
+    to working on the first project, switch to the saved session. \QC opens the
+    projects and files that belong to the session.
+
+    To manage sessions, select \uicontrol File > \uicontrol Sessions > \uicontrol Manage.
+
+    \image qtcreator-session-manager.png
+
+    To save a session under a new name, select \uicontrol Clone.
+
+    To create a new session:
+
+    \list 1
+
+        \li Select \uicontrol New.
+
+         \li In the \uicontrol {Enter the name of the session} field, enter a
+             name for the session.
+
+        \li Select \uicontrol Create to create a new empty session or
+            \uicontrol {Create and Open} to create a session and to switch to
+            it.
+
+    \endlist
+
+    To switch between sessions, select \uicontrol {Switch To}.
+
+    \if defined(qtcreator)
+    When you launch \QC, a list of existing sessions is displayed in the
+    \uicontrol Welcome mode. To open a session, select it or press
+    \key Ctrl+Alt+<number>, where \e <number> is the number of the session to
+    open (available for the first nine sessions).
+
+    \image qtcreator-welcome-session.png
+
+    You can also use the \c t locator filter to open a session. For more
+    information, see \l{Searching with the Locator}.
+
+    To view more information about a session, select the down arrow icon that
+    appears when you move the mouse cursor over the session name. Select actions
+    to clone, rename, and delete sessions.
+
+    When you start \QC from the command line, you can give the name of
+    a session as argument and \QC will start with this session.
+
+    For more information, see \l{Using Command Line Options}.
+    \endif
+
+*/

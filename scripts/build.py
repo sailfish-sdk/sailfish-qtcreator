@@ -54,7 +54,8 @@ def get_arguments():
     parser.add_argument('--build', help='path that should be used for building', required=True)
     parser.add_argument('--qt-path', help='Path to Qt', required=True)
 
-    parser.add_argument('--debug', help='Enable debug builds', action='store_true', default=False)
+    parser.add_argument('--build-type', help='Build type to pass to CMake (defaults to RelWithDebInfo)',
+                        default='RelWithDebInfo')
 
     # clang codemodel
     parser.add_argument('--llvm-path', help='Path to LLVM installation for Clang code model',
@@ -83,44 +84,70 @@ def get_arguments():
                         action='store_true', default=(not common.is_windows_platform()))
     parser.add_argument('--no-docs', help='Skip documentation generation',
                         action='store_true', default=False)
+    parser.add_argument('--no-build-date', help='Does not show build date in about dialog, for reproducible builds',
+                        action='store_true', default=False)
     parser.add_argument('--no-dmg', help='Skip disk image creation (macOS)',
                         action='store_true', default=False)
     parser.add_argument('--no-zip', help='Skip creation of 7zip files for install and developer package',
                         action='store_true', default=False)
+    parser.add_argument('--with-tests', help='Enable building of tests',
+                        action='store_true', default=False)
+    parser.add_argument('--add-path', help='Prepends a CMAKE_PREFIX_PATH to the build',
+                        action='append', dest='prefix_paths', default=[])
+    parser.add_argument('--add-module-path', help='Prepends a CMAKE_MODULE_PATH to the build',
+                        action='append', dest='module_paths', default=[])
     parser.add_argument('--add-make-arg', help='Passes the argument to the make tool.',
                         action='append', dest='make_args', default=[])
-    return parser.parse_args()
+    parser.add_argument('--add-config', help=('Adds the argument to the CMake configuration call. '
+                                              'Use "--add-config=-DSOMEVAR=SOMEVALUE" if the argument begins with a dash.'),
+                        action='append', dest='config_args', default=[])
+    parser.add_argument('--zip-infix', help='Adds an infix to generated zip files, use e.g. for a build number.',
+                        default='')
+    args = parser.parse_args()
+    args.with_debug_info = args.build_type == 'RelWithDebInfo'
+    return args
 
 def build_qtcreator(args, paths):
     if not os.path.exists(paths.build):
         os.makedirs(paths.build)
-    prefix_paths = [paths.qt]
-    if args.llvm_path:
-        prefix_paths += [args.llvm_path]
-    if args.elfutils_path:
-        prefix_paths += [args.elfutils_path]
-    build_type = 'Debug' if args.debug else 'Release'
+    prefix_paths = [os.path.abspath(fp) for fp in args.prefix_paths] + [paths.qt]
+    if paths.llvm:
+        prefix_paths += [paths.llvm]
+    if paths.elfutils:
+        prefix_paths += [paths.elfutils]
+    prefix_paths = [common.to_posix_path(fp) for fp in prefix_paths]
     with_docs_str = 'OFF' if args.no_docs else 'ON'
+    build_date_option = 'OFF' if args.no_build_date else 'ON'
+    test_option = 'ON' if args.with_tests else 'OFF'
+    separate_debug_info_option = 'ON' if args.with_debug_info else 'OFF'
     cmake_args = ['cmake',
                   '-DCMAKE_PREFIX_PATH=' + ';'.join(prefix_paths),
-                  '-DCMAKE_BUILD_TYPE=' + build_type,
+                  '-DCMAKE_BUILD_TYPE=' + args.build_type,
+                  '-DQTC_SEPARATE_DEBUG_INFO=' + separate_debug_info_option,
+                  '-DSHOW_BUILD_DATE=' + build_date_option,
                   '-DWITH_DOCS=' + with_docs_str,
                   '-DBUILD_DEVELOPER_DOCS=' + with_docs_str,
                   '-DBUILD_EXECUTABLE_SDKTOOL=OFF',
-                  '-DCMAKE_INSTALL_PREFIX=' + paths.install,
-                  '-DWITH_TESTS=OFF',
+                  '-DCMAKE_INSTALL_PREFIX=' + common.to_posix_path(paths.install),
+                  '-DWITH_TESTS=' + test_option,
                   '-G', 'Ninja']
 
     if args.python3:
         cmake_args += ['-DPYTHON_EXECUTABLE=' + args.python3]
+        cmake_args += ['-DPython3_EXECUTABLE=' + args.python3]
+
+    if args.module_paths:
+        module_paths = [common.to_posix_path(os.path.abspath(fp)) for fp in args.module_paths]
+        cmake_args += ['-DCMAKE_MODULE_PATH=' + ';'.join(module_paths)]
 
     # force MSVC on Windows, because it looks for GCC in the PATH first,
     # even if MSVC is first mentioned in the PATH...
     # TODO would be nicer if we only did this if cl.exe is indeed first in the PATH
     if common.is_windows_platform():
-        cmake_args += ['-DCMAKE_C_COMPILER=cl',
-                       '-DCMAKE_CXX_COMPILER=cl',
-                       '-DBUILD_EXECUTABLE_WIN32INTERRUPT=OFF',
+        if not os.environ.get('CC') and not os.environ.get('CXX'):
+            cmake_args += ['-DCMAKE_C_COMPILER=cl',
+                           '-DCMAKE_CXX_COMPILER=cl']
+        cmake_args += ['-DBUILD_EXECUTABLE_WIN32INTERRUPT=OFF',
                        '-DBUILD_EXECUTABLE_WIN64INTERRUPT=OFF',
                        '-DBUILD_LIBRARY_QTCREATORCDBEXT=OFF']
         if args.python_path:
@@ -138,6 +165,8 @@ def build_qtcreator(args, paths):
                        '-DIDE_REVISION_STR=' + ide_revision,
                        '-DIDE_REVISION_URL=https://code.qt.io/cgit/qt-creator/qt-creator.git/log/?id=' + ide_revision]
 
+    cmake_args += args.config_args
+
     common.check_print_call(cmake_args + [paths.src], paths.build)
     build_args = ['cmake', '--build', '.']
     if args.make_args:
@@ -148,22 +177,24 @@ def build_qtcreator(args, paths):
 
     common.check_print_call(['cmake', '--install', '.', '--prefix', paths.install, '--strip'],
                             paths.build)
+    common.check_print_call(['cmake', '--install', '.', '--prefix', paths.install,
+                             '--component', 'Dependencies'],
+                            paths.build)
     common.check_print_call(['cmake', '--install', '.', '--prefix', paths.dev_install,
                              '--component', 'Devel'],
                             paths.build)
+    if args.with_debug_info:
+        common.check_print_call(['cmake', '--install', '.', '--prefix', paths.debug_install,
+                                 '--component', 'DebugInfo'],
+                                 paths.build)
     if not args.no_docs:
         common.check_print_call(['cmake', '--install', '.', '--prefix', paths.install,
-                                 '--component', 'qtc_docs_qtcreator'],
+                                 '--component', 'qch_docs'],
                                 paths.build)
         common.check_print_call(['cmake', '--install', '.', '--prefix', paths.install,
-                                 '--component', 'html_docs_qtcreator'],
+                                 '--component', 'html_docs'],
                                 paths.build)
-        common.check_print_call(['cmake', '--install', '.', '--prefix', paths.install,
-                                 '--component', 'html_docs_qtcreator-dev'],
-                                paths.build)
-        common.check_print_call(['cmake', '--install', '.', '--prefix', paths.install,
-                                 '--component', 'html_docs_qtcreator-dev'],
-                                paths.build)
+
 def build_wininterrupt(args, paths):
     if not common.is_windows_platform():
         return
@@ -190,40 +221,30 @@ def build_qtcreatorcdbext(args, paths):
                              '--component', 'qtcreatorcdbext'],
                             paths.build)
 
-def deploy_qt(args, paths):
-    if common.is_mac_platform():
-        script = os.path.join(paths.src, 'scripts', 'deployqtHelper_mac.sh')
-        app = os.path.join(paths.install, args.app_target)
-        # TODO this is wrong if Qt is set up non-standard
-        # TODO integrate deployqtHelper_mac.sh into deployqt.py, finally
-        qt_bins = os.path.join(paths.qt, 'bin')
-        qt_translations = os.path.join(paths.qt, 'translations')
-        qt_plugins = os.path.join(paths.qt, 'plugins')
-        qt_imports = os.path.join(paths.qt, 'imports')
-        qt_qml = os.path.join(paths.qt, 'qml')
-        common.check_print_call([script, app, qt_bins, qt_translations, qt_plugins,
-                                 qt_imports, qt_qml],
-                                paths.build)
-    else:
-        exe = os.path.join(paths.install, 'bin', args.app_target)
-        common.check_print_call(['python', '-u', os.path.join(paths.src, 'scripts', 'deployqt.py'),
-                                 '-i', exe, os.path.join(paths.qt, 'bin', 'qmake')],
-                                paths.build)
-
 def package_qtcreator(args, paths):
     if not args.no_zip:
-        common.check_print_call(['7z', 'a', '-mmt2', os.path.join(paths.result, 'qtcreator.7z'), '*'],
+        common.check_print_call(['7z', 'a', '-mmt2',
+                                 os.path.join(paths.result, 'qtcreator' + args.zip_infix + '.7z'),
+                                 '*'],
                                 paths.install)
         common.check_print_call(['7z', 'a', '-mmt2',
-                                 os.path.join(paths.result, 'qtcreator_dev.7z'), '*'],
+                                 os.path.join(paths.result, 'qtcreator' + args.zip_infix + '_dev.7z'),
+                                 '*'],
                                 paths.dev_install)
+        if args.with_debug_info:
+            common.check_print_call(['7z', 'a', '-mmt2',
+                                     os.path.join(paths.result, 'qtcreator' + args.zip_infix + '-debug.7z'),
+                                     '*'],
+                                    paths.debug_install)
         if common.is_windows_platform():
             common.check_print_call(['7z', 'a', '-mmt2',
-                                     os.path.join(paths.result, 'wininterrupt.7z'), '*'],
+                                     os.path.join(paths.result, 'wininterrupt' + args.zip_infix + '.7z'),
+                                     '*'],
                                     paths.wininterrupt_install)
             if not args.no_cdb:
                 common.check_print_call(['7z', 'a', '-mmt2',
-                                         os.path.join(paths.result, 'qtcreatorcdbext.7z'), '*'],
+                                         os.path.join(paths.result, 'qtcreatorcdbext' + args.zip_infix + '.7z'),
+                                         '*'],
                                         paths.qtcreatorcdbext_install)
 
     if common.is_mac_platform():
@@ -232,7 +253,7 @@ def package_qtcreator(args, paths):
         if not args.no_dmg:
             common.check_print_call(['python', '-u',
                                      os.path.join(paths.src, 'scripts', 'makedmg.py'),
-                                     'qt-creator.dmg',
+                                     'qt-creator' + args.zip_infix + '.dmg',
                                      'Qt Creator',
                                      paths.src,
                                      paths.install],
@@ -241,8 +262,9 @@ def package_qtcreator(args, paths):
 def get_paths(args):
     Paths = collections.namedtuple('Paths',
                                    ['qt', 'src', 'build',
-                                    'install', 'dev_install', 'wininterrupt_install',
-                                    'qtcreatorcdbext_install', 'result'])
+                                    'install', 'dev_install', 'debug_install',
+                                    'wininterrupt_install', 'qtcreatorcdbext_install', 'result',
+                                    'elfutils', 'llvm'])
     build_path = os.path.abspath(args.build)
     install_path = os.path.join(build_path, 'install')
     return Paths(qt=os.path.abspath(args.qt_path),
@@ -250,9 +272,12 @@ def get_paths(args):
                  build=os.path.join(build_path, 'build'),
                  install=os.path.join(install_path, 'qt-creator'),
                  dev_install=os.path.join(install_path, 'qt-creator-dev'),
+                 debug_install=os.path.join(install_path, 'qt-creator-debug'),
                  wininterrupt_install=os.path.join(install_path, 'wininterrupt'),
                  qtcreatorcdbext_install=os.path.join(install_path, 'qtcreatorcdbext'),
-                 result=build_path)
+                 result=build_path,
+                 elfutils=os.path.abspath(args.elfutils_path) if args.elfutils_path else None,
+                 llvm=os.path.abspath(args.llvm_path) if args.llvm_path else None)
 
 def main():
     args = get_arguments()
@@ -261,7 +286,6 @@ def main():
     build_qtcreator(args, paths)
     build_wininterrupt(args, paths)
     build_qtcreatorcdbext(args, paths)
-    deploy_qt(args, paths)
     package_qtcreator(args, paths)
 
 if __name__ == '__main__':

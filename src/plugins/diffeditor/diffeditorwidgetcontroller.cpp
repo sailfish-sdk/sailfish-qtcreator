@@ -39,6 +39,7 @@
 
 #include <cpaster/codepasterservice.h>
 
+#include <utils/infobar.h>
 #include <utils/progressindicator.h>
 #include <utils/qtcassert.h>
 #include <utils/temporaryfile.h>
@@ -50,6 +51,7 @@
 
 using namespace Core;
 using namespace TextEditor;
+using namespace Utils;
 
 namespace DiffEditor {
 namespace Internal {
@@ -76,7 +78,7 @@ void DiffEditorWidgetController::setDocument(DiffEditorDocument *document)
 
     if (m_document) {
         disconnect(m_document, &IDocument::aboutToReload, this, &DiffEditorWidgetController::scheduleShowProgress);
-        disconnect(m_document, &IDocument::reloadFinished, this, &DiffEditorWidgetController::hideProgress);
+        disconnect(m_document, &IDocument::reloadFinished, this, &DiffEditorWidgetController::onDocumentReloadFinished);
     }
 
     const bool wasRunning = m_document && m_document->state() == DiffEditorDocument::Reloading;
@@ -85,7 +87,8 @@ void DiffEditorWidgetController::setDocument(DiffEditorDocument *document)
 
     if (m_document) {
         connect(m_document, &IDocument::aboutToReload, this, &DiffEditorWidgetController::scheduleShowProgress);
-        connect(m_document, &IDocument::reloadFinished, this, &DiffEditorWidgetController::hideProgress);
+        connect(m_document, &IDocument::reloadFinished, this, &DiffEditorWidgetController::onDocumentReloadFinished);
+        updateCannotDecodeInfo();
     }
 
     const bool isRunning = m_document && m_document->state() == DiffEditorDocument::Reloading;
@@ -121,6 +124,12 @@ void DiffEditorWidgetController::hideProgress()
     m_timer.stop();
     if (m_progressIndicator)
         m_progressIndicator->hide();
+}
+
+void DiffEditorWidgetController::onDocumentReloadFinished()
+{
+    updateCannotDecodeInfo();
+    hideProgress();
 }
 
 void DiffEditorWidgetController::patch(bool revert, int fileIndex, int chunkIndex)
@@ -169,7 +178,7 @@ void DiffEditorWidgetController::patch(bool revert, int fileIndex, int chunkInde
             m_document->reload();
     } else { // PatchEditor
         auto textDocument = qobject_cast<TextEditor::TextDocument *>(
-                    DocumentModel::documentForFilePath(absFileName));
+            DocumentModel::documentForFilePath(Utils::FilePath::fromString(absFileName)));
         if (!textDocument)
             return;
 
@@ -292,6 +301,27 @@ void DiffEditorWidgetController::addExtraActions(QMenu *menu, int fileIndex, int
 {
     if (DiffEditorController *controller = m_document->controller())
         controller->requestChunkActions(menu, fileIndex, chunkIndex, selection);
+}
+
+void DiffEditorWidgetController::updateCannotDecodeInfo()
+{
+    if (!m_document)
+        return;
+
+    Utils::InfoBar *infoBar = m_document->infoBar();
+    Id selectEncodingId(Constants::SELECT_ENCODING);
+    if (m_document->hasDecodingError()) {
+        if (!infoBar->canInfoBeAdded(selectEncodingId))
+            return;
+        Utils::InfoBarEntry info(selectEncodingId,
+                                 tr("<b>Error:</b> Could not decode \"%1\" with \"%2\"-encoding.")
+                                     .arg(m_document->displayName(),
+                                          QString::fromLatin1(m_document->codec()->name())));
+        info.setCustomButtonInfo(tr("Select Encoding"), [this]() { m_document->selectEncoding(); });
+        infoBar->addInfo(info);
+    } else {
+        infoBar->removeInfo(selectEncodingId);
+    }
 }
 
 void DiffEditorWidgetController::sendChunkToCodePaster(int fileIndex, int chunkIndex)

@@ -1,24 +1,8 @@
 /*
-    Copyright (C) 2016 Volker Krause <vkrause@kde.org>
+    SPDX-FileCopyrightText: 2016 Volker Krause <vkrause@kde.org>
+    SPDX-FileCopyrightText: 2020 Jonathan Poelen <jonathan.poelen@gmail.com>
 
-    Permission is hereby granted, free of charge, to any person obtaining
-    a copy of this software and associated documentation files (the
-    "Software"), to deal in the Software without restriction, including
-    without limitation the rights to use, copy, modify, merge, publish,
-    distribute, sublicense, and/or sell copies of the Software, and to
-    permit persons to whom the Software is furnished to do so, subject to
-    the following conditions:
-
-    The above copyright notice and this permission notice shall be included
-    in all copies or substantial portions of the Software.
-
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-    EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-    CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+    SPDX-License-Identifier: MIT
 */
 
 #ifndef KSYNTAXHIGHLIGHTING_DEFINITION_H
@@ -33,12 +17,10 @@
 QT_BEGIN_NAMESPACE
 class QChar;
 class QString;
-class QStringList;
-template <typename T> class QVector;
 QT_END_NAMESPACE
 
-namespace KSyntaxHighlighting {
-
+namespace KSyntaxHighlighting
+{
 class Context;
 class Format;
 class KeywordList;
@@ -50,8 +32,7 @@ class DefinitionData;
  * @since 5.50
  * @see Definition::singleLineCommentPosition()
  */
-enum class CommentPosition
-{
+enum class CommentPosition {
     //! The comment marker is inserted at the beginning of a line at column 0
     StartOfLine = 0,
     //! The comment marker is inserted after leading whitespaces right befire
@@ -127,7 +108,7 @@ public:
      * Assignment operator.
      * Both this definition as well as @p rhs share the Definition data.
      */
-    Definition& operator=(const Definition &rhs);
+    Definition &operator=(const Definition &rhs);
 
     /**
      * Checks two definitions for equality.
@@ -330,7 +311,7 @@ public:
      * @since 5.49
      * @see keywordLists(), setKeywordList()
      */
-    QStringList keywordList(const QString& name) const;
+    QStringList keywordList(const QString &name) const;
 
     /**
      * Set the contents of the keyword list @p name to @p content.
@@ -348,7 +329,7 @@ public:
      * @see keywordList(), keywordLists()
      * @since 5.62
      */
-    bool setKeywordList(const QString& name, const QStringList& content);
+    bool setKeywordList(const QString &name, const QStringList &content);
 
     /**
      * Returns a list of all Format items used by this definition.
@@ -404,7 +385,7 @@ public:
 private:
     friend class DefinitionData;
     friend class DefinitionRef;
-    explicit Definition(const std::shared_ptr<DefinitionData> &dd);
+    explicit Definition(std::shared_ptr<DefinitionData> &&dd);
     std::shared_ptr<DefinitionData> d;
 };
 

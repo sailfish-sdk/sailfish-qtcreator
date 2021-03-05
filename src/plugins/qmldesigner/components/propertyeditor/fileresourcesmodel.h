@@ -27,6 +27,8 @@
 
 #include <qmlitemnode.h>
 
+#include <utils/filesystemwatcher.h>
+
 #include <QDir>
 #include <QObject>
 #include <QStringList>
@@ -42,7 +44,8 @@ class FileResourcesModel : public QObject
     Q_PROPERTY(QVariant modelNodeBackendProperty READ modelNodeBackend WRITE setModelNodeBackend NOTIFY modelNodeBackendChanged)
     Q_PROPERTY(QUrl path READ path WRITE setPath)
     Q_PROPERTY(QUrl dirPath READ dirPath)
-    Q_PROPERTY(QStringList fileModel READ fileModel NOTIFY fileModelChanged)
+    Q_PROPERTY(QStringList fullPathModel READ fullPathModel NOTIFY fullPathModelChanged)
+    Q_PROPERTY(QStringList fileNameModel READ fileNameModel NOTIFY fileNameModelChanged)
 
 public:
     explicit FileResourcesModel(QObject *parent = nullptr);
@@ -56,8 +59,10 @@ public:
     QUrl dirPath() const;
     void setFilter(const QString &filter);
     QString filter() const;
-    QStringList fileModel() const;
+    QStringList fullPathModel() const;
+    QStringList fileNameModel() const;
     void setupModel();
+    void refreshModel();
 
     Q_INVOKABLE void openFileDialog();
 
@@ -66,7 +71,8 @@ public:
 signals:
     void fileNameChanged(const QUrl &fileName);
     void modelNodeBackendChanged();
-    void fileModelChanged();
+    void fullPathModelChanged();
+    void fileNameModelChanged();
 
 private:
     QVariant modelNodeBackend() const;
@@ -76,11 +82,11 @@ private:
     QUrl m_path;
     QDir m_dirPath;
     QString m_filter;
-    bool m_lock;
     QString m_currentPath;
     QString m_lastModelPath;
-    QStringList m_model;
-
+    QStringList m_fullPathModel;
+    QStringList m_fileNameModel;
+    Utils::FileSystemWatcher *m_fileSystemWatcher;
 };
 
 QML_DECLARE_TYPE(FileResourcesModel)

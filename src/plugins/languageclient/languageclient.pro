@@ -4,6 +4,7 @@ DEFINES += LANGUAGECLIENT_LIBRARY
 
 HEADERS += \
     client.h \
+    diagnosticmanager.h \
     documentsymbolcache.h \
     dynamiccapabilities.h \
     languageclient_global.h \
@@ -17,6 +18,7 @@ HEADERS += \
     languageclientplugin.h \
     languageclientquickfix.h \
     languageclientsettings.h \
+    languageclientsymbolsupport.h \
     languageclientutils.h \
     locatorfilter.h \
     lsplogger.h \
@@ -25,6 +27,7 @@ HEADERS += \
 
 SOURCES += \
     client.cpp \
+    diagnosticmanager.cpp \
     documentsymbolcache.cpp \
     dynamiccapabilities.cpp \
     languageclientcompletionassist.cpp \
@@ -37,6 +40,7 @@ SOURCES += \
     languageclientplugin.cpp \
     languageclientquickfix.cpp \
     languageclientsettings.cpp \
+    languageclientsymbolsupport.cpp \
     languageclientutils.cpp \
     locatorfilter.cpp \
     lsplogger.cpp \

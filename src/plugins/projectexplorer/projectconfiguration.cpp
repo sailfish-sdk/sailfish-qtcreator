@@ -37,141 +37,9 @@ using namespace ProjectExplorer;
 const char CONFIGURATION_ID_KEY[] = "ProjectExplorer.ProjectConfiguration.Id";
 const char DISPLAY_NAME_KEY[] = "ProjectExplorer.ProjectConfiguration.DisplayName";
 
-// ProjectConfigurationAspect
-
-ProjectConfigurationAspect::ProjectConfigurationAspect() = default;
-
-ProjectConfigurationAspect::~ProjectConfigurationAspect() = default;
-
-void ProjectConfigurationAspect::setConfigWidgetCreator
-    (const ConfigWidgetCreator &configWidgetCreator)
-{
-    m_configWidgetCreator = configWidgetCreator;
-}
-
-QWidget *ProjectConfigurationAspect::createConfigWidget() const
-{
-    return m_configWidgetCreator ? m_configWidgetCreator() : nullptr;
-}
-
-void ProjectConfigurationAspect::addToLayout(LayoutBuilder &)
-{
-}
-
-// LayoutBuilder
-
-LayoutBuilder::LayoutBuilder(QWidget *parent)
-    : m_layout(new QFormLayout(parent))
-{
-    m_layout->setContentsMargins(0, 0, 0, 0);
-    if (auto fl = qobject_cast<QFormLayout *>(m_layout))
-        fl->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
-}
-
-LayoutBuilder::~LayoutBuilder()
-{
-    flushPendingItems();
-}
-
-LayoutBuilder &LayoutBuilder::startNewRow()
-{
-    flushPendingItems();
-    return *this;
-}
-
-void LayoutBuilder::flushPendingItems()
-{
-    if (m_pendingItems.isEmpty())
-        return;
-
-    if (auto fl = qobject_cast<QFormLayout *>(m_layout)) {
-        // If there are more than two items, we cram the last ones in one hbox.
-        if (m_pendingItems.size() > 2) {
-            auto hbox = new QHBoxLayout;
-            for (int i = 1; i < m_pendingItems.size(); ++i) {
-                if (QWidget *w = m_pendingItems.at(i).widget)
-                    hbox->addWidget(w);
-                else if (QLayout *l = m_pendingItems.at(i).layout)
-                    hbox->addItem(l);
-                else
-                    QTC_CHECK(false);
-            }
-            while (m_pendingItems.size() >= 2)
-                m_pendingItems.takeLast();
-            m_pendingItems.append(LayoutItem(hbox));
-        }
-
-        if (m_pendingItems.size() == 1) { // One one item given, so this spans both columns.
-            if (auto layout = m_pendingItems.at(0).layout)
-                fl->addRow(layout);
-            else if (auto widget = m_pendingItems.at(0).widget)
-                fl->addRow(widget);
-        } else if (m_pendingItems.size() == 2) { // Normal case, both columns used.
-            if (auto label = m_pendingItems.at(0).widget) {
-                if (auto layout = m_pendingItems.at(1).layout)
-                    fl->addRow(label, layout);
-                else if (auto widget = m_pendingItems.at(1).widget)
-                    fl->addRow(label, widget);
-            } else  {
-                if (auto layout = m_pendingItems.at(1).layout)
-                    fl->addRow(m_pendingItems.at(0).text, layout);
-                else if (auto widget = m_pendingItems.at(1).widget)
-                    fl->addRow(m_pendingItems.at(0).text, widget);
-            }
-        } else {
-            QTC_CHECK(false);
-        }
-    } else {
-        QTC_CHECK(false);
-    }
-
-    m_pendingItems.clear();
-}
-
-QLayout *LayoutBuilder::layout() const
-{
-    return m_layout;
-}
-
-LayoutBuilder &LayoutBuilder::addItem(LayoutItem item)
-{
-    if (item.widget && !item.widget->parent())
-        item.widget->setParent(m_layout->parentWidget());
-    m_pendingItems.append(item);
-    return *this;
-}
-
-
-// ProjectConfigurationAspects
-
-ProjectConfigurationAspects::ProjectConfigurationAspects() = default;
-
-ProjectConfigurationAspects::~ProjectConfigurationAspects()
-{
-    qDeleteAll(base());
-}
-
-ProjectConfigurationAspect *ProjectConfigurationAspects::aspect(Core::Id id) const
-{
-    return Utils::findOrDefault(base(), Utils::equal(&ProjectConfigurationAspect::id, id));
-}
-
-void ProjectConfigurationAspects::fromMap(const QVariantMap &map) const
-{
-    for (ProjectConfigurationAspect *aspect : *this)
-        aspect->fromMap(map);
-}
-
-void ProjectConfigurationAspects::toMap(QVariantMap &map) const
-{
-    for (ProjectConfigurationAspect *aspect : *this)
-        aspect->toMap(map);
-}
-
-
 // ProjectConfiguration
 
-ProjectConfiguration::ProjectConfiguration(QObject *parent, Core::Id id)
+ProjectConfiguration::ProjectConfiguration(QObject *parent, Utils::Id id)
     : QObject(parent)
     , m_id(id)
 {
@@ -194,7 +62,12 @@ Project *ProjectConfiguration::project() const
     return m_target->project();
 }
 
-Core::Id ProjectConfiguration::id() const
+Kit *ProjectConfiguration::kit() const
+{
+    return m_target->kit();
+}
+
+Utils::Id ProjectConfiguration::id() const
 {
     return m_id;
 }
@@ -246,7 +119,7 @@ Target *ProjectConfiguration::target() const
 
 bool ProjectConfiguration::fromMap(const QVariantMap &map)
 {
-    Core::Id id = Core::Id::fromSetting(map.value(QLatin1String(CONFIGURATION_ID_KEY)));
+    Utils::Id id = Utils::Id::fromSetting(map.value(QLatin1String(CONFIGURATION_ID_KEY)));
     // Note: This is only "startsWith", not ==, as RunConfigurations currently still
     // mangle in their build keys.
     QTC_ASSERT(id.toString().startsWith(m_id.toString()), return false);
@@ -256,18 +129,18 @@ bool ProjectConfiguration::fromMap(const QVariantMap &map)
     return true;
 }
 
-ProjectConfigurationAspect *ProjectConfiguration::aspect(Core::Id id) const
+Utils::BaseAspect *ProjectConfiguration::aspect(Utils::Id id) const
 {
     return m_aspects.aspect(id);
 }
 
 void ProjectConfiguration::acquaintAspects()
 {
-    for (ProjectConfigurationAspect *aspect : m_aspects)
+    for (Utils::BaseAspect *aspect : m_aspects)
         aspect->acquaintSiblings(m_aspects);
 }
 
-Core::Id ProjectExplorer::idFromMap(const QVariantMap &map)
+Utils::Id ProjectExplorer::idFromMap(const QVariantMap &map)
 {
-    return Core::Id::fromSetting(map.value(QLatin1String(CONFIGURATION_ID_KEY)));
+    return Utils::Id::fromSetting(map.value(QLatin1String(CONFIGURATION_ID_KEY)));
 }

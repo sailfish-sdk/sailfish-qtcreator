@@ -32,18 +32,18 @@
 #include <QDebug>
 #include <QDir>
 #include <QFileInfo>
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QTextStream>
 #include <QLoggingCategory>
 
-using namespace QmakeProjectManager;
-using namespace Internal;
 using namespace ProjectExplorer;
+using namespace Utils;;
 
-using Utils::FilePath;
-using Utils::QtcProcess;
 using QtSupport::QtVersionManager;
 using QtSupport::BaseQtVersion;
+
+namespace QmakeProjectManager {
+namespace Internal {
 
 static QString findQMakeLine(const QString &makefile, const QString &key)
 {
@@ -72,7 +72,7 @@ void MakeFileParse::parseArgs(const QString &args, const QString &project,
                               QList<QMakeAssignment> *assignments,
                               QList<QMakeAssignment> *afterAssignments)
 {
-    QRegExp regExp(QLatin1String("([^\\s\\+-]*)\\s*(\\+=|=|-=|~=)(.*)"));
+    const QRegularExpression regExp(QLatin1String("^([^\\s\\+-]*)\\s*(\\+=|=|-=|~=)(.*)$"));
     bool after = false;
     bool ignoreNext = false;
     m_unparsedArguments = args;
@@ -88,11 +88,12 @@ void MakeFileParse::parseArgs(const QString &args, const QString &project,
             after = true;
             ait.deleteArg();
         } else if (ait.value().contains(QLatin1Char('='))) {
-            if (regExp.exactMatch(ait.value())) {
+            const QRegularExpressionMatch match = regExp.match(ait.value());
+            if (match.hasMatch()) {
                 QMakeAssignment qa;
-                qa.variable = regExp.cap(1);
-                qa.op = regExp.cap(2);
-                qa.value = regExp.cap(3).trimmed();
+                qa.variable = match.captured(1);
+                qa.op = match.captured(2);
+                qa.value = match.captured(3).trimmed();
                 if (after)
                     afterAssignments->append(qa);
                 else
@@ -125,13 +126,12 @@ void dumpQMakeAssignments(const QList<QMakeAssignment> &list)
     }
 }
 
-void MakeFileParse::parseAssignments(QList<QMakeAssignment> *assignments)
+QList<QMakeAssignment> MakeFileParse::parseAssignments(const QList<QMakeAssignment> &assignments)
 {
     bool foundSeparateDebugInfo = false;
     bool foundForceDebugInfo = false;
-    QList<QMakeAssignment> oldAssignments = *assignments;
-    assignments->clear();
-    foreach (const QMakeAssignment &qa, oldAssignments) {
+    QList<QMakeAssignment> filteredAssignments;
+    foreach (const QMakeAssignment &qa, assignments) {
         if (qa.variable == QLatin1String("CONFIG")) {
             QStringList values = qa.value.split(QLatin1Char(' '));
             QStringList newValues;
@@ -206,10 +206,13 @@ void MakeFileParse::parseAssignments(QList<QMakeAssignment> *assignments)
                     else
                         foundForceDebugInfo = false;
                 } else if (value == QLatin1String("separate_debug_info")) {
-                    if (qa.op == QLatin1String("+="))
+                    if (qa.op == QLatin1String("+=")) {
                         foundSeparateDebugInfo = true;
-                    else
+                        m_config.separateDebugInfo = TriState::Enabled;
+                    } else {
                         foundSeparateDebugInfo = false;
+                        m_config.separateDebugInfo = TriState::Disabled;
+                    }
                 } else {
                     newValues.append(value);
                 }
@@ -217,10 +220,10 @@ void MakeFileParse::parseAssignments(QList<QMakeAssignment> *assignments)
             if (!newValues.isEmpty()) {
                 QMakeAssignment newQA = qa;
                 newQA.value = newValues.join(QLatin1Char(' '));
-                assignments->append(newQA);
+                filteredAssignments.append(newQA);
             }
         } else {
-            assignments->append(qa);
+            filteredAssignments.append(qa);
         }
     }
 
@@ -232,15 +235,16 @@ void MakeFileParse::parseAssignments(QList<QMakeAssignment> *assignments)
         newQA.variable = QLatin1String("CONFIG");
         newQA.op = QLatin1String("+=");
         newQA.value = QLatin1String("force_debug_info");
-        assignments->append(newQA);
+        filteredAssignments.append(newQA);
     } else if (foundSeparateDebugInfo) {
         // Found only separate_debug_info, so readd it
         QMakeAssignment newQA;
         newQA.variable = QLatin1String("CONFIG");
         newQA.op = QLatin1String("+=");
         newQA.value = QLatin1String("separate_debug_info");
-        assignments->append(newQA);
+        filteredAssignments.append(newQA);
     }
+    return filteredAssignments;
 }
 
 static FilePath findQMakeBinaryFromMakefile(const QString &makefile)
@@ -248,11 +252,12 @@ static FilePath findQMakeBinaryFromMakefile(const QString &makefile)
     QFile fi(makefile);
     if (fi.exists() && fi.open(QFile::ReadOnly)) {
         QTextStream ts(&fi);
-        QRegExp r1(QLatin1String("QMAKE\\s*=(.*)"));
+        const QRegularExpression r1(QLatin1String("^QMAKE\\s*=(.*)$"));
         while (!ts.atEnd()) {
             QString line = ts.readLine();
-            if (r1.exactMatch(line)) {
-                QFileInfo qmake(r1.cap(1).trimmed());
+            const QRegularExpressionMatch match = r1.match(line);
+            if (match.hasMatch()) {
+                QFileInfo qmake(match.captured(1).trimmed());
                 QString qmakePath = qmake.filePath();
                 if (!QString::fromLatin1(QTC_HOST_EXE_SUFFIX).isEmpty()
                         && !qmakePath.endsWith(QLatin1String(QTC_HOST_EXE_SUFFIX))) {
@@ -268,7 +273,7 @@ static FilePath findQMakeBinaryFromMakefile(const QString &makefile)
     return FilePath();
 }
 
-MakeFileParse::MakeFileParse(const QString &makefile)
+MakeFileParse::MakeFileParse(const QString &makefile, Mode mode) : m_mode(mode)
 {
     qCDebug(logging()) << "Parsing makefile" << makefile;
     if (!QFileInfo::exists(makefile)) {
@@ -365,9 +370,9 @@ void MakeFileParse::parseCommandLine(const QString &command, const QString &proj
     dumpQMakeAssignments(assignments);
 
     // Filter out CONFIG arguments we know into m_qmakeBuildConfig and m_config
-    parseAssignments(&assignments);
+    const QList<QMakeAssignment> filteredAssignments = parseAssignments(assignments);
     qCDebug(logging()) << "  After parsing";
-    dumpQMakeAssignments(assignments);
+    dumpQMakeAssignments(filteredAssignments);
 
     qCDebug(logging()) << "  Explicit Debug" << m_qmakeBuildConfig.explicitDebug;
     qCDebug(logging()) << "  Explicit Release" << m_qmakeBuildConfig.explicitRelease;
@@ -383,7 +388,9 @@ void MakeFileParse::parseCommandLine(const QString &command, const QString &proj
                        << (m_config.separateDebugInfo == TriState::Enabled);
 
     // Create command line of all unfiltered arguments
-    foreach (const QMakeAssignment &qa, assignments)
+    const QList<QMakeAssignment> &assignmentsToUse = m_mode == Mode::FilterKnownConfigValues
+            ? filteredAssignments : assignments;
+    foreach (const QMakeAssignment &qa, assignmentsToUse)
         QtcProcess::addArg(&m_unparsedArguments, qa.variable + qa.op + qa.value);
     if (!afterAssignments.isEmpty()) {
         QtcProcess::addArg(&m_unparsedArguments, QLatin1String("-after"));
@@ -392,6 +399,8 @@ void MakeFileParse::parseCommandLine(const QString &command, const QString &proj
     }
 }
 
+} // Internal
+} // QmakeProjectManager
 
 // Unit tests:
 
@@ -515,7 +524,7 @@ void QmakeProjectManagerPlugin::testMakefileParser()
     QFETCH(bool, separateDebugInfo);
     QFETCH(int, effectiveBuildConfig);
 
-    MakeFileParse parser("/tmp/something");
+    MakeFileParse parser("/tmp/something", MakeFileParse::Mode::FilterKnownConfigValues);
     parser.parseCommandLine(command, project);
 
     QCOMPARE(Utils::QtcProcess::splitArgs(parser.unparsedArguments()),

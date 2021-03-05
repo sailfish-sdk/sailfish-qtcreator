@@ -46,7 +46,7 @@ public:
     TestSettings settings() const;
 
 private:
-    void populateFrameworksListWidget(const QHash<Core::Id, bool> &frameworks);
+    void populateFrameworksListWidget(const QHash<Utils::Id, bool> &frameworks);
     void frameworkSettings(TestSettings &settings) const;
     void onFrameworkItemChanged();
     Ui::TestSettingsPage m_ui;
@@ -57,14 +57,14 @@ class TestSettingsPage : public Core::IOptionsPage
 {
     Q_OBJECT
 public:
-    explicit TestSettingsPage(const QSharedPointer<TestSettings> &settings);
+    explicit TestSettingsPage(TestSettings *settings);
 
     QWidget *widget() override;
     void apply() override;
     void finish() override { }
 
 private:
-    QSharedPointer<TestSettings> m_settings;
+    TestSettings *m_settings;
     QPointer<TestSettingsWidget> m_widget;
 };
 

@@ -176,7 +176,7 @@ static bool textStartsWith(CaseSensitivity cs, const QString &text, const QStrin
         return text.startsWith(prefix, Qt::CaseSensitive);
     case TextEditor::FirstLetterCaseSensitive:
         return prefix.at(0) == text.at(0)
-               && prefix.midRef(1).startsWith(text.midRef(1), Qt::CaseInsensitive);
+               && QStringView(text).mid(1).startsWith(QStringView(prefix).mid(1), Qt::CaseInsensitive);
     }
 
     return false;
@@ -217,7 +217,8 @@ bool GenericProposalModel::isPerfectMatch(const QString &prefix) const
             if (proposalItem(i)->isKeyword())
                 return true;
 
-            hasFullMatch = true;
+            if (!proposalItem(i)->isSnippet())
+                hasFullMatch = true;
         }
     }
 

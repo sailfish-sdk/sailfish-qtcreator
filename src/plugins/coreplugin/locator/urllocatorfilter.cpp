@@ -25,9 +25,13 @@
 
 #include "urllocatorfilter.h"
 
+#include <utils/stringutils.h>
+
 #include <QDesktopServices>
 #include <QMutexLocker>
 #include <QUrl>
+
+using namespace Utils;
 
 namespace Core {
 namespace Internal {
@@ -148,7 +152,7 @@ QList<Core::LocatorFilterEntry> UrlLocatorFilter::matchesFor(
             break;
         const QString name = url.arg(entry);
         Core::LocatorFilterEntry filterEntry(this, name, QVariant(), m_icon);
-        filterEntry.highlightInfo = {name.lastIndexOf(entry), entry.length()};
+        filterEntry.highlightInfo = {int(name.lastIndexOf(entry)), int(entry.length())};
         entries.append(filterEntry);
     }
     return entries;
@@ -190,7 +194,7 @@ void UrlLocatorFilter::restoreState(const QByteArray &state)
 
     QString value;
     in >> value;
-    m_remoteUrls = value.split('^', QString::SkipEmptyParts);
+    m_remoteUrls = value.split('^', Qt::SkipEmptyParts);
 
     QString shortcut;
     in >> shortcut;

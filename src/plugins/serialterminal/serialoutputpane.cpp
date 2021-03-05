@@ -210,11 +210,6 @@ void SerialOutputPane::clearContents()
         currentWindow->clear();
 }
 
-void SerialOutputPane::visibilityChanged(bool)
-{
-    // Unused but pure virtual
-}
-
 bool SerialOutputPane::canFocus() const
 {
     return m_tabWidget->currentWidget();
@@ -291,7 +286,9 @@ void SerialOutputPane::createNewOutputWindow(SerialControl *rc)
 
     connect(rc, &SerialControl::finished,
             [this, rc]() {
-        rc->outputFormatter()->flush();
+        const int tabIndex = indexOf(rc);
+        if (tabIndex != -1)
+            m_serialControlTabs[tabIndex].window->flush();
         if (isCurrent(rc))
             enableButtons(rc, false);
     });
@@ -299,11 +296,9 @@ void SerialOutputPane::createNewOutputWindow(SerialControl *rc)
     connect(rc, &SerialControl::appendMessageRequested,
             this, &SerialOutputPane::appendMessage);
 
-    Utils::OutputFormatter *formatter = rc->outputFormatter();
-
     // Create new
     static int counter = 0;
-    Core::Id contextId = Core::Id(Constants::C_SERIAL_OUTPUT).withSuffix(counter++);
+    Utils::Id contextId = Utils::Id(Constants::C_SERIAL_OUTPUT).withSuffix(counter++);
     Core::Context context(contextId);
     auto ow = new Core::OutputWindow(context, QString(), m_tabWidget);
     using TextEditor::TextEditorSettings;
@@ -315,7 +310,6 @@ void SerialOutputPane::createNewOutputWindow(SerialControl *rc)
             this, fontSettingsChanged);
     fontSettingsChanged();
     ow->setWindowTitle(tr("Serial Terminal Window"));
-    ow->setFormatter(formatter);
     // TODO: wordwrap, maxLineCount, zoom/wheelZoom (add to settings)
 
     auto controlTab = SerialControlTab(rc, ow);

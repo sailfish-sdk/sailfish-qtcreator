@@ -26,13 +26,15 @@
 #pragma once
 
 #include "cmake_global.h"
+
 #include "cmaketool.h"
 
 #include <utils/fileutils.h>
-#include <texteditor/codeassist/keywordscompletionassist.h>
-#include <functional>
+#include <utils/id.h>
 
 #include <QObject>
+
+#include <memory>
 
 namespace CMakeProjectManager {
 
@@ -41,19 +43,19 @@ class CMAKE_EXPORT CMakeToolManager : public QObject
     Q_OBJECT
 public:
     CMakeToolManager();
-    ~CMakeToolManager() override;
+    ~CMakeToolManager();
 
     static CMakeToolManager *instance();
 
     static QList<CMakeTool *> cmakeTools();
 
     static bool registerCMakeTool(std::unique_ptr<CMakeTool> &&tool);
-    static void deregisterCMakeTool(const Core::Id &id);
+    static void deregisterCMakeTool(const Utils::Id &id);
 
     static CMakeTool *defaultCMakeTool();
-    static void setDefaultCMakeTool(const Core::Id &id);
+    static void setDefaultCMakeTool(const Utils::Id &id);
     static CMakeTool *findByCommand(const Utils::FilePath &command);
-    static CMakeTool *findById(const Core::Id &id);
+    static CMakeTool *findById(const Utils::Id &id);
 
     static void notifyAboutUpdate(CMakeTool *);
     static void restoreCMakeTools();
@@ -61,9 +63,9 @@ public:
     static void updateDocumentation();
 
 signals:
-    void cmakeAdded (const Core::Id &id);
-    void cmakeRemoved (const Core::Id &id);
-    void cmakeUpdated (const Core::Id &id);
+    void cmakeAdded (const Utils::Id &id);
+    void cmakeRemoved (const Utils::Id &id);
+    void cmakeUpdated (const Utils::Id &id);
     void cmakeToolsChanged ();
     void cmakeToolsLoaded ();
     void defaultCMakeChanged ();

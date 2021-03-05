@@ -20,23 +20,18 @@ if (APPLE)
   set(resource_directories ${resource_directories} scripts)
 endif()
 
-add_custom_target(copy_share_to_builddir ALL
-  COMMENT Copy files into build directory
-  VERBATIM
+# copy resource directories during build
+qtc_copy_to_builddir(copy_share_to_builddir
+  DIRECTORIES ${resource_directories}
+  DESTINATION "${IDE_DATA_PATH}"
+  CREATE_SUBDIRS
 )
 
-# copy resource directories during build
-foreach(dir IN ITEMS ${resource_directories})
-  add_custom_command(TARGET copy_share_to_builddir POST_BUILD
-    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${dir}"
-      "${PROJECT_BINARY_DIR}/${IDE_DATA_PATH}/${dir}"
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-    COMMENT Copy resource directories into build directory
-    VERBATIM
-  )
-endforeach()
-
 # create install rule for resource directories
-install(DIRECTORY ${resource_directories} DESTINATION "${IDE_DATA_PATH}")
+install(
+  DIRECTORY ${resource_directories}
+  DESTINATION "${IDE_DATA_PATH}"
+  USE_SOURCE_PERMISSIONS
+)
 
 add_subdirectory(translations)

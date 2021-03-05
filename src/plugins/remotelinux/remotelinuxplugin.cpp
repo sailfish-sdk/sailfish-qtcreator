@@ -82,9 +82,9 @@ public:
     GenericDeployStepFactory<RemoteLinuxKillAppStep> remoteLinuxKillAppStepFactory;
     GenericDeployStepFactory<MakeInstallStep> makeInstallStepFactory;
 
-    const QList<Core::Id> supportedRunConfigs {
-        runConfigurationFactory.id(),
-        customRunConfigurationFactory.id(),
+    const QList<Utils::Id> supportedRunConfigs {
+        runConfigurationFactory.runConfigurationId(),
+        customRunConfigurationFactory.runConfigurationId(),
         "QmlProjectManager.QmlRunConfiguration"
     };
 

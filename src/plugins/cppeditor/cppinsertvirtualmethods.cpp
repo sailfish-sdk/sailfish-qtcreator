@@ -584,21 +584,23 @@ public:
                     if (!name || name->asDestructorNameId())
                         continue;
 
-                    const Function *firstVirtual = nullptr;
+                    QList<const Function * > firstVirtuals;
                     const bool isVirtual = FunctionUtils::isVirtualFunction(
-                                func, interface.context(), &firstVirtual);
+                                func, interface.context(), &firstVirtuals);
                     if (!isVirtual)
                         continue;
 
                     if (func->isFinal()) {
-                        if (FunctionItem *first = virtualFunctions[firstVirtual]) {
-                            FunctionItem *next = nullptr;
-                            for (FunctionItem *removed = first; next != first; removed = next) {
-                                next = removed->nextOverride;
-                                m_factory->classFunctionModel->removeFunction(removed);
-                                delete removed;
-                            };
-                            virtualFunctions.remove(firstVirtual);
+                        for (const Function *firstVirtual : qAsConst(firstVirtuals)) {
+                            if (FunctionItem *first = virtualFunctions[firstVirtual]) {
+                                FunctionItem *next = nullptr;
+                                for (FunctionItem *removed = first; next != first; removed = next) {
+                                    next = removed->nextOverride;
+                                    m_factory->classFunctionModel->removeFunction(removed);
+                                    delete removed;
+                                };
+                                virtualFunctions.remove(firstVirtual);
+                            }
                         }
                         continue;
                     }
@@ -606,23 +608,27 @@ public:
                     //   - virtual const QMetaObject *metaObject() const;
                     //   - virtual void *qt_metacast(const char *);
                     //   - virtual int qt_metacall(QMetaObject::Call, int, void **);
-                    if (printer.prettyName(firstVirtual->enclosingClass()->name())
-                            == QLatin1String("QObject")) {
-                        const QString funcName = printer.prettyName(func->name());
-                        if (funcName == QLatin1String("metaObject")
-                                || funcName == QLatin1String("qt_metacast")
-                                || funcName == QLatin1String("qt_metacall")) {
-                            continue;
+                    bool skip = false;
+                    for (const Function *firstVirtual : qAsConst(firstVirtuals)) {
+                        if (printer.prettyName(firstVirtual->enclosingClass()->name()) == "QObject"
+                                && magicQObjectFunctions().contains(
+                                    printer.prettyName(func->name()))) {
+                            skip = true;
+                            break;
                         }
                     }
+                    if (skip)
+                        continue;
 
                     // Do not implement existing functions inside target class
                     bool funcExistsInClass = false;
                     const Name *funcName = func->name();
-                    for (Symbol *symbol = m_classAST->symbol->find(funcName->identifier());
-                         symbol; symbol = symbol->next()) {
-                        if (!symbol->name()
-                                || !funcName->identifier()->match(symbol->identifier())) {
+                    const OperatorNameId * const opName = funcName->asOperatorNameId();
+                    Symbol *symbol = opName ? m_classAST->symbol->find(opName->kind())
+                                            : m_classAST->symbol->find(funcName->identifier());
+                    for (; symbol; symbol = symbol->next()) {
+                        if (!opName && (!symbol->name()
+                                        || !funcName->identifier()->match(symbol->identifier()))) {
                             continue;
                         }
                         if (symbol->type().match(func->type())) {
@@ -632,7 +638,7 @@ public:
                     }
 
                     // Construct function item
-                    const bool isReimplemented = (func != firstVirtual);
+                    const bool isReimplemented = !firstVirtuals.contains(func);
                     const bool isPureVirtual = func->isPureVirtual();
                     QString itemName = printer.prettyType(func->type(), func->name());
                     if (isPureVirtual)
@@ -646,16 +652,24 @@ public:
                         factory->setHasReimplementedFunctions(true);
                         funcItem->reimplemented = true;
                         funcItem->alreadyFound = funcExistsInClass;
-                        if (FunctionItem *first = virtualFunctions[firstVirtual]) {
-                            if (!first->alreadyFound) {
-                                while (first->checked != isPureVirtual) {
-                                    first->checked = isPureVirtual;
-                                    first = first->nextOverride;
+                        for (const Function *firstVirtual : qAsConst(firstVirtuals)) {
+                            if (FunctionItem *first = virtualFunctions[firstVirtual]) {
+                                if (!first->alreadyFound) {
+                                    while (first->checked != isPureVirtual) {
+                                        first->checked = isPureVirtual;
+                                        first = first->nextOverride;
+                                    }
                                 }
+                                funcItem->checked = first->checked;
+
+                                FunctionItem *prev = funcItem;
+                                for (FunctionItem *next = funcItem->nextOverride;
+                                     next && next != funcItem; next = next->nextOverride) {
+                                    prev = next;
+                                }
+                                prev->nextOverride = first->nextOverride;
+                                first->nextOverride = funcItem;
                             }
-                            funcItem->checked = first->checked;
-                            funcItem->nextOverride = first->nextOverride;
-                            first->nextOverride = funcItem;
                         }
                     } else {
                         if (!funcExistsInClass) {
@@ -688,7 +702,7 @@ public:
             return;
 
         bool isHeaderFile = false;
-        m_cppFileName = correspondingHeaderOrSource(interface.fileName(), &isHeaderFile);
+        m_cppFileName = correspondingHeaderOrSource(interface.filePath().toString(), &isHeaderFile);
         m_factory->setHasImplementationFile(isHeaderFile && !m_cppFileName.isEmpty());
 
         m_valid = true;
@@ -756,6 +770,7 @@ public:
             targetCoN = targetContext.globalNamespace();
         UseMinimalNames useMinimalNames(targetCoN);
         Control *control = context().bindings()->control().data();
+        QList<const Function *> insertedFunctions;
         foreach (ClassItem *classItem, m_factory->classFunctionModel->classes) {
             if (classItem->checkState() == Qt::Unchecked)
                 continue;
@@ -766,6 +781,14 @@ public:
             foreach (FunctionItem *funcItem, classItem->functions) {
                 if (funcItem->reimplemented || funcItem->alreadyFound || !funcItem->checked)
                     continue;
+
+                const auto cmp = [funcItem](const Function *f) {
+                    return f->name()->match(funcItem->function->name())
+                                    && f->type().match(funcItem->function->type());
+                };
+                if (Utils::contains(insertedFunctions, cmp))
+                    continue;
+                insertedFunctions.append(funcItem->function);
 
                 if (first) {
                     // Add comment
@@ -822,10 +845,13 @@ public:
         }
 
         // Write header file
-        headerFile->setChangeSet(headerChangeSet);
-        headerFile->appendIndentRange(Utils::ChangeSet::Range(m_insertPosDecl, m_insertPosDecl + 1));
-        headerFile->setOpenEditor(true, m_insertPosDecl);
-        headerFile->apply();
+        if (!headerChangeSet.isEmpty()) {
+            headerFile->setChangeSet(headerChangeSet);
+            headerFile->appendIndentRange(Utils::ChangeSet::Range(m_insertPosDecl,
+                                                                  m_insertPosDecl + 1));
+            headerFile->setOpenEditor(true, m_insertPosDecl);
+            headerFile->apply();
+        }
 
         // Insert in implementation file
         if (m_factory->settings()->implementationMode
@@ -875,9 +901,12 @@ public:
                 implementationChangeSet.insert(insertPos,  QLatin1String("\n\n") + defText);
             }
 
-            implementationFile->setChangeSet(implementationChangeSet);
-            implementationFile->appendIndentRange(Utils::ChangeSet::Range(insertPos, insertPos + 1));
-            implementationFile->apply();
+            if (!implementationChangeSet.isEmpty()) {
+                implementationFile->setChangeSet(implementationChangeSet);
+                implementationFile->appendIndentRange(Utils::ChangeSet::Range(insertPos,
+                                                                              insertPos + 1));
+                implementationFile->apply();
+            }
         }
     }
 
@@ -1541,10 +1570,12 @@ void CppEditorPlugin::test_quickfix_InsertVirtualMethods_data()
         "class BaseA {\n"
         "public:\n"
         "    virtual int virtualFuncA();\n"
+        "    virtual operator==(const BaseA &);\n"
         "};\n\n"
         "class Derived : public Bas@eA {\n"
         "public:\n"
         "    virtual int virtualFuncA() = 0;\n"
+        "    virtual operator==(const BaseA &);\n"
         "};\n"
         ) << _();
 
@@ -1757,6 +1788,56 @@ void CppEditorPlugin::test_quickfix_InsertVirtualMethods_data()
         "    virtual int d();\n"
         "};\n"
     );
+
+    // Check: Insert multiply-inherited virtual function only once.
+    QTest::newRow("multiple_inheritance_insert")
+        << InsertVirtualMethodsDialog::ModeOnlyDeclarations << false << true << _(
+        "struct Base1 {\n"
+        "    virtual void virt() = 0;\n"
+        "};\n\n"
+        "struct Base2 {\n"
+        "    virtual void virt() = 0;\n"
+        "};\n\n"
+        "struct @Derived : Base1, Base2 {\n"
+        "};\n") << _(
+        "struct Base1 {\n"
+        "    virtual void virt() = 0;\n"
+        "};\n\n"
+        "struct Base2 {\n"
+        "    virtual void virt() = 0;\n"
+        "};\n\n"
+        "struct Derived : Base1, Base2 {\n\n"
+        "    // Base2 interface\n"
+        "public:\n"
+        "    void virt() override;\n"
+        "};\n");
+
+    // Check: Do not insert multiply-inherited virtual function that has been re-implemented
+    //        along the way.
+    QTest::newRow("multiple_inheritance_no_insert")
+        << InsertVirtualMethodsDialog::ModeOnlyDeclarations << false << true << _(
+        "struct Base1 {\n"
+        "    virtual void virt() = 0;\n"
+        "};\n\n"
+        "struct Base2 {\n"
+        "    virtual void virt() = 0;\n"
+        "};\n\n"
+        "struct Derived1 : Base1, Base2 {\n"
+        "    void virt() override;\n"
+        "};\n\n"
+        "struct @Derived2 : Derived1\n"
+        "};\n") << _(
+        "struct Base1 {\n"
+        "    virtual void virt() = 0;\n"
+        "};\n\n"
+        "struct Base2 {\n"
+        "    virtual void virt() = 0;\n"
+        "};\n\n"
+        "struct Derived1 : Base1, Base2 {\n"
+        "    void virt() override;\n"
+        "};\n\n"
+        "struct Derived2 : Derived1\n"
+        "};\n");
 }
 
 void CppEditorPlugin::test_quickfix_InsertVirtualMethods()

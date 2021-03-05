@@ -73,6 +73,10 @@
 #include <qtsystemexceptionhandler.h>
 #endif
 
+#ifdef Q_OS_LINUX
+#include <malloc.h>
+#endif
+
 using namespace ExtensionSystem;
 
 enum { OptionIndent = 4, DescriptionIndent = 34 };
@@ -341,11 +345,13 @@ static void setHighDpiEnvironmentVariable()
             && !qEnvironmentVariableIsSet("QT_AUTO_SCREEN_SCALE_FACTOR")
             && !qEnvironmentVariableIsSet("QT_SCALE_FACTOR")
             && !qEnvironmentVariableIsSet("QT_SCREEN_SCALE_FACTORS")) {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
         QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
-#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+#if QT_VERSION == QT_VERSION_CHECK(5, 14, 0)
         // work around QTBUG-80934
         QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
             Qt::HighDpiScaleFactorRoundingPolicy::Round);
+#endif
 #endif
     }
 }
@@ -463,6 +469,11 @@ int main(int argc, char **argv)
     Options options = parseCommandLine(argc, argv);
     applicationDirPath(argv[0]);
 
+    if (qEnvironmentVariableIsSet("QTC_DO_NOT_PROPAGATE_LD_PRELOAD")) {
+        Utils::Environment::modifySystemEnvironment(
+            {{"LD_PRELOAD", "", Utils::EnvironmentItem::Unset}});
+    }
+
     if (options.userLibraryPath) {
         if ((*options.userLibraryPath).isEmpty()) {
             Utils::Environment::modifySystemEnvironment(
@@ -567,8 +578,10 @@ int main(int argc, char **argv)
                                         CrashHandlerSetup::EnableRestart, libexecPath);
 #endif
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     app.setAttribute(Qt::AA_UseHighDpiPixmaps);
     app.setAttribute(Qt::AA_DisableWindowContextHelpButton);
+#endif
 
     PluginManager pluginManager;
     PluginManager::setPluginIID(QLatin1String("org.qt-project.Qt.QtCreatorPlugin"));
@@ -594,7 +607,7 @@ int main(int argc, char **argv)
                 app.setProperty("qtc_locale", locale);
                 break;
             }
-            translator.load(QString()); // unload()
+            Q_UNUSED(translator.load(QString())); // unload()
         } else if (locale == QLatin1String("C") /* overrideLanguage == "English" */) {
             // use built-in
             break;
@@ -717,6 +730,33 @@ int main(int argc, char **argv)
 
     // shutdown plugin manager on the exit
     QObject::connect(&app, &QCoreApplication::aboutToQuit, &pluginManager, &PluginManager::shutdown);
+
+#ifdef Q_OS_LINUX
+    class MemoryTrimmer : public QObject
+    {
+    public:
+        MemoryTrimmer()
+        {
+            m_trimTimer.setSingleShot(true);
+            m_trimTimer.setInterval(60000);
+            // glibc may not actually free memory in free().
+            connect(&m_trimTimer, &QTimer::timeout, this, [] { malloc_trim(0); });
+        }
+
+        bool eventFilter(QObject *, QEvent *e) override
+        {
+            if ((e->type() == QEvent::MouseButtonPress || e->type() == QEvent::KeyPress)
+                    && !m_trimTimer.isActive()) {
+                m_trimTimer.start();
+            }
+            return false;
+        }
+
+        QTimer m_trimTimer;
+    };
+    MemoryTrimmer trimmer;
+    app.installEventFilter(&trimmer);
+#endif
 
     return restarter.restartOrExit(app.exec());
 }

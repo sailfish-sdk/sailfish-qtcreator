@@ -37,7 +37,9 @@
 
 /*!
     \class Core::IVersionControl::TopicCache
+    \inheaderfile coreplugin/iversioncontrol.h
     \inmodule QtCreator
+
     \brief The TopicCache class stores a cache which maps a directory to a topic.
 
     A VCS topic is typically the current active branch name, but it can also have other
@@ -159,11 +161,11 @@ IVersionControl::~IVersionControl()
     delete m_topicCache;
 }
 
-QStringList IVersionControl::unmanagedFiles(const QString &workingDir,
-                                            const QStringList &filePaths) const
+QStringList IVersionControl::unmanagedFiles(const QStringList &filePaths) const
 {
-    return Utils::filtered(filePaths, [wd = QDir(workingDir), this](const QString &f) {
-        return !managesFile(wd.path(), wd.relativeFilePath(f));
+    return Utils::filtered(filePaths, [this](const QString &f) {
+        const Utils::FilePath fp = Utils::FilePath::fromString(f);
+        return !managesFile(fp.parentDir().toString(), fp.fileName());
     });
 }
 
@@ -197,6 +199,13 @@ QString IVersionControl::TopicCache::topic(const QString &topLevel)
 
 void IVersionControl::fillLinkContextMenu(QMenu *, const QString &, const QString &)
 {
+}
+
+bool IVersionControl::handleLink(const QString &workingDirectory, const QString &reference)
+{
+    QTC_ASSERT(!reference.isEmpty(), return false);
+    vcsDescribe(workingDirectory, reference);
+    return true;
 }
 
 } // namespace Core

@@ -31,6 +31,7 @@
 #include "clangtoolsprojectsettings.h"
 #include "clangtoolssettings.h"
 #include "clangtoolsutils.h"
+#include "executableinfo.h"
 
 #include <debugger/analyzer/analyzerconstants.h>
 
@@ -71,45 +72,6 @@ using namespace ProjectExplorer;
 using namespace Utils;
 
 static Q_LOGGING_CATEGORY(LOG, "qtc.clangtools.runcontrol", QtWarningMsg)
-
-static QStringList splitArgs(QString &argsString)
-{
-    QStringList result;
-    Utils::QtcProcess::ArgIterator it(&argsString);
-    while (it.next())
-        result.append(it.value());
-    return result;
-}
-
-static QStringList extraOptions(const char *environment)
-{
-    if (!qEnvironmentVariableIsSet(environment))
-        return QStringList();
-    QString arguments = QString::fromLocal8Bit(qgetenv(environment));
-    return splitArgs(arguments);
-}
-
-static QStringList extraClangToolsPrependOptions()
-{
-    constexpr char csaPrependOptions[] = "QTC_CLANG_CSA_CMD_PREPEND";
-    constexpr char toolsPrependOptions[] = "QTC_CLANG_TOOLS_CMD_PREPEND";
-    static const QStringList options = extraOptions(csaPrependOptions)
-            + extraOptions(toolsPrependOptions);
-    if (!options.isEmpty())
-        qWarning() << "ClangTools options are prepended with " << options.toVector();
-    return options;
-}
-
-static QStringList extraClangToolsAppendOptions()
-{
-    constexpr char csaAppendOptions[] = "QTC_CLANG_CSA_CMD_APPEND";
-    constexpr char toolsAppendOptions[] = "QTC_CLANG_TOOLS_CMD_APPEND";
-    static const QStringList options = extraOptions(csaAppendOptions)
-            + extraOptions(toolsAppendOptions);
-    if (!options.isEmpty())
-        qWarning() << "ClangTools options are appended with " << options.toVector();
-    return options;
-}
 
 namespace ClangTools {
 namespace Internal {
@@ -153,32 +115,32 @@ private:
      bool m_success = false;
 };
 
-static AnalyzeUnits toAnalyzeUnits(const FileInfos &fileInfos)
+AnalyzeUnit::AnalyzeUnit(const FileInfo &fileInfo,
+                         const FilePath &clangIncludeDir,
+                         const QString &clangVersion)
 {
-    AnalyzeUnits unitsToAnalyze;
-    const UsePrecompiledHeaders usePrecompiledHeaders = CppTools::getPchUsage();
-    for (const FileInfo &fileInfo : fileInfos) {
-        CompilerOptionsBuilder optionsBuilder(*fileInfo.projectPart,
-                                              UseSystemHeader::No,
-                                              UseTweakedHeaderPaths::Yes,
-                                              UseLanguageDefines::No,
-                                              UseBuildSystemWarnings::No,
-                                              QString(CLANG_VERSION),
-                                              QString(CLANG_RESOURCE_DIR));
-        QStringList arguments = extraClangToolsPrependOptions();
-        arguments.append(optionsBuilder.build(fileInfo.kind, usePrecompiledHeaders));
-        arguments.append(extraClangToolsAppendOptions());
-        unitsToAnalyze << AnalyzeUnit(fileInfo.file.toString(), arguments);
-    }
-
-    return unitsToAnalyze;
+    CompilerOptionsBuilder optionsBuilder(*fileInfo.projectPart,
+                                          UseSystemHeader::No,
+                                          UseTweakedHeaderPaths::Tools,
+                                          UseLanguageDefines::No,
+                                          UseBuildSystemWarnings::No,
+                                          clangVersion,
+                                          clangIncludeDir.toString());
+    file = fileInfo.file.toString();
+    arguments = extraClangToolsPrependOptions();
+    arguments.append(optionsBuilder.build(fileInfo.kind, CppTools::getPchUsage()));
+    arguments.append(extraClangToolsAppendOptions());
 }
 
-AnalyzeUnits ClangToolRunWorker::unitsToAnalyze()
+AnalyzeUnits ClangToolRunWorker::unitsToAnalyze(const FilePath &clangIncludeDir,
+                                                const QString &clangVersion)
 {
     QTC_ASSERT(m_projectInfo.isValid(), return AnalyzeUnits());
 
-    return toAnalyzeUnits(m_fileInfos);
+    AnalyzeUnits units;
+    for (const FileInfo &fileInfo : m_fileInfos)
+        units << AnalyzeUnit(fileInfo, clangIncludeDir, clangVersion);
+    return units;
 }
 
 static QDebug operator<<(QDebug debug, const Utils::Environment &environment)
@@ -223,8 +185,7 @@ ClangToolRunWorker::ClangToolRunWorker(RunControl *runControl,
     QTC_ASSERT(buildConfiguration, return);
     m_environment = buildConfiguration->environment();
 
-    ToolChain *toolChain = ToolChainKitAspect::toolChain(target->kit(),
-                                                         ProjectExplorer::Constants::CXX_LANGUAGE_ID);
+    ToolChain *toolChain = ToolChainKitAspect::cxxToolChain(target->kit());
     QTC_ASSERT(toolChain, return);
     m_targetTriple = toolChain->originalTargetTriple();
     m_toolChainType = toolChain->typeId();
@@ -237,12 +198,8 @@ QList<RunnerCreator> ClangToolRunWorker::runnerCreators()
     if (m_diagnosticConfig.isClangTidyEnabled())
         creators << [this]() { return createRunner<ClangTidyRunner>(); };
 
-    if (m_diagnosticConfig.isClazyEnabled()) {
-        if (!qEnvironmentVariable("QTC_USE_CLAZY_STANDALONE_PATH").isEmpty())
-            creators << [this]() { return createRunner<ClazyStandaloneRunner>(); };
-        else
-            creators << [this]() { return createRunner<ClazyPluginRunner>(); };
-    }
+    if (m_diagnosticConfig.isClazyEnabled())
+        creators << [this]() { return createRunner<ClazyStandaloneRunner>(); };
 
     return creators;
 }
@@ -290,7 +247,12 @@ void ClangToolRunWorker::start()
                   Utils::NormalMessageFormat);
 
     // Collect files
-    const AnalyzeUnits unitsToProcess = unitsToAnalyze();
+    const auto clangIncludeDirAndVersion =
+            getClangIncludeDirAndVersion(runControl()->runnable().executable);
+    const AnalyzeUnits unitsToProcess = unitsToAnalyze(clangIncludeDirAndVersion.first,
+                                                       clangIncludeDirAndVersion.second);
+    qCDebug(LOG) << Q_FUNC_INFO << runControl()->runnable().executable
+                 << clangIncludeDirAndVersion.first << clangIncludeDirAndVersion.second;
     qCDebug(LOG) << "Files to process:" << unitsToProcess;
 
     m_queue.clear();
@@ -389,7 +351,6 @@ void ClangToolRunWorker::onRunnerFinishedWithSuccess(const QString &filePath)
     QString errorMessage;
     const Diagnostics diagnostics = tool()->read(runner->outputFileFormat(),
                                                  outputFilePath,
-                                                 filePath,
                                                  m_projectFiles,
                                                  &errorMessage);
 
@@ -403,8 +364,12 @@ void ClangToolRunWorker::onRunnerFinishedWithSuccess(const QString &filePath)
     } else {
         if (!m_filesNotAnalyzed.contains(filePath))
             m_filesAnalyzed.insert(filePath);
-        if (!diagnostics.isEmpty())
-            tool()->onNewDiagnosticsAvailable(diagnostics);
+        if (!diagnostics.isEmpty()) {
+            // do not generate marks when we always analyze open files since marks from that
+            // analysis should be more up to date
+            const bool generateMarks = !m_runSettings.analyzeOpenFiles();
+            tool()->onNewDiagnosticsAvailable(diagnostics, generateMarks);
+        }
     }
 
     handleFinished();
@@ -420,7 +385,6 @@ void ClangToolRunWorker::onRunnerFinishedWithFailure(const QString &errorMessage
 
     auto *toolRunner = qobject_cast<ClangToolRunner *>(sender());
     const QString fileToAnalyze = toolRunner->fileToAnalyze();
-    const QString outputFilePath = toolRunner->outputFilePath();
 
     m_filesAnalyzed.remove(fileToAnalyze);
     m_filesNotAnalyzed.insert(fileToAnalyze);

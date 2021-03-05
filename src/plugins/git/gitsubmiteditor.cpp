@@ -102,7 +102,7 @@ GitSubmitEditor::GitSubmitEditor() :
     VcsBaseSubmitEditor(new GitSubmitEditorWidget)
 {
     connect(this, &VcsBaseSubmitEditor::diffSelectedRows, this, &GitSubmitEditor::slotDiffSelected);
-    connect(submitEditorWidget(), &GitSubmitEditorWidget::show, this, &GitSubmitEditor::showCommit);
+    connect(submitEditorWidget(), &GitSubmitEditorWidget::showRequested, this, &GitSubmitEditor::showCommit);
     connect(GitPlugin::versionControl(), &Core::IVersionControl::repositoryChanged,
             this, &GitSubmitEditor::forceUpdateFileModel);
     connect(&m_fetchWatcher, &QFutureWatcher<CommitDataFetchResult>::finished,
@@ -230,7 +230,7 @@ void GitSubmitEditor::updateFileModel()
     Core::ProgressManager::addTask(m_fetchWatcher.future(), tr("Refreshing Commit Data"),
                                    TASK_UPDATE_COMMIT);
 
-    GitClient::instance()->addFuture(m_fetchWatcher.future());
+    GitClient::instance()->addFuture(QFuture<void>(m_fetchWatcher.future()));
 }
 
 void GitSubmitEditor::forceUpdateFileModel()

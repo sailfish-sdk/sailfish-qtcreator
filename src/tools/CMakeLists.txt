@@ -13,7 +13,7 @@ option(BUILD_CPLUSPLUS_TOOLS "Build CPlusPlus tools" OFF)
 function(add_qtc_cpp_tool name)
   add_qtc_executable(${name}
     DEFINES
-      PATH_PREPROCESSOR_CONFIG=\"${CMAKE_CURRENT_SOURCE_DIR}/pp-configuration.inc\"
+      PATH_PREPROCESSOR_CONFIG=\"${CMAKE_CURRENT_SOURCE_DIR}/cplusplus-shared/pp-configuration.inc\"
       ${ARGN}
     DEPENDS CPlusPlus Utils Qt5::Widgets
     INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/cplusplus-shared"
@@ -27,8 +27,8 @@ endfunction()
 if (BUILD_CPLUSPLUS_TOOLS)
   add_qtc_cpp_tool(cplusplus-ast2png "")
   add_qtc_cpp_tool(cplusplus-frontend "")
-  add_qtc_cpp_tool(cplusplus-mkvisitor PATH_AST_H=\"${CMAKE_CURRENT_SOURCE_DIR}/../../libs/3rdparty/cplusplus/AST.h\")
-  add_qtc_cpp_tool(cplusplus-update-frontend PATH_CPP_FRONTEND=\"${CMAKE_CURRENT_SOURCE_DIR}/../../libs/3rdparty/cplusplus\" PATH_DUMPERS_FILE=\"${CMAKE_CURRENT_SOURCE_DIR}/../cplusplus-ast2png/dumpers.inc\")
+  add_qtc_cpp_tool(cplusplus-mkvisitor PATH_AST_H=\"${CMAKE_CURRENT_SOURCE_DIR}/../libs/3rdparty/cplusplus/AST.h\")
+  add_qtc_cpp_tool(cplusplus-update-frontend PATH_CPP_FRONTEND=\"${CMAKE_CURRENT_SOURCE_DIR}/../libs/3rdparty/cplusplus\" PATH_DUMPERS_FILE=\"${CMAKE_CURRENT_SOURCE_DIR}/cplusplus-ast2png/dumpers.inc\")
 endif()
 
 if (APPLE)

@@ -25,10 +25,12 @@
 
 #include "qt5previewnodeinstanceserver.h"
 
-#include "nodeinstanceclientinterface.h"
-#include "statepreviewimagechangedcommand.h"
+#include "changepreviewimagesizecommand.h"
 #include "createscenecommand.h"
+#include "nodeinstanceclientinterface.h"
 #include "removesharedmemorycommand.h"
+#include "statepreviewimagechangedcommand.h"
+
 #include <QQuickView>
 #include <QQuickItem>
 #include <designersupportdelegate.h>
@@ -45,6 +47,7 @@ Qt5PreviewNodeInstanceServer::Qt5PreviewNodeInstanceServer(NodeInstanceClientInt
 void Qt5PreviewNodeInstanceServer::createScene(const CreateSceneCommand &command)
 {
     initializeView();
+    setTranslationLanguage(command.language);
     setupScene(command);
     startRenderTimer();
 }
@@ -68,7 +71,7 @@ void Qt5PreviewNodeInstanceServer::collectItemChangesAndSendChangeCommands()
     if (!inFunction && nodeInstanceClient()->bytesToWrite() < 10000) {
         inFunction = true;
 
-        DesignerSupport::polishItems(quickView());
+        DesignerSupport::polishItems(quickWindow());
 
         QVector<ImageContainer> imageContainerVector;
         imageContainerVector.append(ImageContainer(0, renderPreviewImage(), -1));
@@ -81,9 +84,11 @@ void Qt5PreviewNodeInstanceServer::collectItemChangesAndSendChangeCommands()
             instance.deactivateState();
         }
 
-        nodeInstanceClient()->statePreviewImagesChanged(StatePreviewImageChangedCommand(imageContainerVector));
+        nodeInstanceClient()->statePreviewImagesChanged(
+            StatePreviewImageChangedCommand(imageContainerVector));
 
         slowDownRenderTimer();
+        handleExtraRender();
         inFunction = false;
     }
 }
@@ -100,7 +105,9 @@ QImage Qt5PreviewNodeInstanceServer::renderPreviewImage()
     QRectF boundingRect = rootNodeInstance().boundingRect();
 
     QSize previewImageSize = boundingRect.size().toSize();
-    previewImageSize.scale(QSize(160, 160), Qt::KeepAspectRatio);
+
+    if (m_previewSize.isValid() && !m_previewSize.isNull())
+        previewImageSize.scale(m_previewSize, Qt::KeepAspectRatio);
 
     QImage previewImage = rootNodeInstance().renderPreviewImage(previewImageSize);
 
@@ -111,6 +118,14 @@ void QmlDesigner::Qt5PreviewNodeInstanceServer::removeSharedMemory(const QmlDesi
 {
     if (command.typeName() == "Image")
         ImageContainer::removeSharedMemorys(command.keyNumbers());
+}
+
+void Qt5PreviewNodeInstanceServer::changePreviewImageSize(
+    const ChangePreviewImageSizeCommand &command)
+{
+    m_previewSize = command.size;
+
+    collectItemChangesAndSendChangeCommands();
 }
 
 } // namespace QmlDesigner

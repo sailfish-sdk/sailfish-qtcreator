@@ -42,7 +42,7 @@ namespace Nim {
 
 NimToolChainFactory::NimToolChainFactory()
 {
-    setDisplayName(tr("Nim"));
+    setDisplayName(NimToolChain::tr("Nim"));
     setSupportedToolChainType(Constants::C_NIMTOOLCHAIN_TYPEID);
     setSupportedLanguages({Constants::C_NIMLANGUAGE_ID});
     setToolchainConstructor([] { return new NimToolChain; });
@@ -111,7 +111,7 @@ void NimToolChainConfigWidget::applyImpl()
     Q_ASSERT(tc);
     if (tc->isAutoDetected())
         return;
-    tc->setCompilerCommand(m_compilerCommand->fileName());
+    tc->setCompilerCommand(m_compilerCommand->filePath());
 }
 
 void NimToolChainConfigWidget::discardImpl()
@@ -123,7 +123,7 @@ bool NimToolChainConfigWidget::isDirtyImpl() const
 {
     auto tc = static_cast<NimToolChain *>(toolChain());
     Q_ASSERT(tc);
-    return tc->compilerCommand().toString() != m_compilerCommand->path();
+    return tc->compilerCommand().toString() != m_compilerCommand->filePath().toString();
 }
 
 void NimToolChainConfigWidget::makeReadOnlyImpl()

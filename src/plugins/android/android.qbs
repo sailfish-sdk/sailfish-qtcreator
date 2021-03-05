@@ -34,8 +34,6 @@ Project {
             "androidcreatekeystorecertificate.ui",
             "androidbuildapkstep.cpp",
             "androidbuildapkstep.h",
-            "androidbuildapkwidget.cpp",
-            "androidbuildapkwidget.h",
             "androiddeployqtstep.cpp",
             "androiddeployqtstep.h",
             "androiddebugsupport.cpp",
@@ -56,6 +54,10 @@ Project {
             "androidmanifestdocument.h",
             "androidmanifesteditor.cpp",
             "androidmanifesteditor.h",
+            "androidmanifesteditoriconwidget.cpp",
+            "androidmanifesteditoriconwidget.h",
+            "androidmanifesteditoriconcontainerwidget.cpp",
+            "androidmanifesteditoriconcontainerwidget.h",
             "androidmanifesteditorfactory.cpp",
             "androidmanifesteditorfactory.h",
             "androidmanifesteditorwidget.cpp",
@@ -89,6 +91,9 @@ Project {
             "androidsdkmodel.h",
             "androidsdkpackage.cpp",
             "androidsdkpackage.h",
+            "androidservicewidget.cpp",
+            "androidservicewidget.h",
+            "androidservicewidget_p.h",
             "androidsettingswidget.cpp",
             "androidsettingswidget.h",
             "androidsettingswidget.ui",
@@ -96,8 +101,6 @@ Project {
             "androidsignaloperation.h",
             "androidtoolchain.cpp",
             "androidtoolchain.h",
-            "androidtoolmanager.cpp",
-            "androidtoolmanager.h",
             "avddialog.cpp",
             "avddialog.h",
             "certificatesmodel.cpp",
@@ -110,6 +113,8 @@ Project {
             "javaindenter.h",
             "javaparser.cpp",
             "javaparser.h",
+            "splashiconcontainerwidget.cpp",
+            "splashiconcontainerwidget.h"
         ]
     }
 }

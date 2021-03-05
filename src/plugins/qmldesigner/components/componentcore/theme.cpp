@@ -28,19 +28,46 @@
 
 #include <qmldesignerplugin.h>
 
+#include <coreplugin/icore.h>
+
 #include <utils/stylehelper.h>
 
 #include <QApplication>
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QScreen>
 #include <QPointer>
+#include <QQmlEngine>
+#include <QQmlComponent>
+#include <QQmlProperty>
 #include <qqml.h>
+
+static Q_LOGGING_CATEGORY(themeLog, "qtc.qmldesigner.theme", QtWarningMsg)
 
 namespace QmlDesigner {
 
 Theme::Theme(Utils::Theme *originTheme, QObject *parent)
     : Utils::Theme(originTheme, parent)
+    , m_constants(nullptr)
 {
+    QString constantsPath = Core::ICore::resourcePath() +
+            QStringLiteral("/qmldesigner/propertyEditorQmlSources/imports/StudioTheme/InternalConstants.qml");
+
+    QQmlEngine* engine = new QQmlEngine(this);
+    QQmlComponent component(engine, QUrl::fromLocalFile(constantsPath));
+
+    if (component.status() == QQmlComponent::Ready) {
+        m_constants = component.create();
+    }
+    else if (component.status() == QQmlComponent::Error ) {
+        qCWarning(themeLog) << "Couldn't load" << constantsPath
+                            << "due to the following error(s):";
+        for (const QQmlError &error : component.errors())
+            qCWarning(themeLog) << error.toString();
+    }
+    else {
+        qCWarning(themeLog) << "Couldn't load" << constantsPath
+                            << "the status of the QQmlComponent is" << component.status();
+    }
 }
 
 QColor Theme::evaluateColorAtThemeInstance(const QString &themeColorName)
@@ -65,13 +92,15 @@ Theme *Theme::instance()
 
 QString Theme::replaceCssColors(const QString &input)
 {
-    QRegExp rx("creatorTheme\\.(\\w+)");
+    const QRegularExpression rx("creatorTheme\\.(\\w+)");
 
     int pos = 0;
     QString output = input;
 
-    while ((pos = rx.indexIn(input, pos)) != -1) {
-        const QString themeColorName = rx.cap(1);
+    QRegularExpressionMatchIterator it = rx.globalMatch(input);
+    while (it.hasNext()) {
+        const QRegularExpressionMatch match = it.next();
+        const QString themeColorName = match.captured(1);
 
         if (themeColorName == "smallFontPixelSize") {
             output.replace("creatorTheme." + themeColorName, QString::number(instance()->smallFontPixelSize()) + "px");
@@ -79,9 +108,9 @@ QString Theme::replaceCssColors(const QString &input)
             output.replace("creatorTheme." + themeColorName, QString::number(instance()->captionFontPixelSize()) + "px");
         } else {
             const QColor color = instance()->evaluateColorAtThemeInstance(themeColorName);
-            output.replace("creatorTheme." + rx.cap(1), color.name());
+            output.replace("creatorTheme." + themeColorName, color.name());
         }
-        pos += rx.matchedLength();
+        pos += match.capturedLength();
     }
 
     return output;
@@ -127,6 +156,25 @@ bool Theme::highPixelDensity() const
 QPixmap Theme::getPixmap(const QString &id)
 {
     return QmlDesignerIconProvider::getPixmap(id);
+}
+
+QString Theme::getIconUnicode(Theme::Icon i)
+{
+    if (!instance()->m_constants)
+        return QString();
+
+    const QMetaObject *m = instance()->metaObject();
+    const char *enumName = "Icon";
+    int enumIndex = m->indexOfEnumerator(enumName);
+
+    if (enumIndex == -1) {
+        qCWarning(themeLog) << "Couldn't find enum" << enumName;
+        return QString();
+    }
+
+    QMetaEnum e = m->enumerator(enumIndex);
+
+    return instance()->m_constants->property(e.valueToKey(i)).toString();
 }
 
 QColor Theme::qmlDesignerBackgroundColorDarker() const

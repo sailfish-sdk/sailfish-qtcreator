@@ -45,6 +45,7 @@ QT_BEGIN_NAMESPACE
 class QStyle;
 class QToolButton;
 class QImage;
+class QPixmap;
 QT_END_NAMESPACE
 
 namespace QmlDesigner {
@@ -146,6 +147,7 @@ public:
 
     void setSelectedModelNodes(const QList<ModelNode> &selectedNodeList);
     void setSelectedModelNode(const ModelNode &modelNode);
+
     void selectModelNode(const ModelNode &node);
     void deselectModelNode(const ModelNode &node);
     void clearSelectedModelNodes();
@@ -153,13 +155,14 @@ public:
     bool hasSingleSelectedModelNode() const;
     bool isSelectedModelNode(const ModelNode &modelNode) const;
 
-    QList<ModelNode> selectedModelNodes() const;
+    const QList<ModelNode> selectedModelNodes() const;
     ModelNode firstSelectedModelNode() const;
     ModelNode singleSelectedModelNode() const;
 
     ModelNode modelNodeForId(const QString &id);
     bool hasId(const QString &id) const;
     QString generateNewId(const QString &prefixName) const;
+    QString generateNewId(const QString &prefixName, const QString &fallbackPrefix) const;
 
     ModelNode modelNodeForInternalId(qint32 internalId) const;
     bool hasModelNodeForInternalId(qint32 internalId) const;
@@ -185,6 +188,7 @@ public:
     void emitInstanceToken(const QString &token, int number, const QVector<ModelNode> &nodeVector);
     void emitRenderImage3DChanged(const QImage &image);
     void emitUpdateActiveScene3D(const QVariantMap &sceneState);
+    void emitModelNodelPreviewPixmapChanged(const ModelNode &node, const QPixmap &pixmap);
 
     void sendTokenToInstances(const QString &token, int number, const QVector<ModelNode> &nodeVector);
 
@@ -244,6 +248,7 @@ public:
 
     virtual void renderImage3DChanged(const QImage &image);
     virtual void updateActiveScene3D(const QVariantMap &sceneState);
+    virtual void modelNodePreviewPixmapChanged(const ModelNode &node, const QPixmap &pixmap);
 
     void changeRootNodeType(const TypeName &type, int majorVersion, int minorVersion);
 
@@ -276,6 +281,9 @@ public:
     using OperationBlock = std::function<void()>;
     bool executeInTransaction(const QByteArray &identifier, const OperationBlock &lambda);
 
+    bool isEnabled() const;
+    void setEnabled(bool b);
+
 protected:
     void setModel(Model * model);
     void removeModel();
@@ -288,7 +296,7 @@ protected:
 
 private: //functions
     QList<ModelNode> toModelNodeList(const QList<Internal::InternalNodePointer> &nodeList) const;
-
+    bool m_enabled = true;
 
 private:
     QPointer<Model> m_model;

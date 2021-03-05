@@ -35,47 +35,51 @@
 
 #include "nodeinstanceserverinterface.h"
 
-#include "propertyabstractcontainer.h"
-#include "propertyvaluecontainer.h"
-#include "propertybindingcontainer.h"
-#include "instancecontainer.h"
+#include "captureddatacommand.h"
+#include "changeauxiliarycommand.h"
+#include "changebindingscommand.h"
+#include "changefileurlcommand.h"
+#include "changeidscommand.h"
+#include "changelanguagecommand.h"
+#include "changenodesourcecommand.h"
+#include "changepreviewimagesizecommand.h"
+#include "changeselectioncommand.h"
+#include "changestatecommand.h"
+#include "changevaluescommand.h"
+#include "childrenchangedcommand.h"
+#include "clearscenecommand.h"
+#include "completecomponentcommand.h"
+#include "componentcompletedcommand.h"
 #include "createinstancescommand.h"
 #include "createscenecommand.h"
-#include "update3dviewstatecommand.h"
-#include "changevaluescommand.h"
-#include "changebindingscommand.h"
-#include "changeauxiliarycommand.h"
-#include "changefileurlcommand.h"
-#include "removeinstancescommand.h"
-#include "clearscenecommand.h"
-#include "removepropertiescommand.h"
-#include "reparentinstancescommand.h"
-#include "changeidscommand.h"
-#include "changestatecommand.h"
-#include "completecomponentcommand.h"
-#include "synchronizecommand.h"
-#include "removesharedmemorycommand.h"
-#include "tokencommand.h"
-#include "inputeventcommand.h"
-#include "view3dactioncommand.h"
-
-#include "informationchangedcommand.h"
-#include "pixmapchangedcommand.h"
-#include "valueschangedcommand.h"
-#include "childrenchangedcommand.h"
-#include "imagecontainer.h"
-#include "statepreviewimagechangedcommand.h"
-#include "componentcompletedcommand.h"
-#include "changenodesourcecommand.h"
-#include "endpuppetcommand.h"
 #include "debugoutputcommand.h"
+#include "endpuppetcommand.h"
+#include "imagecontainer.h"
+#include "informationchangedcommand.h"
+#include "inputeventcommand.h"
+#include "instancecontainer.h"
+#include "pixmapchangedcommand.h"
+#include "propertyabstractcontainer.h"
+#include "propertybindingcontainer.h"
+#include "propertyvaluecontainer.h"
 #include "puppetalivecommand.h"
-#include "changeselectioncommand.h"
 #include "puppettocreatorcommand.h"
+#include "removeinstancescommand.h"
+#include "removepropertiescommand.h"
+#include "removesharedmemorycommand.h"
+#include "reparentinstancescommand.h"
+#include "scenecreatedcommand.h"
+#include "statepreviewimagechangedcommand.h"
+#include "synchronizecommand.h"
+#include "tokencommand.h"
+#include "update3dviewstatecommand.h"
+#include "valueschangedcommand.h"
+#include "view3dactioncommand.h"
+#include "requestmodelnodepreviewimagecommand.h"
 
 namespace QmlDesigner {
 
-constexpr void (QLocalSocket::*LocalSocketErrorFunction)(QLocalSocket::LocalSocketError)
+void (QLocalSocket::*LocalSocketErrorFunction)(QLocalSocket::LocalSocketError)
 #if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
     = &QLocalSocket::error;
 #else
@@ -83,17 +87,18 @@ constexpr void (QLocalSocket::*LocalSocketErrorFunction)(QLocalSocket::LocalSock
 #endif
 
 NodeInstanceClientProxy::NodeInstanceClientProxy(QObject *parent)
-    : QObject(parent),
-      m_inputIoDevice(nullptr),
-      m_outputIoDevice(nullptr),
-      m_nodeInstanceServer(nullptr),
-      m_writeCommandCounter(0),
-      m_synchronizeId(-1)
+    : QObject(parent)
+    , m_inputIoDevice(nullptr)
+    , m_outputIoDevice(nullptr)
+    , m_writeCommandCounter(0)
+    , m_synchronizeId(-1)
 {
     connect(&m_puppetAliveTimer, &QTimer::timeout, this, &NodeInstanceClientProxy::sendPuppetAliveCommand);
-    m_puppetAliveTimer.setInterval(1000);
+    m_puppetAliveTimer.setInterval(2000);
     m_puppetAliveTimer.start();
 }
+
+NodeInstanceClientProxy::~NodeInstanceClientProxy() = default;
 
 void NodeInstanceClientProxy::initializeSocket()
 {
@@ -173,7 +178,8 @@ bool compareCommands(const QVariant &command, const QVariant &controlCommand)
         else if (command.userType() == debugOutputCommandType)
             return command.value<DebugOutputCommand>() == controlCommand.value<DebugOutputCommand>();
         else if (command.userType() == changeSelectionCommandType)
-            return command.value<ChangeSelectionCommand>() == controlCommand.value<ChangeSelectionCommand>();
+            return command.value<ChangeSelectionCommand>()
+                   == controlCommand.value<ChangeSelectionCommand>();
     }
 
     return false;
@@ -266,6 +272,16 @@ void NodeInstanceClientProxy::handlePuppetToCreatorCommand(const PuppetToCreator
     writeCommand(QVariant::fromValue(command));
 }
 
+void NodeInstanceClientProxy::capturedData(const CapturedDataCommand &command)
+{
+    writeCommand(QVariant::fromValue(command));
+}
+
+void NodeInstanceClientProxy::sceneCreated(const SceneCreatedCommand &command)
+{
+    writeCommand(QVariant::fromValue(command));
+}
+
 void NodeInstanceClientProxy::flush()
 {
 }
@@ -324,6 +340,21 @@ void NodeInstanceClientProxy::view3DAction(const View3DActionCommand &command)
     nodeInstanceServer()->view3DAction(command);
 }
 
+void NodeInstanceClientProxy::requestModelNodePreviewImage(const RequestModelNodePreviewImageCommand &command)
+{
+    nodeInstanceServer()->requestModelNodePreviewImage(command);
+}
+
+void NodeInstanceClientProxy::changeLanguage(const ChangeLanguageCommand &command)
+{
+    nodeInstanceServer()->changeLanguage(command);
+}
+
+void NodeInstanceClientProxy::changePreviewImageSize(const ChangePreviewImageSizeCommand &command)
+{
+    nodeInstanceServer()->changePreviewImageSize(command);
+}
+
 void NodeInstanceClientProxy::readDataStream()
 {
     QList<QVariant> commandList;
@@ -354,12 +385,13 @@ void NodeInstanceClientProxy::sendPuppetAliveCommand()
 
 NodeInstanceServerInterface *NodeInstanceClientProxy::nodeInstanceServer() const
 {
-    return m_nodeInstanceServer;
+    return m_nodeInstanceServer.get();
 }
 
-void NodeInstanceClientProxy::setNodeInstanceServer(NodeInstanceServerInterface *nodeInstanceServer)
+void NodeInstanceClientProxy::setNodeInstanceServer(
+    std::unique_ptr<NodeInstanceServerInterface> nodeInstanceServer)
 {
-    m_nodeInstanceServer = nodeInstanceServer;
+    m_nodeInstanceServer = std::move(nodeInstanceServer);
 }
 
 void NodeInstanceClientProxy::createInstances(const CreateInstancesCommand &command)
@@ -490,6 +522,10 @@ void NodeInstanceClientProxy::dispatchCommand(const QVariant &command)
     static const int changeSelectionCommandType = QMetaType::type("ChangeSelectionCommand");
     static const int inputEventCommandType = QMetaType::type("InputEventCommand");
     static const int view3DActionCommandType = QMetaType::type("View3DActionCommand");
+    static const int requestModelNodePreviewImageCommandType = QMetaType::type("RequestModelNodePreviewImageCommand");
+    static const int changeLanguageCommand = QMetaType::type("ChangeLanguageCommand");
+    static const int changePreviewImageSizeCommand = QMetaType::type(
+        "ChangePreviewImageSizeCommand");
 
     const int commandType = command.userType();
 
@@ -533,12 +569,18 @@ void NodeInstanceClientProxy::dispatchCommand(const QVariant &command)
         redirectToken(command.value<EndPuppetCommand>());
     else if (commandType == view3DActionCommandType)
         view3DAction(command.value<View3DActionCommand>());
+    else if (commandType == requestModelNodePreviewImageCommandType)
+        requestModelNodePreviewImage(command.value<RequestModelNodePreviewImageCommand>());
     else if (commandType == synchronizeCommandType) {
         SynchronizeCommand synchronizeCommand = command.value<SynchronizeCommand>();
         m_synchronizeId = synchronizeCommand.synchronizeId();
     } else if (commandType == changeSelectionCommandType) {
         ChangeSelectionCommand changeSelectionCommand = command.value<ChangeSelectionCommand>();
         changeSelection(changeSelectionCommand);
+    } else if (command.userType() == changeLanguageCommand) {
+        changeLanguage(command.value<ChangeLanguageCommand>());
+    } else if (command.userType() == changePreviewImageSizeCommand) {
+        changePreviewImageSize(command.value<ChangePreviewImageSizeCommand>());
     } else {
         Q_ASSERT(false);
     }

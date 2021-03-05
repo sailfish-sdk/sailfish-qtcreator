@@ -23,6 +23,8 @@
 #
 ############################################################################
 
+from dumper import Children
+
 
 def typeTarget(type):
     target = type.target()
@@ -88,13 +90,13 @@ def dumpLiteral(d, value):
     d.putValue(d.hexencode(readLiteral(d, value)), "latin1")
 
 
-def qdump__Core__Id(d, value):
+def qdump__Utils__Id(d, value):
     val = value.extractPointer()
     if True:
         if d.isMsvcTarget():
             name = d.nameForCoreId(val).address()
         else:
-            name = d.parseAndEvaluate("Core::nameForId(0x%x)" % val).pointer()
+            name = d.parseAndEvaluate("Utils::nameForId(0x%x)" % val).pointer()
         d.putSimpleCharArray(name)
     else:
         d.putValue(val)
@@ -242,6 +244,39 @@ def qdump__Utils__Port(d, value):
     d.putPlainChildren(value)
 
 
+
+def qdump__Utils__Environment(d, value):
+    qdump__Utils__NameValueDictionary(d, value)
+
+
+def qdump__Utils__NameValueDictionary(d, value):
+    dptr = d.extractPointer(value["m_values"])
+    (ref, n) = d.split('ii', dptr)
+    d.check(0 <= n and n <= 100 * 1000 * 1000)
+    d.check(-1 <= ref and ref < 100000)
+
+    d.putItemCount(n)
+    if d.isExpanded():
+        if n > 10000:
+            n = 10000
+
+        typeCode = 'ppp@{%s}@{%s}' % ("Utils::DictKey", "QString")
+
+        def helper(node):
+            (p, left, right, padding1, key, padding2, value) = d.split(typeCode, node)
+            if left:
+                for res in helper(left):
+                    yield res
+            yield (key["name"], value)
+            if right:
+                for res in helper(right):
+                    yield res
+
+        with Children(d, n):
+            for (pair, i) in zip(helper(dptr + 8), range(n)):
+                d.putPairItem(i, pair, 'key', 'value')
+
+
 def qdump__Utf8String(d, value):
     d.putByteArrayValue(value['byteArray'])
     d.putPlainChildren(value)
@@ -263,7 +298,7 @@ def qdump__CPlusPlus__Token(d, value):
 
 
 def qdump__CPlusPlus__Internal__PPToken(d, value):
-    data, size, alloc = d.byteArrayData(value["m_src"])
+    data, size, alloc = d.qArrayData(value["m_src"])
     length = value["f"]["utf16chars"].integer()
     offset = value["utf16charOffset"].integer()
     #DumperBase.warn("size: %s, alloc: %s, offset: %s, length: %s, data: %s"

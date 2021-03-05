@@ -52,7 +52,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QMessageBox>
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QSettings>
 #include <QTcpServer>
 #include <QTime>
@@ -75,10 +75,10 @@ namespace Internal {
 
 static void stopRunningRunControl(RunControl *runControl)
 {
-    static QMap<Core::Id, QPointer<RunControl>> activeRunControls;
+    static QMap<Utils::Id, QPointer<RunControl>> activeRunControls;
 
     Target *target = runControl->target();
-    Core::Id devId = DeviceKitAspect::deviceId(target->kit());
+    Utils::Id devId = DeviceKitAspect::deviceId(target->kit());
 
     // The device can only run an application at a time, if an app is running stop it.
     if (activeRunControls.contains(devId)) {
@@ -98,7 +98,7 @@ IosRunner::IosRunner(RunControl *runControl)
     stopRunningRunControl(runControl);
     auto runConfig = qobject_cast<IosRunConfiguration *>(runControl->runConfiguration());
     m_bundleDir = runConfig->bundleDirectory().toString();
-    m_device = DeviceKitAspect::device(runControl->target()->kit());
+    m_device = DeviceKitAspect::device(runControl->kit());
     m_deviceType = runConfig->deviceType();
 }
 
@@ -275,11 +275,11 @@ void IosRunner::handleGotInferiorPid(IosToolHandler *handler, const QString &bun
 void IosRunner::handleAppOutput(IosToolHandler *handler, const QString &output)
 {
     Q_UNUSED(handler)
-    QRegExp qmlPortRe("QML Debugger: Waiting for connection on port ([0-9]+)...");
-    int index = qmlPortRe.indexIn(output);
+    QRegularExpression qmlPortRe("QML Debugger: Waiting for connection on port ([0-9]+)...");
+    const QRegularExpressionMatch match = qmlPortRe.match(output);
     QString res(output);
-    if (index != -1 && m_qmlServerPort.isValid())
-       res.replace(qmlPortRe.cap(1), QString::number(m_qmlServerPort.number()));
+    if (match.hasMatch() && m_qmlServerPort.isValid())
+       res.replace(match.captured(1), QString::number(m_qmlServerPort.number()));
     appendMessage(output, StdOutFormat);
     appOutput(res);
 }
@@ -297,10 +297,10 @@ void IosRunner::handleErrorMsg(IosToolHandler *handler, const QString &msg)
         TaskHub::addTask(DeploymentTask(Task::Error, message));
         res.replace(lockedErr, message);
     }
-    QRegExp qmlPortRe("QML Debugger: Waiting for connection on port ([0-9]+)...");
-    int index = qmlPortRe.indexIn(msg);
-    if (index != -1 && m_qmlServerPort.isValid())
-       res.replace(qmlPortRe.cap(1), QString::number(m_qmlServerPort.number()));
+    QRegularExpression qmlPortRe("QML Debugger: Waiting for connection on port ([0-9]+)...");
+    const QRegularExpressionMatch match = qmlPortRe.match(msg);
+    if (match.hasMatch() && m_qmlServerPort.isValid())
+       res.replace(match.captured(1), QString::number(m_qmlServerPort.number()));
 
     appendMessage(res, StdErrFormat);
     errorMsg(res);
@@ -369,11 +369,6 @@ void IosRunSupport::start()
     IosRunner::start();
 }
 
-void IosRunSupport::stop()
-{
-    IosRunner::stop();
-}
-
 //
 // IosQmlProfilerSupport
 //
@@ -436,28 +431,26 @@ void IosDebugSupport::start()
         IosDevice::ConstPtr dev = device().dynamicCast<const IosDevice>();
         setStartMode(AttachToRemoteProcess);
         setIosPlatform("remote-ios");
-        QString osVersion = dev->osVersion();
-        FilePath deviceSdk1 = FilePath::fromString(QDir::homePath()
-                                             + "/Library/Developer/Xcode/iOS DeviceSupport/"
-                                             + osVersion + "/Symbols");
-        QString deviceSdk;
-        if (deviceSdk1.isDir()) {
-            deviceSdk = deviceSdk1.toString();
-        } else {
-            const FilePath deviceSdk2 = IosConfigurations::developerPath()
-                    .pathAppended("Platforms/iPhoneOS.platform/DeviceSupport/"
-                                  + osVersion + "/Symbols");
-            if (deviceSdk2.isDir()) {
-                deviceSdk = deviceSdk2.toString();
-            } else {
-                TaskHub::addTask(DeploymentTask(Task::Warning, tr(
-                  "Could not find device specific debug symbols at %1. "
-                  "Debugging initialization will be slow until you open the Organizer window of "
-                  "Xcode with the device connected to have the symbols generated.")
-                                 .arg(deviceSdk1.toUserOutput())));
-            }
+        const QString osVersion = dev->osVersion();
+        const QString cpuArchitecture = dev->cpuArchitecture();
+        const FilePaths symbolsPathCandidates = {
+            FilePath::fromString(QDir::homePath() + "/Library/Developer/Xcode/iOS DeviceSupport/"
+                                 + osVersion + " " + cpuArchitecture + "/Symbols"),
+            FilePath::fromString(QDir::homePath() + "/Library/Developer/Xcode/iOS DeviceSupport/"
+                                 + osVersion + "/Symbols"),
+            IosConfigurations::developerPath().pathAppended(
+                "Platforms/iPhoneOS.platform/DeviceSupport/" + osVersion + "/Symbols")};
+        const FilePath deviceSdk = Utils::findOrDefault(symbolsPathCandidates, &FilePath::isDir);
+
+        if (deviceSdk.isEmpty()) {
+            TaskHub::addTask(DeploymentTask(
+                Task::Warning,
+                tr("Could not find device specific debug symbols at %1. "
+                   "Debugging initialization will be slow until you open the Organizer window of "
+                   "Xcode with the device connected to have the symbols generated.")
+                    .arg(symbolsPathCandidates.constFirst().toUserOutput())));
         }
-        setDeviceSymbolsRoot(deviceSdk);
+        setDeviceSymbolsRoot(deviceSdk.toString());
     } else {
         setStartMode(AttachExternal);
         setIosPlatform("ios-simulator");

@@ -41,12 +41,118 @@ namespace QmlDesigner {
 class QMLDESIGNERCORE_EXPORT Theme : public Utils::Theme
 {
     Q_OBJECT
+
+    Q_ENUMS(Icon)
+
 public:
+    enum Icon {
+        actionIcon,
+        actionIconBinding,
+        addColumnAfter,
+        addColumnBefore,
+        addFile,
+        addRowAfter,
+        addRowBefore,
+        addTable,
+        adsClose,
+        adsDetach,
+        adsDropDown,
+        aliasAnimated,
+        aliasProperty,
+        alignBottom,
+        alignCenterHorizontal,
+        alignCenterVertical,
+        alignLeft,
+        alignRight,
+        alignTo,
+        alignTop,
+        anchorBaseline,
+        anchorBottom,
+        anchorFill,
+        anchorLeft,
+        anchorRight,
+        anchorTop,
+        animatedProperty,
+        annotationBubble,
+        annotationDecal,
+        assign,
+        centerHorizontal,
+        centerVertical,
+        closeCross,
+        curveDesigner,
+        curveEditor,
+        decisionNode,
+        deleteColumn,
+        deleteRow,
+        deleteTable,
+        detach,
+        distributeBottom,
+        distributeCenterHorizontal,
+        distributeCenterVertical,
+        distributeLeft,
+        distributeOriginBottomRight,
+        distributeOriginCenter,
+        distributeOriginNone,
+        distributeOriginTopLeft,
+        distributeRight,
+        distributeSpacingHorizontal,
+        distributeSpacingVertical,
+        distributeTop,
+        edit,
+        flowAction,
+        flowTransition,
+        fontStyleBold,
+        fontStyleItalic,
+        fontStyleStrikethrough,
+        fontStyleUnderline,
+        gridView,
+        idAliasOff,
+        idAliasOn,
+        listView,
+        lockOff,
+        lockOn,
+        mergeCells,
+        minus,
+        pin,
+        plus,
+        redo,
+        rotationFill,
+        rotationOutline,
+        search,
+        splitColumns,
+        splitRows,
+        startNode,
+        testIcon,
+        textAlignBottom,
+        textAlignCenter,
+        textAlignLeft,
+        textAlignMiddle,
+        textAlignRight,
+        textAlignTop,
+        textBulletList,
+        textFullJustification,
+        textNumberedList,
+        tickIcon,
+        triState,
+        undo,
+        unpin,
+        upDownIcon,
+        upDownSquare2,
+        visibilityOff,
+        visibilityOn,
+        wildcard,
+        zoomAll,
+        zoomIn,
+        zoomOut,
+        zoomSelection
+    };
+
     static Theme *instance();
     static QString replaceCssColors(const QString &input);
     static void setupTheme(QQmlEngine *engine);
     static QColor getColor(Color role);
     static QPixmap getPixmap(const QString &id);
+    static QString getIconUnicode(Theme::Icon i);
 
     Q_INVOKABLE QColor qmlDesignerBackgroundColorDarker() const;
     Q_INVOKABLE QColor qmlDesignerBackgroundColorDarkAlternate() const;
@@ -58,9 +164,12 @@ public:
     Q_INVOKABLE int smallFontPixelSize() const;
     Q_INVOKABLE int captionFontPixelSize() const;
     Q_INVOKABLE bool highPixelDensity() const;
+
 private:
     Theme(Utils::Theme *originTheme, QObject *parent);
     QColor evaluateColorAtThemeInstance(const QString &themeColorName);
+
+    QObject *m_constants;
 };
 
 } // namespace QmlDesigner

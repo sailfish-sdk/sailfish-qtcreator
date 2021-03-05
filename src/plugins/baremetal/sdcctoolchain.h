@@ -58,18 +58,14 @@ public:
     bool isValid() const final;
 
     MacroInspectionRunner createMacroInspectionRunner() const final;
-    ProjectExplorer::Macros predefinedMacros(const QStringList &cxxflags) const final;
 
     Utils::LanguageExtensions languageExtensions(const QStringList &cxxflags) const final;
     Utils::WarningFlags warningFlags(const QStringList &cxxflags) const final;
 
     BuiltInHeaderPathsRunner createBuiltInHeaderPathsRunner(
             const Utils::Environment &) const final;
-    ProjectExplorer::HeaderPaths builtInHeaderPaths(const QStringList &cxxFlags,
-                                                    const Utils::FilePath &,
-                                                    const Utils::Environment &env) const final;
     void addToEnvironment(Utils::Environment &env) const final;
-    ProjectExplorer::IOutputParser *outputParser() const final;
+    QList<Utils::OutputLineParser *> createOutputParsers() const final;
 
     QVariantMap toMap() const final;
     bool fromMap(const QVariantMap &data) final;
@@ -97,8 +93,6 @@ private:
 
 class SdccToolChainFactory final : public ProjectExplorer::ToolChainFactory
 {
-    Q_OBJECT
-
 public:
     SdccToolChainFactory();
 
@@ -109,7 +103,7 @@ private:
     QList<ProjectExplorer::ToolChain *> autoDetectToolchains(const Candidates &candidates,
             const QList<ProjectExplorer::ToolChain *> &alreadyKnown) const;
     QList<ProjectExplorer::ToolChain *> autoDetectToolchain(
-            const Candidate &candidate, Core::Id language) const;
+            const Candidate &candidate, Utils::Id language) const;
 };
 
 // SdccToolChainConfigWidget

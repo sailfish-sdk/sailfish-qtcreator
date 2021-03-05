@@ -30,6 +30,7 @@
 #include <projectexplorer/toolchainconfigwidget.h>
 
 QT_BEGIN_NAMESPACE
+class QLineEdit;
 class QPlainTextEdit;
 class QPushButton;
 class QTextEdit;
@@ -45,11 +46,11 @@ namespace ProjectExplorer { class AbiWidget; }
 namespace BareMetal {
 namespace Internal {
 
-// KeilToolchain
+// KeilToolChain
 
-class KeilToolchain final : public ProjectExplorer::ToolChain
+class KeilToolChain final : public ProjectExplorer::ToolChain
 {
-    Q_DECLARE_TR_FUNCTIONS(KeilToolchain)
+    Q_DECLARE_TR_FUNCTIONS(KeilToolChain)
 
 public:
     void setTargetAbi(const ProjectExplorer::Abi &abi);
@@ -58,18 +59,14 @@ public:
     bool isValid() const final;
 
     MacroInspectionRunner createMacroInspectionRunner() const final;
-    ProjectExplorer::Macros predefinedMacros(const QStringList &cxxflags) const final;
 
     Utils::LanguageExtensions languageExtensions(const QStringList &cxxflags) const final;
     Utils::WarningFlags warningFlags(const QStringList &cxxflags) const final;
 
     BuiltInHeaderPathsRunner createBuiltInHeaderPathsRunner(
             const Utils::Environment &) const final;
-    ProjectExplorer::HeaderPaths builtInHeaderPaths(const QStringList &cxxFlags,
-                                                    const Utils::FilePath &,
-                                                    const Utils::Environment &env) const final;
     void addToEnvironment(Utils::Environment &env) const final;
-    ProjectExplorer::IOutputParser *outputParser() const final;
+    QList<Utils::OutputLineParser *> createOutputParsers() const final;
 
     QVariantMap toMap() const final;
     bool fromMap(const QVariantMap &data) final;
@@ -81,26 +78,28 @@ public:
     void setCompilerCommand(const Utils::FilePath &file);
     Utils::FilePath compilerCommand() const final;
 
+    void setExtraCodeModelFlags(const QStringList &flags);
+    QStringList extraCodeModelFlags() const final;
+
     Utils::FilePath makeCommand(const Utils::Environment &env) const final;
 
 private:
-    KeilToolchain();
+    KeilToolChain();
 
     ProjectExplorer::Abi m_targetAbi;
     Utils::FilePath m_compilerCommand;
+    QStringList m_extraCodeModelFlags;
 
-    friend class KeilToolchainFactory;
-    friend class KeilToolchainConfigWidget;
+    friend class KeilToolChainFactory;
+    friend class KeilToolChainConfigWidget;
 };
 
 // KeilToolchainFactory
 
-class KeilToolchainFactory final : public ProjectExplorer::ToolChainFactory
+class KeilToolChainFactory final : public ProjectExplorer::ToolChainFactory
 {
-    Q_OBJECT
-
 public:
-    KeilToolchainFactory();
+    KeilToolChainFactory();
 
     QList<ProjectExplorer::ToolChain *> autoDetect(
             const QList<ProjectExplorer::ToolChain *> &alreadyKnown) final;
@@ -109,29 +108,31 @@ private:
     QList<ProjectExplorer::ToolChain *> autoDetectToolchains(const Candidates &candidates,
                                                              const QList<ProjectExplorer::ToolChain *> &alreadyKnown) const;
     QList<ProjectExplorer::ToolChain *> autoDetectToolchain(
-            const Candidate &candidate, Core::Id language) const;
+            const Candidate &candidate, Utils::Id language) const;
 };
 
 // KeilToolchainConfigWidget
 
-class KeilToolchainConfigWidget final : public ProjectExplorer::ToolChainConfigWidget
+class KeilToolChainConfigWidget final : public ProjectExplorer::ToolChainConfigWidget
 {
     Q_OBJECT
 
 public:
-    explicit KeilToolchainConfigWidget(KeilToolchain *tc);
+    explicit KeilToolChainConfigWidget(KeilToolChain *tc);
 
 private:
     void applyImpl() final;
-    void discardImpl() final { setFromToolchain(); }
+    void discardImpl() final { setFromToolChain(); }
     bool isDirtyImpl() const final;
     void makeReadOnlyImpl() final;
 
-    void setFromToolchain();
+    void setFromToolChain();
     void handleCompilerCommandChange();
+    void handlePlatformCodeGenFlagsChange();
 
     Utils::PathChooser *m_compilerCommand = nullptr;
     ProjectExplorer::AbiWidget *m_abiWidget = nullptr;
+    QLineEdit *m_platformCodeGenFlagsLineEdit = nullptr;
     ProjectExplorer::Macros m_macros;
 };
 

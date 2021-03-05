@@ -50,9 +50,10 @@
 #include <texteditor/textdocument.h>
 
 #include <utils/algorithm.h>
+#include <utils/porting.h>
+#include <utils/qtcassert.h>
 #include <utils/tooltip/tooltip.h>
 #include <utils/treemodel.h>
-#include <utils/qtcassert.h>
 #include <utils/utilsicons.h>
 
 #include <QAbstractItemModel>
@@ -456,15 +457,9 @@ public:
 
     ~DebuggerToolTipWidget() override { DEBUG("DESTROY DEBUGGERTOOLTIP WIDGET"); }
 
-    void closeEvent(QCloseEvent *) override
-    {
-        DEBUG("CLOSE DEBUGGERTOOLTIP WIDGET");
-    }
+    void closeEvent(QCloseEvent *) override { DEBUG("CLOSE DEBUGGERTOOLTIP WIDGET"); }
 
-    void enterEvent(QEvent *) override
-    {
-        DEBUG("ENTER DEBUGGERTOOLTIP WIDGET");
-    }
+    void enterEvent(EnterEvent *) override { DEBUG("ENTER DEBUGGERTOOLTIP WIDGET"); }
 
     void leaveEvent(QEvent *) override
     {
@@ -483,7 +478,11 @@ public:
         if (parentWidget()) {
             // We are currently within a text editor tooltip:
             // Rip out of parent widget and re-show as a tooltip
-            ToolTip::pinToolTip(this, ICore::mainWindow());
+            // Find parent with different window than the tooltip itself:
+            QWidget *top = parentWidget();
+            while (top->window() == window() && top->parentWidget())
+                top = top->parentWidget();
+            ToolTip::pinToolTip(this, top->window());
         } else {
             // We have just be restored from session data.
             setWindowFlags(Qt::ToolTip);
@@ -586,7 +585,8 @@ DebuggerToolTipWidget::DebuggerToolTipWidget()
                 << item->name << '\t' << item->value << '\t' << item->type << '\n';
         });
         QClipboard *clipboard = QApplication::clipboard();
-        clipboard->setText(text, QClipboard::Selection);
+        if (clipboard->supportsSelection())
+            clipboard->setText(text, QClipboard::Selection);
         clipboard->setText(text, QClipboard::Clipboard);
     });
 
@@ -935,9 +935,9 @@ void DebuggerToolTipHolder::positionShow(const TextEditorWidget *editorWidget)
 //// Parse a 'yyyyMMdd' date
 static QDate dateFromString(const QString &date)
 {
-    return date.size() == 8 ?
-        QDate(date.leftRef(4).toInt(), date.midRef(4, 2).toInt(), date.midRef(6, 2).toInt()) :
-        QDate();
+    return date.size() == 8
+               ? QDate(date.left(4).toInt(), date.mid(4, 2).toInt(), date.mid(6, 2).toInt())
+               : QDate();
 }
 
 void DebuggerToolTipHolder::saveSessionData(QXmlStreamWriter &w) const
@@ -1080,7 +1080,7 @@ void DebuggerToolTipManagerPrivate::loadSessionData()
     closeAllToolTips();
     const QString data = SessionManager::value(sessionSettingsKeyC).toString();
     QXmlStreamReader r(data);
-    if (r.readNextStartElement() && r.name() == sessionDocumentC) {
+    if (r.readNextStartElement() && r.name() == QLatin1String(sessionDocumentC)) {
         while (!r.atEnd()) {
             if (readStartElement(r, toolTipElementC)) {
                 const QXmlStreamAttributes attributes = r.attributes();
@@ -1230,7 +1230,7 @@ void DebuggerToolTipManagerPrivate::slotTooltipOverrideRequested
         if (tooltip) {
             DEBUG("REUSING LOCALS TOOLTIP");
             tooltip->context.mousePosition = point;
-            ToolTip::move(point, DebuggerMainWindow::instance());
+            ToolTip::move(point);
         } else {
             DEBUG("CREATING LOCALS, WAITING...");
             tooltip = new DebuggerToolTipHolder(context);
@@ -1252,7 +1252,7 @@ void DebuggerToolTipManagerPrivate::slotTooltipOverrideRequested
         if (tooltip) {
             //tooltip->destroy();
             tooltip->context.mousePosition = point;
-            ToolTip::move(point, DebuggerMainWindow::instance());
+            ToolTip::move(point);
             DEBUG("UPDATING DELAYED.");
         } else {
             DEBUG("CREATING DELAYED.");

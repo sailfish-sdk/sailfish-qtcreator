@@ -29,8 +29,10 @@
 #include "qttestsettings.h"
 #include "qttest_utils.h"
 #include "../autotestplugin.h"
-#include "../testframeworkmanager.h"
+#include "../itestframework.h"
 #include "../testsettings.h"
+
+#include <utils/stringutils.h>
 
 namespace Autotest {
 namespace Internal {
@@ -38,10 +40,7 @@ namespace Internal {
 TestOutputReader *QtTestConfiguration::outputReader(const QFutureInterface<TestResultPtr> &fi,
                                                     QProcess *app) const
 {
-    static const Core::Id id
-            = Core::Id(Constants::FRAMEWORK_PREFIX).withSuffix(QtTest::Constants::FRAMEWORK_NAME);
-    TestFrameworkManager *manager = TestFrameworkManager::instance();
-    auto qtSettings = qSharedPointerCast<QtTestSettings>(manager->settingsForTestFramework(id));
+    auto qtSettings = dynamic_cast<QtTestSettings *>(framework()->frameworkSettings());
     const QtTestOutputReader::OutputMode mode = qtSettings && qtSettings->useXMLOutput
             ? QtTestOutputReader::XML
             : QtTestOutputReader::PlainText;
@@ -50,18 +49,14 @@ TestOutputReader *QtTestConfiguration::outputReader(const QFutureInterface<TestR
 
 QStringList QtTestConfiguration::argumentsForTestRunner(QStringList *omitted) const
 {
-    static const Core::Id id
-            = Core::Id(Constants::FRAMEWORK_PREFIX).withSuffix(QtTest::Constants::FRAMEWORK_NAME);
-
     QStringList arguments;
     if (AutotestPlugin::settings()->processArgs) {
         arguments.append(QTestUtils::filterInterfering(
-                             runnable().commandLineArguments.split(' ', QString::SkipEmptyParts),
+                             runnable().commandLineArguments.split(' ', Qt::SkipEmptyParts),
                              omitted, false));
     }
-    TestFrameworkManager *manager = TestFrameworkManager::instance();
-    auto qtSettings = qSharedPointerCast<QtTestSettings>(manager->settingsForTestFramework(id));
-    if (qtSettings.isNull())
+    auto qtSettings = dynamic_cast<QtTestSettings *>(framework()->frameworkSettings());
+    if (!qtSettings)
         return arguments;
     if (qtSettings->useXMLOutput)
         arguments << "-xml";

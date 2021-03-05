@@ -45,18 +45,13 @@ namespace QmlPreview {
 
 static const QString QmlServerUrl = "QmlServerUrl";
 
-QmlPreviewRunner::QmlPreviewRunner(ProjectExplorer::RunControl *runControl,
-                                   QmlPreviewFileLoader fileLoader,
-                                   QmlPreviewFileClassifier fileClassifier,
-                                   QmlPreviewFpsHandler fpsHandler,
-                                   float initialZoom,
-                                   const QString &initialLocale)
-    : RunWorker(runControl)
+QmlPreviewRunner::QmlPreviewRunner(const QmlPreviewRunnerSetting &settings)
+    : RunWorker(settings.runControl)
 {
     setId("QmlPreviewRunner");
-    m_connectionManager.setFileLoader(fileLoader);
-    m_connectionManager.setFileClassifier(fileClassifier);
-    m_connectionManager.setFpsHandler(fpsHandler);
+    m_connectionManager.setFileLoader(settings.fileLoader);
+    m_connectionManager.setFileClassifier(settings.fileClassifier);
+    m_connectionManager.setFpsHandler(settings.fpsHandler);
 
     connect(this, &QmlPreviewRunner::loadFile,
             &m_connectionManager, &Internal::QmlPreviewConnectionManager::loadFile);
@@ -67,27 +62,33 @@ QmlPreviewRunner::QmlPreviewRunner(ProjectExplorer::RunControl *runControl,
             &m_connectionManager, &Internal::QmlPreviewConnectionManager::zoom);
     connect(this, &QmlPreviewRunner::language,
             &m_connectionManager, &Internal::QmlPreviewConnectionManager::language);
+    connect(this, &QmlPreviewRunner::changeElideWarning,
+            &m_connectionManager, &Internal::QmlPreviewConnectionManager::changeElideWarning);
+
     connect(&m_connectionManager, &Internal::QmlPreviewConnectionManager::connectionOpened,
-            this, [this, initialZoom, initialLocale]() {
-        if (initialZoom > 0)
-            emit zoom(initialZoom);
-        if (!initialLocale.isEmpty())
-            emit language(initialLocale);
+            this, [this, settings]() {
+        if (settings.zoom > 0)
+            emit zoom(settings.zoom);
+        if (!settings.language.isEmpty())
+            emit language(settings.language);
+        if (settings.translationElideWarning)
+            emit changeElideWarning(true);
+
         emit ready();
     });
 
     connect(&m_connectionManager, &Internal::QmlPreviewConnectionManager::restart,
-            runControl, [this, runControl]() {
-        if (!runControl->isRunning())
+            runControl(), [this]() {
+        if (!runControl()->isRunning())
             return;
 
-        this->connect(runControl, &ProjectExplorer::RunControl::stopped, runControl, [runControl]() {
+        this->connect(runControl(), &ProjectExplorer::RunControl::stopped, [this]() {
             ProjectExplorer::ProjectExplorerPlugin::runRunConfiguration(
-                        runControl->runConfiguration(),
+                        runControl()->runConfiguration(),
                         ProjectExplorer::Constants::QML_PREVIEW_RUN_MODE, true);
         });
 
-        runControl->initiateStop();
+        runControl()->initiateStop();
     });
 }
 
@@ -140,9 +141,6 @@ LocalQmlPreviewSupport::LocalQmlPreviewSupport(ProjectExplorer::RunControl *runC
 
             const QString mainScriptFromProject = qmlBuildSystem->targetFile(
                 Utils::FilePath::fromString(mainScript)).toString();
-
-            const QString currentFileFromProject = qmlBuildSystem->targetFile(
-                Utils::FilePath::fromString(currentFile)).toString();
 
             if (!currentFile.isEmpty() && qmlProjectRunConfigurationArguments.last().contains(mainScriptFromProject)) {
                 qmlProjectRunConfigurationArguments.removeLast();

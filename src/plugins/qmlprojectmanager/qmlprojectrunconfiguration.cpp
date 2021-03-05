@@ -27,7 +27,7 @@
 #include "qmlproject.h"
 #include "qmlprojectmanagerconstants.h"
 #include "qmlmainfileaspect.h"
-#include "qmlmainfileaspect.h"
+#include "qmlmultilanguageaspect.h"
 
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/editormanager/ieditor.h>
@@ -40,11 +40,11 @@
 #include <projectexplorer/runconfigurationaspects.h>
 #include <projectexplorer/target.h>
 #include <projectexplorer/environmentaspect.h>
-#include <projectexplorer/projectconfigurationaspects.h>
 
 #include <qtsupport/qtkitinformation.h>
 #include <qtsupport/qtsupportconstants.h>
 
+#include <utils/aspects.h>
 #include <utils/environment.h>
 #include <utils/fileutils.h>
 #include <utils/mimetypes/mimedatabase.h>
@@ -59,6 +59,7 @@ using namespace QtSupport;
 using namespace Utils;
 
 namespace QmlProjectManager {
+class QmlMultiLanguageAspect;
 namespace Internal {
 
 // QmlProjectRunConfiguration
@@ -68,7 +69,7 @@ class QmlProjectRunConfiguration final : public RunConfiguration
     Q_DECLARE_TR_FUNCTIONS(QmlProjectManager::QmlProjectRunConfiguration)
 
 public:
-    QmlProjectRunConfiguration(Target *target, Core::Id id);
+    QmlProjectRunConfiguration(Target *target, Utils::Id id);
 
 private:
     Runnable runnable() const final;
@@ -79,36 +80,18 @@ private:
     Utils::FilePath qmlScenePath() const;
     QString commandLineArguments() const;
 
-    BaseStringAspect *m_qmlViewerAspect = nullptr;
+    StringAspect *m_qmlViewerAspect = nullptr;
     QmlMainFileAspect *m_qmlMainFileAspect = nullptr;
+    QmlMultiLanguageAspect *m_multiLanguageAspect = nullptr;
 };
 
 QmlProjectRunConfiguration::QmlProjectRunConfiguration(Target *target, Id id)
     : RunConfiguration(target, id)
 {
-    auto envAspect = addAspect<EnvironmentAspect>();
-
-    auto envModifier = [this](Environment env) {
-        if (auto bs = dynamic_cast<const QmlBuildSystem *>(activeBuildSystem()))
-            env.modify(bs->environment());
-        return env;
-    };
-
-    const Id deviceTypeId = DeviceTypeKitAspect::deviceTypeId(target->kit());
-    if (deviceTypeId == ProjectExplorer::Constants::DESKTOP_DEVICE_TYPE) {
-        envAspect->addPreferredBaseEnvironment(tr("System Environment"), [envModifier] {
-            return envModifier(Environment::systemEnvironment());
-        });
-    }
-
-    envAspect->addSupportedBaseEnvironment(tr("Clean Environment"), [envModifier] {
-        return envModifier(Environment());
-    });
-
-    m_qmlViewerAspect = addAspect<BaseStringAspect>();
+    m_qmlViewerAspect = addAspect<StringAspect>();
     m_qmlViewerAspect->setLabelText(tr("QML Viewer:"));
     m_qmlViewerAspect->setPlaceHolderText(commandLine().executable().toString());
-    m_qmlViewerAspect->setDisplayStyle(BaseStringAspect::LineEditDisplay);
+    m_qmlViewerAspect->setDisplayStyle(StringAspect::LineEditDisplay);
     m_qmlViewerAspect->setHistoryCompleter("QmlProjectManager.viewer.history");
 
     auto argumentAspect = addAspect<ArgumentsAspect>();
@@ -122,6 +105,37 @@ QmlProjectRunConfiguration::QmlProjectRunConfiguration(Target *target, Id id)
     connect(m_qmlMainFileAspect, &QmlMainFileAspect::changed, this, &RunConfiguration::update);
 
     connect(target, &Target::kitChanged, this, &RunConfiguration::update);
+
+    m_multiLanguageAspect = addAspect<QmlMultiLanguageAspect>(target);
+
+    auto envAspect = addAspect<EnvironmentAspect>();
+    connect(m_multiLanguageAspect, &QmlMultiLanguageAspect::changed, envAspect, &EnvironmentAspect::environmentChanged);
+
+    auto envModifier = [this](Environment env) {
+        if (auto bs = dynamic_cast<const QmlBuildSystem *>(activeBuildSystem()))
+            env.modify(bs->environment());
+
+        if (m_multiLanguageAspect && m_multiLanguageAspect->value() && !m_multiLanguageAspect->databaseFilePath().isEmpty()) {
+            env.set("QT_MULTILANGUAGE_DATABASE", m_multiLanguageAspect->databaseFilePath().toString());
+            env.set("QT_MULTILANGUAGE_LANGUAGE", m_multiLanguageAspect->currentLocale());
+        } else {
+            env.unset("QT_MULTILANGUAGE_DATABASE");
+            env.unset("QT_MULTILANGUAGE_LANGUAGE");
+        }
+        return env;
+    };
+
+    const Id deviceTypeId = DeviceTypeKitAspect::deviceTypeId(target->kit());
+    if (deviceTypeId == ProjectExplorer::Constants::DESKTOP_DEVICE_TYPE) {
+        envAspect->addPreferredBaseEnvironment(tr("System Environment"), [envModifier] {
+            return envModifier(Environment::systemEnvironment());
+        });
+    }
+
+    envAspect->addSupportedBaseEnvironment(tr("Clean Environment"), [envModifier] {
+        Environment environment;
+        return envModifier(environment);
+    });
 
     setDisplayName(tr("QML Scene", "QMLRunConfiguration display name."));
     update();
@@ -143,7 +157,7 @@ QString QmlProjectRunConfiguration::disabledReason() const
         return tr("No script file to execute.");
 
     const FilePath viewer = qmlScenePath();
-    if (DeviceTypeKitAspect::deviceTypeId(target()->kit())
+    if (DeviceTypeKitAspect::deviceTypeId(kit())
             == ProjectExplorer::Constants::DESKTOP_DEVICE_TYPE
             && !viewer.exists()) {
         return tr("No qmlscene found.");
@@ -184,7 +198,7 @@ QString QmlProjectRunConfiguration::commandLineArguments() const
 {
     // arguments in .user file
     QString args = aspect<ArgumentsAspect>()->arguments(macroExpander());
-    const IDevice::ConstPtr device = DeviceKitAspect::device(target()->kit());
+    const IDevice::ConstPtr device = DeviceKitAspect::device(kit());
     const OsType osType = device ? device->osType() : HostOsInfo::hostOs();
 
     // arguments from .qmlproject file
@@ -208,6 +222,10 @@ QString QmlProjectRunConfiguration::commandLineArguments() const
     const QString main = bs->targetFile(FilePath::fromString(mainScript())).toString();
     if (!main.isEmpty())
         QtcProcess::addArg(&args, main, osType);
+
+    if (m_multiLanguageAspect && m_multiLanguageAspect->value())
+        QtcProcess::addArg(&args, "-qmljsdebugger=file:unused_if_debugger_arguments_added,services:DebugTranslation", osType);
+
     return args;
 }
 

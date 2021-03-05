@@ -7,8 +7,10 @@ add_qtc_test(tst_debugger_disassembler
     "${DEBUGGERDIR}/disassemblerlines.cpp" "${DEBUGGERDIR}/disassemblerlines.h"
 )
 
+option(WITH_DEBUGGER_DUMPERS "Include tests for debugger pretty printers" ON)
 if (WITH_DEBUGGER_DUMPERS)
   add_qtc_test(tst_debugger_dumpers
+    TIMEOUT 0
     DEPENDS Qt5::Network Utils
     DEFINES DUMPERDIR="${PROJECT_SOURCE_DIR}/share/qtcreator/debugger"
     INCLUDES
@@ -30,13 +32,13 @@ add_qtc_test(tst_debugger_gdb
     "${DEBUGGERDIR}/debuggerprotocol.cpp" "${DEBUGGERDIR}/debuggerprotocol.h"
 )
 
-add_qtc_test(tst_debugger_namedemangler
-  INCLUDES "${DEBUGGERDIR}"
+add_qtc_test(tst_debugger_protocol
+  DEPENDS Qt5::Network Utils
+  INCLUDES
+    "${DEBUGGERDIR}"
   SOURCES
-    tst_namedemangler.cpp
-    "${DEBUGGERDIR}/namedemangler/globalparsestate.cpp" "${DEBUGGERDIR}/namedemangler/globalparsestate.h"
-    "${DEBUGGERDIR}/namedemangler/namedemangler.cpp" "${DEBUGGERDIR}/namedemangler/namedemangler.h"
-    "${DEBUGGERDIR}/namedemangler/parsetreenodes.cpp" "${DEBUGGERDIR}/namedemangler/parsetreenodes.h"
+    "${DEBUGGERDIR}/debuggerprotocol.cpp" "${DEBUGGERDIR}/debuggerprotocol.h"
+    tst_protocol.cpp
 )
 
 add_qtc_test(tst_debugger_offsets

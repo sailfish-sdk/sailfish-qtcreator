@@ -348,11 +348,11 @@ DebuggerItem DebuggerItemConfigWidget::item() const
 {
     DebuggerItem item(m_id);
     item.setUnexpandedDisplayName(m_displayNameLineEdit->text());
-    item.setCommand(m_binaryChooser->fileName());
-    item.setWorkingDirectory(m_workingDirectoryChooser->fileName());
+    item.setCommand(m_binaryChooser->filePath());
+    item.setWorkingDirectory(m_workingDirectoryChooser->filePath());
     item.setAutoDetected(m_autodetected);
     Abis abiList;
-    const QStringList abis = m_abis->text().split(QRegExp("[^A-Za-z0-9-_]+"));
+    const QStringList abis = m_abis->text().split(QRegularExpression("[^A-Za-z0-9-_]+"));
     for (const QString &a : abis) {
         if (a.isNull())
             continue;
@@ -390,10 +390,10 @@ void DebuggerItemConfigWidget::load(const DebuggerItem *item)
     m_typeLineEdit->setText(item->engineTypeName());
 
     m_binaryChooser->setReadOnly(item->isAutoDetected());
-    m_binaryChooser->setFileName(item->command());
+    m_binaryChooser->setFilePath(item->command());
 
     m_workingDirectoryChooser->setReadOnly(item->isAutoDetected());
-    m_workingDirectoryChooser->setFileName(item->workingDirectory());
+    m_workingDirectoryChooser->setFilePath(item->workingDirectory());
 
     QString text;
     QString versionCommand;
@@ -427,7 +427,7 @@ void DebuggerItemConfigWidget::binaryPathHasChanged()
         return;
 
     DebuggerItem tmp;
-    QFileInfo fi = QFileInfo(m_binaryChooser->path());
+    QFileInfo fi = QFileInfo(m_binaryChooser->filePath().toString());
     if (fi.isExecutable()) {
         tmp = item();
         tmp.reinitializeFromFile();
@@ -675,6 +675,7 @@ void DebuggerItemManagerPrivate::autoDetectCdbDebuggers()
         item.setCommand(cdb);
         item.setEngineType(CdbEngineType);
         item.setUnexpandedDisplayName(uniqueDisplayName(tr("Auto-detected CDB at %1").arg(cdb.toUserOutput())));
+        item.reinitializeFromFile(); // collect version number
         m_model->addDebugger(item);
     }
 }
@@ -955,7 +956,7 @@ void DebuggerItemManagerPrivate::saveDebuggers()
         }
     });
     data.insert(DEBUGGER_COUNT_KEY, count);
-    m_writer.save(data, ICore::mainWindow());
+    m_writer.save(data, ICore::dialogParent());
 
     // Do not save default debuggers as they are set by the SDK.
 }

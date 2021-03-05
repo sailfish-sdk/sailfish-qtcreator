@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of Qt Creator.
@@ -26,15 +26,17 @@
 #include "mcusupportrunconfiguration.h"
 #include "mcusupportconstants.h"
 
-#include <projectexplorer/projectconfigurationaspects.h>
 #include <projectexplorer/buildconfiguration.h>
 #include <projectexplorer/devicesupport/devicemanager.h>
 #include <projectexplorer/devicesupport/deviceusedportsgatherer.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/runcontrol.h>
 #include <projectexplorer/target.h>
+
 #include <cmakeprojectmanager/cmakekitinformation.h>
 #include <cmakeprojectmanager/cmaketool.h>
+
+#include <utils/aspects.h>
 
 using namespace ProjectExplorer;
 using namespace Utils;
@@ -64,12 +66,12 @@ class FlashAndRunConfiguration final : public RunConfiguration
     Q_DECLARE_TR_FUNCTIONS(McuSupport::Internal::FlashAndRunConfiguration)
 
 public:
-    FlashAndRunConfiguration(Target *target, Core::Id id)
+    FlashAndRunConfiguration(Target *target, Utils::Id id)
         : RunConfiguration(target, id)
     {
-        auto flashAndRunParameters = addAspect<BaseStringAspect>();
+        auto flashAndRunParameters = addAspect<StringAspect>();
         flashAndRunParameters->setLabelText(tr("Flash and run CMake parameters:"));
-        flashAndRunParameters->setDisplayStyle(BaseStringAspect::TextEditDisplay);
+        flashAndRunParameters->setDisplayStyle(StringAspect::TextEditDisplay);
         flashAndRunParameters->setSettingsKey("FlashAndRunConfiguration.Parameters");
 
         setUpdater([target, flashAndRunParameters] {
@@ -92,7 +94,7 @@ public:
             const Target *target = runControl->target();
             const CommandLine cmd(
                         cmakeFilePath(target),
-                        runControl->runConfiguration()->aspect<BaseStringAspect>()->value(),
+                        runControl->runConfiguration()->aspect<StringAspect>()->value(),
                         CommandLine::Raw);
             Runnable r;
             r.workingDirectory =

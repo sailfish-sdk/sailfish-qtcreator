@@ -32,7 +32,7 @@
 
 #include <QGraphicsObject>
 
-namespace DesignTools {
+namespace QmlDesigner {
 
 class HandleItem;
 
@@ -77,6 +77,8 @@ public:
     HandleItem *leftHandle() const;
 
     HandleItem *rightHandle() const;
+
+    CurveSegment segment(HandleItem::Slot slot) const;
 
     QTransform transform() const;
 
@@ -127,7 +129,9 @@ private:
 
     HandleItem *m_right;
 
+    QPointF m_validPos;
+
     bool m_visibleOverride = true;
 };
 
-} // End namespace DesignTools.
+} // End namespace QmlDesigner.

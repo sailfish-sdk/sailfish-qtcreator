@@ -35,7 +35,7 @@
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFileInfo>
-#include <QRegExp>
+#include <QRegularExpression>
 
 #include <algorithm>
 
@@ -382,6 +382,7 @@ LibraryInfo::LibraryInfo(const QmlDirParser &parser, const QByteArray &fingerpri
     , _components(parser.components().values())
     , _plugins(parser.plugins())
     , _typeinfos(parser.typeInfos())
+    , _imports(parser.imports())
     , _fingerprint(fingerprint)
 {
     if (_fingerprint.isEmpty())
@@ -444,6 +445,11 @@ QByteArray LibraryInfo::calculateFingerprint() const
     foreach (const ModuleApiInfo &moduleInfo, _moduleApis)
         moduleInfo.addToHash(hash); // make it order independent?
 
+    len = _imports.size();
+    hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+    foreach (const QmlDirParser::Import &import, _imports)
+        hash.addData(import.module.toUtf8()); // import order matters, keep order-dependent
+
     QByteArray res(hash.result());
     res.append('L');
     return res;
@@ -473,8 +479,8 @@ void Snapshot::insert(const Document::Ptr &document, bool allowInvalid)
         CoreImport cImport;
         cImport.importId = document->importId();
         cImport.language = document->language();
-        cImport.possibleExports << Export(ImportKey(ImportType::File, fileName),
-                                          QString(), true, QFileInfo(fileName).baseName());
+        cImport.addPossibleExport(Export(ImportKey(ImportType::File, fileName),
+                                          {}, true, QFileInfo(fileName).baseName()));
         cImport.fingerprint = document->fingerprint();
         _dependencies.addCoreImport(cImport);
     }
@@ -504,32 +510,34 @@ void Snapshot::insertLibraryInfo(const QString &path, const LibraryInfo &info)
     }
 
     QStringList splitPath = path.split(QLatin1Char('/'));
-    QRegExp vNr(QLatin1String("^(.+)\\.([0-9]+)(?:\\.([0-9]+))?$"));
-    QRegExp safeName(QLatin1String("^[a-zA-Z_][[a-zA-Z0-9_]*$"));
+    const QRegularExpression vNr(QLatin1String("^(.+)\\.([0-9]+)(?:\\.([0-9]+))?$"));
+    const QRegularExpression safeName(QLatin1String("^[a-zA-Z_][[a-zA-Z0-9_]*$"));
     foreach (const ImportKey &importKey, packages) {
         if (importKey.splitPath.size() == 1 && importKey.splitPath.at(0).isEmpty() && splitPath.length() > 0) {
             // relocatable
             QStringList myPath = splitPath;
-            if (vNr.indexIn(myPath.last()) == 0)
-                myPath.last() = vNr.cap(1);
+            QRegularExpressionMatch match = vNr.match(myPath.last());
+            if (match.hasMatch())
+                myPath.last() = match.captured(1);
             for (int iPath = myPath.size(); iPath != 1; ) {
                 --iPath;
-                if (safeName.indexIn(myPath.at(iPath)) != 0)
+                match = safeName.match(myPath.at(iPath));
+                if (!match.hasMatch())
                     break;
                 ImportKey iKey(ImportType::Library, QStringList(myPath.mid(iPath)).join(QLatin1Char('.')),
                                importKey.majorVersion, importKey.minorVersion);
-                cImport.possibleExports.append(Export(iKey, (iPath == 1) ? QLatin1String("/") :
+                cImport.addPossibleExport(Export(iKey, (iPath == 1) ? QLatin1String("/") :
                      QStringList(myPath.mid(0, iPath)).join(QLatin1Char('/')), true));
             }
         } else {
             QString requiredPath = QStringList(splitPath.mid(0, splitPath.size() - importKey.splitPath.size()))
                     .join(QLatin1String("/"));
-            cImport.possibleExports << Export(importKey, requiredPath, true);
+            cImport.addPossibleExport(Export(importKey, requiredPath, true));
         }
     }
     if (cImport.possibleExports.isEmpty() && splitPath.size() > 0) {
-        QRegExp vNr(QLatin1String("^(.+)\\.([0-9]+)(?:\\.([0-9]+))?$"));
-        QRegExp safeName(QLatin1String("^[a-zA-Z_][[a-zA-Z0-9_]*$"));
+        const QRegularExpression vNr(QLatin1String("^(.+)\\.([0-9]+)(?:\\.([0-9]+))?$"));
+        const QRegularExpression safeName(QLatin1String("^[a-zA-Z_][[a-zA-Z0-9_]*$"));
         int majorVersion = LanguageUtils::ComponentVersion::NoVersion;
         int minorVersion = LanguageUtils::ComponentVersion::NoVersion;
 
@@ -540,24 +548,26 @@ void Snapshot::insertLibraryInfo(const QString &path, const LibraryInfo &info)
                 minorVersion = component.minorVersion;
         }
 
-        if (vNr.indexIn(splitPath.last()) == 0) {
-            splitPath.last() = vNr.cap(1);
+        QRegularExpressionMatch match = vNr.match(splitPath.last());
+        if (match.hasMatch()) {
+            splitPath.last() = match.captured(1);
             bool ok;
-            majorVersion = vNr.cap(2).toInt(&ok);
+            majorVersion = match.captured(2).toInt(&ok);
             if (!ok)
                 majorVersion = LanguageUtils::ComponentVersion::NoVersion;
-            minorVersion = vNr.cap(3).toInt(&ok);
-            if (vNr.cap(3).isEmpty() || !ok)
+            minorVersion = match.captured(3).toInt(&ok);
+            if (match.captured(3).isEmpty() || !ok)
                 minorVersion = LanguageUtils::ComponentVersion::NoVersion;
         }
 
         for (int iPath = splitPath.size(); iPath != 1; ) {
             --iPath;
-            if (safeName.indexIn(splitPath.at(iPath)) != 0)
+            match = safeName.match(splitPath.at(iPath));
+            if (!match.hasMatch())
                 break;
             ImportKey iKey(ImportType::Library, QStringList(splitPath.mid(iPath)).join(QLatin1Char('.')),
                            majorVersion, minorVersion);
-            cImport.possibleExports.append(Export(iKey, (iPath == 1) ? QLatin1String("/") :
+            cImport.addPossibleExport(Export(iKey, (iPath == 1) ? QLatin1String("/") :
                 QStringList(splitPath.mid(0, iPath)).join(QLatin1Char('/')), true));
         }
     }

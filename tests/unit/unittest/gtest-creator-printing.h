@@ -64,6 +64,35 @@ void PrintTo(const TextRange &range, ::std::ostream *os);
 } // namespace TextPosition
 } // namespace TextPosition
 
+namespace Sqlite {
+class Value;
+class ValueView;
+class SessionChangeSet;
+enum class Operation : char;
+
+std::ostream &operator<<(std::ostream &out, const Value &value);
+std::ostream &operator<<(std::ostream &out, const ValueView &value);
+std::ostream &operator<<(std::ostream &out, Operation operation);
+std::ostream &operator<<(std::ostream &out, const SessionChangeSet &changeset);
+
+namespace SessionChangeSetInternal {
+class ConstIterator;
+class ConstTupleIterator;
+class SentinelIterator;
+class Tuple;
+class ValueViews;
+enum class State : char;
+
+std::ostream &operator<<(std::ostream &out, SentinelIterator iterator);
+std::ostream &operator<<(std::ostream &out, const ConstIterator &iterator);
+std::ostream &operator<<(std::ostream &out, const ConstTupleIterator &iterator);
+std::ostream &operator<<(std::ostream &out, const Tuple &tuple);
+std::ostream &operator<<(std::ostream &out, State operation);
+std::ostream &operator<<(std::ostream &out, const ValueViews &valueViews);
+
+} // namespace SessionChangeSetInternal
+} // namespace Sqlite
+
 namespace ProjectExplorer {
 
 enum class MacroType;
@@ -341,5 +370,20 @@ std::ostream &operator<<(std::ostream &out, const ExplainingStep &step);
 std::ostream &operator<<(std::ostream &out, const Diagnostic &diag);
 } // namespace Internal
 } // namespace CppTools
+
+namespace QmlDesigner {
+class ModelNode;
+class VariantProperty;
+
+std::ostream &operator<<(std::ostream &out, const ModelNode &node);
+std::ostream &operator<<(std::ostream &out, const VariantProperty &property);
+
+namespace Internal {
+class ImageCacheStorageEntry;
+
+std::ostream &operator<<(std::ostream &out, const ImageCacheStorageEntry &entry);
+
+} // namespace Internal
+} // namespace QmlDesigner
 
 void setFilePathCache(ClangBackEnd::FilePathCaching *filePathCache);

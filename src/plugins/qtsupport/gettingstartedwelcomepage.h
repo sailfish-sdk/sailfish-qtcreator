@@ -29,7 +29,6 @@
 
 QT_BEGIN_NAMESPACE
 class QFileInfo;
-class QStringList;
 QT_END_NAMESPACE
 
 namespace QtSupport {
@@ -46,7 +45,7 @@ public:
 
     QString title() const final;
     int priority() const final;
-    Core::Id id() const final;
+    Utils::Id id() const final;
     QWidget *createWidget() const final;
 
     static void openProject(const ExampleItem *item);

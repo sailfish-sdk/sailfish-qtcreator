@@ -41,7 +41,6 @@
 
 #include <coreplugin/coreconstants.h>
 #include <coreplugin/icore.h>
-#include <coreplugin/id.h>
 #include <coreplugin/fileiconprovider.h>
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/actionmanager/actioncontainer.h>
@@ -64,6 +63,7 @@
 using namespace QmlJSEditor::Constants;
 using namespace ProjectExplorer;
 using namespace Core;
+using namespace Utils;
 
 namespace QmlJSEditor {
 namespace Internal {
@@ -162,10 +162,7 @@ QmlJSEditorPluginPrivate::QmlJSEditorPluginPrivate()
     contextMenu->addAction(cmd);
     qmlToolsMenu->addAction(cmd);
 
-    QAction *renameUsagesAction = new QAction(QmlJSEditorPlugin::tr("Rename Symbol Under Cursor"), this);
-    cmd = ActionManager::registerAction(renameUsagesAction, "QmlJSEditor.RenameUsages", context);
-    cmd->setDefaultKeySequence(QKeySequence(QmlJSEditorPlugin::tr("Ctrl+Shift+R")));
-    connect(renameUsagesAction, &QAction::triggered, this, &QmlJSEditorPluginPrivate::renameUsages);
+    cmd = ActionManager::command(TextEditor::Constants::RENAME_SYMBOL);
     contextMenu->addAction(cmd);
     qmlToolsMenu->addAction(cmd);
 
@@ -194,8 +191,8 @@ QmlJSEditorPluginPrivate::QmlJSEditorPluginPrivate()
 
     QAction *showQuickToolbar = new QAction(QmlJSEditorPlugin::tr("Show Qt Quick Toolbar"), this);
     cmd = ActionManager::registerAction(showQuickToolbar, Constants::SHOW_QT_QUICK_HELPER, context);
-    cmd->setDefaultKeySequence(useMacShortcuts ? QKeySequence(Qt::META + Qt::ALT + Qt::Key_Space)
-                                                     : QKeySequence(Qt::CTRL + Qt::ALT + Qt::Key_Space));
+    cmd->setDefaultKeySequence(useMacShortcuts ? QKeySequence(Qt::META | Qt::ALT | Qt::Key_Space)
+                                               : QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_Space));
     connect(showQuickToolbar, &QAction::triggered, this, &QmlJSEditorPluginPrivate::showContextPane);
     contextMenu->addAction(cmd);
     qmlToolsMenu->addAction(cmd);
@@ -247,7 +244,7 @@ QuickToolBar *QmlJSEditorPlugin::quickToolBar()
 void QmlJSEditorPluginPrivate::renameUsages()
 {
     if (auto editor = qobject_cast<QmlJSEditorWidget*>(EditorManager::currentEditor()->widget()))
-        editor->renameUsages();
+        editor->renameSymbolUnderCursor();
 }
 
 void QmlJSEditorPluginPrivate::reformatFile()

@@ -33,10 +33,13 @@
 #include <projectexplorer/buildconfiguration.h>
 #include <projectexplorer/processparameters.h>
 #include <projectexplorer/project.h>
-#include <projectexplorer/projectconfigurationaspects.h>
+#include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/target.h>
 
+#include <utils/aspects.h>
+
 using namespace ProjectExplorer;
+using namespace Utils;
 
 namespace AutotoolsProjectManager {
 namespace Internal {
@@ -52,78 +55,58 @@ namespace Internal {
  * It is possible for the user to specify custom arguments.
  */
 
-class AutoreconfStep : public AbstractProcessStep
+class AutoreconfStep final : public AbstractProcessStep
 {
     Q_DECLARE_TR_FUNCTIONS(AutotoolsProjectManager::Internal::AutoreconfStep)
 
 public:
-    AutoreconfStep(BuildStepList *bsl, Core::Id id);
+    AutoreconfStep(BuildStepList *bsl, Id id);
 
-    bool init() override;
     void doRun() override;
 
 private:
-    BaseStringAspect *m_additionalArgumentsAspect = nullptr;
     bool m_runAutoreconf = false;
 };
 
-AutoreconfStep::AutoreconfStep(BuildStepList *bsl, Core::Id id)
+AutoreconfStep::AutoreconfStep(BuildStepList *bsl, Id id)
     : AbstractProcessStep(bsl, id)
 {
-    setDefaultDisplayName(tr("Autoreconf"));
+    auto arguments = addAspect<StringAspect>();
+    arguments->setSettingsKey("AutotoolsProjectManager.AutoreconfStep.AdditionalArguments");
+    arguments->setLabelText(tr("Arguments:"));
+    arguments->setValue("--force --install");
+    arguments->setDisplayStyle(StringAspect::LineEditDisplay);
+    arguments->setHistoryCompleter("AutotoolsPM.History.AutoreconfStepArgs");
 
-    m_additionalArgumentsAspect = addAspect<BaseStringAspect>();
-    m_additionalArgumentsAspect->setSettingsKey("AutotoolsProjectManager.AutoreconfStep.AdditionalArguments");
-    m_additionalArgumentsAspect->setLabelText(tr("Arguments:"));
-    m_additionalArgumentsAspect->setValue("--force --install");
-    m_additionalArgumentsAspect->setDisplayStyle(BaseStringAspect::LineEditDisplay);
-    m_additionalArgumentsAspect->setHistoryCompleter("AutotoolsPM.History.AutoreconfStepArgs");
-
-    connect(m_additionalArgumentsAspect, &ProjectConfigurationAspect::changed, this, [this] {
+    connect(arguments, &BaseAspect::changed, this, [this] {
         m_runAutoreconf = true;
     });
 
+    setCommandLineProvider([arguments] {
+        return CommandLine(FilePath::fromString("autoreconf"),
+                           arguments->value(),
+                           CommandLine::Raw);
+    });
+
+    setWorkingDirectoryProvider([this] { return project()->projectDirectory(); });
+
     setSummaryUpdater([this] {
-        BuildConfiguration *bc = buildConfiguration();
-
         ProcessParameters param;
-        param.setMacroExpander(bc->macroExpander());
-        param.setEnvironment(bc->environment());
-        param.setWorkingDirectory(bc->target()->project()->projectDirectory());
-        param.setCommandLine({Utils::FilePath::fromString("autoreconf"),
-                              m_additionalArgumentsAspect->value(),
-                              Utils::CommandLine::Raw});
-
+        setupProcessParameters(&param);
         return param.summary(displayName());
     });
 }
 
-bool AutoreconfStep::init()
-{
-    BuildConfiguration *bc = buildConfiguration();
-
-    ProcessParameters *pp = processParameters();
-    pp->setMacroExpander(bc->macroExpander());
-    pp->setEnvironment(bc->environment());
-    pp->setWorkingDirectory(bc->target()->project()->projectDirectory());
-    pp->setCommandLine({Utils::FilePath::fromString("autoreconf"),
-                        m_additionalArgumentsAspect->value(), Utils::CommandLine::Raw});
-
-    return AbstractProcessStep::init();
-}
-
 void AutoreconfStep::doRun()
 {
-    BuildConfiguration *bc = buildConfiguration();
-
     // Check whether we need to run autoreconf
-    const QString projectDir(bc->target()->project()->projectDirectory().toString());
+    const QString projectDir(project()->projectDirectory().toString());
 
     if (!QFileInfo::exists(projectDir + "/configure"))
         m_runAutoreconf = true;
 
     if (!m_runAutoreconf) {
-        emit addOutput(tr("Configuration unchanged, skipping autoreconf step."), BuildStep::OutputFormat::NormalMessage);
+        emit addOutput(tr("Configuration unchanged, skipping autoreconf step."), OutputFormat::NormalMessage);
         emit finished(true);
         return;
     }

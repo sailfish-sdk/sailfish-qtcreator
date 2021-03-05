@@ -24,7 +24,7 @@
 ****************************************************************************/
 
 /*!
-    \previouspage {Tutorials}
+    \previouspage studio-optimized-3d-scenes.html
     \page studio-projects-managing.html
     \nextpage studio-projects.html
 
@@ -66,6 +66,12 @@
             for application development in Qt Creator, you have to convert them
             to Qt Quick Application projects that contain .pro, .cpp, and .qrc
             files.
+
+        \li \l {Exporting QML}
+
+            You can export UI forms (ui.qml files) to JSON metadata format
+            and PNG assets to generate native file formats in content creation
+            tools, such as Adobe Photoshop, using \QB.
 
     \endlist
 */

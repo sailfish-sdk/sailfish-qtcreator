@@ -30,8 +30,10 @@
 #include <projectexplorer/deploymentdata.h>
 #include <projectexplorer/makestep.h>
 
-namespace ProjectExplorer { class BaseStringAspect; }
-namespace Utils { class FilePath; }
+namespace Utils {
+class FilePath;
+class StringAspect;
+} // Utils
 
 namespace RemoteLinux {
 
@@ -39,14 +41,14 @@ class REMOTELINUX_EXPORT MakeInstallStep : public ProjectExplorer::MakeStep
 {
     Q_OBJECT
 public:
-    MakeInstallStep(ProjectExplorer::BuildStepList *parent, Core::Id id);
+    MakeInstallStep(ProjectExplorer::BuildStepList *parent, Utils::Id id);
 
-    static Core::Id stepId();
+    static Utils::Id stepId();
     static QString displayName();
 
 private:
     bool fromMap(const QVariantMap &map) override;
-    ProjectExplorer::BuildStepConfigWidget * createConfigWidget() override;
+    QWidget *createConfigWidget() override;
     bool init() override;
     void finish(bool success) override;
     void stdError(const QString &line) override;
@@ -60,7 +62,7 @@ private:
     void updateFullCommandLine();
     void updateFromCustomCommandLineAspect();
 
-    ProjectExplorer::BaseStringAspect *customCommandLineAspect() const;
+    Utils::StringAspect *customCommandLineAspect() const;
 
     ProjectExplorer::DeploymentData m_deploymentData;
     bool m_noInstallTarget = false;

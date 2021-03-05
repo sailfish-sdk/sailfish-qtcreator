@@ -39,15 +39,16 @@
 #include <coreplugin/editormanager/ieditor.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/idocument.h>
-#include <coreplugin/infobar.h>
 #include <coreplugin/modemanager.h>
 #include <coreplugin/navigationwidget.h>
 #include <coreplugin/vcsmanager.h>
 
 #include <utils/algorithm.h>
+#include <utils/infobar.h>
 #include <utils/qtcassert.h>
 
 #include <QApplication>
+#include <QFileInfo>
 #include <QMenu>
 #include <QTimer>
 
@@ -152,13 +153,8 @@ void ProjectTree::nodeChanged(ProjectTreeWidget *widget)
 void ProjectTree::update()
 {
     ProjectTreeWidget *focus = m_focusForContextMenu;
-    static QPointer<ProjectTreeWidget> lastFocusedProjectTreeWidget;
-    if (!focus) {
-        focus = Utils::findOrDefault(m_projectTreeWidgets, &ProjectTree::hasFocus);
-        lastFocusedProjectTreeWidget = focus;
-    }
     if (!focus)
-        focus = lastFocusedProjectTreeWidget;
+        focus = currentWidget();
 
     if (focus)
         updateFromProjectTreeWidget(focus);
@@ -284,15 +280,21 @@ void ProjectTree::sessionAndTreeChanged()
     emit treeChanged();
 }
 
+void ProjectTree::expandCurrentNodeRecursively()
+{
+    if (const auto w = currentWidget())
+        w->expandCurrentNodeRecursively();
+}
+
 void ProjectTree::collapseAll()
 {
-    if (auto w = Utils::findOrDefault(s_instance->m_projectTreeWidgets, &ProjectTree::hasFocus))
+    if (const auto w = currentWidget())
         w->collapseAll();
 }
 
 void ProjectTree::expandAll()
 {
-    if (auto w = Utils::findOrDefault(s_instance->m_projectTreeWidgets, &ProjectTree::hasFocus))
+    if (const auto w = currentWidget())
         w->expandAll();
 }
 
@@ -307,8 +309,8 @@ void ProjectTree::updateExternalFileWarning()
     auto document = qobject_cast<Core::IDocument *>(sender());
     if (!document || document->filePath().isEmpty())
         return;
-    Core::InfoBar *infoBar = document->infoBar();
-    Core::Id externalFileId(EXTERNAL_FILE_WARNING);
+    Utils::InfoBar *infoBar = document->infoBar();
+    Utils::Id externalFileId(EXTERNAL_FILE_WARNING);
     if (!document->isModified()) {
         infoBar->removeInfo(externalFileId);
         return;
@@ -332,9 +334,10 @@ void ProjectTree::updateExternalFileWarning()
             return;
         }
     }
-    infoBar->addInfo(Core::InfoBarEntry(externalFileId,
-                                        tr("<b>Warning:</b> This file is outside the project directory."),
-                                        Core::InfoBarEntry::GlobalSuppression::Enabled));
+    infoBar->addInfo(
+        Utils::InfoBarEntry(externalFileId,
+                            tr("<b>Warning:</b> This file is outside the project directory."),
+                            Utils::InfoBarEntry::GlobalSuppression::Enabled));
 }
 
 bool ProjectTree::hasFocus(ProjectTreeWidget *widget)
@@ -344,11 +347,15 @@ bool ProjectTree::hasFocus(ProjectTreeWidget *widget)
                 || s_instance->m_focusForContextMenu == widget);
 }
 
+ProjectTreeWidget *ProjectTree::currentWidget() const
+{
+    return findOrDefault(m_projectTreeWidgets, &ProjectTree::hasFocus);
+}
+
 void ProjectTree::showContextMenu(ProjectTreeWidget *focus, const QPoint &globalPos, Node *node)
 {
     QMenu *contextMenu = nullptr;
-    Project *project = projectForNode(node);
-    emit s_instance->aboutToShowContextMenu(project, node);
+    emit s_instance->aboutToShowContextMenu(node);
 
     if (!node) {
         contextMenu = Core::ActionManager::actionContainer(Constants::M_SESSIONCONTEXT)->menu();
@@ -459,9 +466,42 @@ Node *ProjectTree::nodeForFile(const FilePath &fileName)
     return node;
 }
 
+const QList<Node *> ProjectTree::siblingsWithSameBaseName(const Node *fileNode)
+{
+    ProjectNode *productNode = fileNode->parentProjectNode();
+    while (productNode && !productNode->isProduct())
+        productNode = productNode->parentProjectNode();
+    if (!productNode)
+        return {};
+    const QFileInfo fi = fileNode->filePath().toFileInfo();
+    const auto filter = [&fi](const Node *n) {
+        return n->asFileNode()
+                && n->filePath().toFileInfo().dir() == fi.dir()
+                && n->filePath().toFileInfo().completeBaseName() == fi.completeBaseName()
+                && n->filePath().toString() != fi.filePath();
+    };
+    return productNode->findNodes(filter);
+}
+
 void ProjectTree::hideContextMenu()
 {
-    m_focusForContextMenu = nullptr;
+    if (m_keepCurrentNodeRequests == 0)
+        m_focusForContextMenu = nullptr;
+}
+
+ProjectTree::CurrentNodeKeeper::CurrentNodeKeeper()
+    : m_active(ProjectTree::instance()->m_focusForContextMenu)
+{
+    if (m_active)
+        ++ProjectTree::instance()->m_keepCurrentNodeRequests;
+}
+
+ProjectTree::CurrentNodeKeeper::~CurrentNodeKeeper()
+{
+    if (m_active && --ProjectTree::instance()->m_keepCurrentNodeRequests == 0) {
+        ProjectTree::instance()->m_focusForContextMenu = nullptr;
+        ProjectTree::instance()->update();
+    }
 }
 
 } // namespace ProjectExplorer

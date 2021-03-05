@@ -33,7 +33,7 @@ namespace Internal {
 class QtTestTreeItem : public TestTreeItem
 {
 public:
-    explicit QtTestTreeItem(const QString &name = QString(), const QString &filePath = QString(),
+    explicit QtTestTreeItem(ITestFramework *framework, const QString &name = QString(), const QString &filePath = QString(),
                             Type type = Root);
 
     TestTreeItem *copyWithoutChildren() override;
@@ -45,6 +45,7 @@ public:
     TestConfiguration *debugConfiguration() const override;
     QList<TestConfiguration *> getAllTestConfigurations() const override;
     QList<TestConfiguration *> getSelectedTestConfigurations() const override;
+    QList<TestConfiguration *> getFailedTestConfigurations() const override;
     QList<TestConfiguration *> getTestConfigurationsForFile(const Utils::FilePath &fileName) const override;
     TestTreeItem *find(const TestParseResult *result) override;
     TestTreeItem *findChild(const TestTreeItem *other) override;

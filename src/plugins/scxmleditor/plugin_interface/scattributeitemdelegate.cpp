@@ -27,8 +27,7 @@
 #include "mytypes.h"
 #include <QComboBox>
 #include <QLineEdit>
-#include <QRegExp>
-#include <QRegExpValidator>
+#include <QRegularExpressionValidator>
 
 using namespace ScxmlEditor::PluginInterface;
 
@@ -51,9 +50,10 @@ QWidget *SCAttributeItemDelegate::createEditor(QWidget *parent, const QStyleOpti
         if (index.column() == 0) {
             auto edit = new QLineEdit(parent);
             edit->setFocusPolicy(Qt::StrongFocus);
-            QRegExp rx("^(?!xml)[_a-z][a-z0-9-._]*$");
-            rx.setCaseSensitivity(Qt::CaseInsensitive);
-            edit->setValidator(new QRegExpValidator(rx, parent));
+            QRegularExpression rx("^(?!xml)[_a-z][a-z0-9-._]*$");
+            rx.setPatternOptions(QRegularExpression::CaseInsensitiveOption);
+
+            edit->setValidator(new QRegularExpressionValidator(rx, parent));
             return edit;
         }
     }

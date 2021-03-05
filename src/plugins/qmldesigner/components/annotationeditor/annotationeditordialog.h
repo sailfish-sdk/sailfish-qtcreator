@@ -50,7 +50,7 @@ public:
     QString customId() const;
 
 signals:
-    void accepted();
+    void acceptedDialog(); //use instead of QDialog::accepted
 
 private slots:
     void acceptedClicked();
@@ -68,7 +68,7 @@ private:
     void deleteAllTabs();
 
 private:
-    const QString titleString = {tr("Annotation Editor")};
+    const QString annotationEditorTitle = {tr("Annotation Editor")};
     const QString defaultTabName = {tr("Annotation")};
     Ui::AnnotationEditorDialog *ui;
 

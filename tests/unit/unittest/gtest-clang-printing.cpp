@@ -24,13 +24,16 @@
 ****************************************************************************/
 
 #include "gtest-creator-printing.h"
+#include "gtest-std-printing.h"
 
 #ifdef CLANG_UNIT_TESTS
+#include <clang/Basic/FileManager.h>
 #include <clang/Basic/SourceLocation.h>
 #include <clang/Basic/SourceManager.h>
 
 #include <clangdocumentsuspenderresumer.h>
 #include <clangreferencescollector.h>
+#include <filepathview.h>
 #include <fulltokeninfo.h>
 #include <tokenprocessor.h>
 

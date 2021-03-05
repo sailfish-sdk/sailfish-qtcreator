@@ -41,6 +41,7 @@
 #include <utils/treeviewcombobox.h>
 #include <utils/utilsicons.h>
 
+#include <QActionGroup>
 #include <QFile>
 #include <QMenu>
 #include <QTextDocument>
@@ -81,9 +82,9 @@ bool applyTextDocumentEdit(const TextDocumentEdit &edit)
     const QList<TextEdit> &edits = edit.edits();
     if (edits.isEmpty())
         return true;
-    const DocumentUri &uri = edit.id().uri();
+    const DocumentUri &uri = edit.textDocument().uri();
     if (TextDocument* doc = TextDocument::textDocumentForFilePath(uri.toFilePath())) {
-        LanguageClientValue<int> version = edit.id().version();
+        LanguageClientValue<int> version = edit.textDocument().version();
         if (!version.isNull() && version.value(0) < doc->document()->revision())
             return false;
     }
@@ -163,7 +164,7 @@ void updateCodeActionRefactoringMarker(Client *client,
             if (optional<QList<TextDocumentEdit>> documentChanges = edit.documentChanges()) {
                 QList<TextDocumentEdit> changesForUri = Utils::filtered(
                     documentChanges.value(), [uri](const TextDocumentEdit &edit) {
-                    return edit.id().uri() == uri;
+                    return edit.textDocument().uri() == uri;
                 });
                 for (const TextDocumentEdit &edit : changesForUri)
                     edits << edit.edits();
@@ -206,7 +207,7 @@ void updateEditorToolBar(Core::IEditor *editor)
     TextDocument *document = textEditor->textDocument();
     Client *client = LanguageClientManager::clientForDocument(textEditor->textDocument());
 
-    static QMap<QWidget *, QAction *> actions;
+    static QHash<QWidget *, QAction *> actions;
 
     if (actions.contains(widget)) {
         auto action = actions[widget];
@@ -224,14 +225,14 @@ void updateEditorToolBar(Core::IEditor *editor)
         actions[widget] = widget->toolBar()->addAction(
             icon, client->name(), [document]() {
                 auto menu = new QMenu;
-                auto *clientsGroup = new QActionGroup(menu);
+                auto clientsGroup = new QActionGroup(menu);
                 clientsGroup->setExclusive(true);
                 for (auto client : LanguageClientManager::clientsSupportingDocument(document)) {
                     auto action = clientsGroup->addAction(client->name());
                     auto reopen = [action, client = QPointer<Client>(client), document]() {
                         if (!client)
                             return;
-                        LanguageClientManager::reOpenDocumentWithClient(document, client);
+                        LanguageClientManager::openDocumentWithClient(document, client);
                         action->setChecked(true);
                     };
                     action->setCheckable(true);
@@ -252,7 +253,7 @@ void updateEditorToolBar(Core::IEditor *editor)
         });
     }
 
-    static QMap<QWidget *, QPair<Client *, QAction *>> outlines;
+    static QHash<QWidget *, QPair<Client *, QAction *>> outlines;
 
     if (outlines.contains(widget)) {
         auto outline = outlines[widget];

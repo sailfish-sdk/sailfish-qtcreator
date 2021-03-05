@@ -60,7 +60,7 @@ Column {
             }
 
             Label {
-                text: qsTr("Cell Size")
+                text: qsTr("Cell size")
             }
 
             SecondColumnLayout {
@@ -111,7 +111,7 @@ Column {
 
             Label {
                 text: qsTr("Navigation wraps")
-                tooltip: qsTr("Determines whether the grid wraps key navigation.")
+                tooltip: qsTr("Whether the grid wraps key navigation.")
             }
 
             SectionLayout {
@@ -125,7 +125,7 @@ Column {
             }
 
             Label {
-                text: qsTr("Layout Direction")
+                text: qsTr("Layout direction")
             }
 
             SecondColumnLayout {
@@ -198,22 +198,6 @@ Column {
             }
 
             Label {
-                text: qsTr("Move speed")
-                tooltip: qsTr("Move animation speed of the highlight delegate.")
-            }
-
-            SectionLayout {
-                SpinBox {
-                    backendValue: backendValues.highlightMoveSpeed
-                    minimumValue: 0
-                    maximumValue: 1000
-                    decimals: 0
-                }
-                ExpandingSpacer {
-                }
-            }
-
-            Label {
                 text: qsTr("Preferred begin")
                 tooltip: qsTr("Preferred highlight begin - must be smaller than Preferred end.")
             }
@@ -247,7 +231,7 @@ Column {
 
             Label {
                 text: qsTr("Follows current")
-                tooltip: qsTr("Determines whether the highlight is managed by the view.")
+                tooltip: qsTr("Whether the highlight is managed by the view.")
             }
 
             SectionLayout {

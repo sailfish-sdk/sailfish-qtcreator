@@ -24,16 +24,41 @@
 ****************************************************************************/
 
 #include "customparser.h"
-#include "task.h"
-#include "projectexplorerconstants.h"
-#include "buildmanager.h"
 
+#include "projectexplorerconstants.h"
+#include "projectexplorer.h"
+#include "task.h"
+
+#include <coreplugin/icore.h>
 #include <utils/qtcassert.h>
 
+#include <QCheckBox>
+#include <QLabel>
+#include <QPair>
 #include <QString>
+#include <QVBoxLayout>
+
+#ifdef WITH_TESTS
+#   include <QTest>
+
+#   include "projectexplorer.h"
+#   include "outputparser_test.h"
+#endif
 
 using namespace Utils;
-using namespace ProjectExplorer;
+
+const char idKey[] = "Id";
+const char nameKey[] = "Name";
+const char errorKey[] = "Error";
+const char warningKey[] = "Warning";
+const char patternKey[] = "Pattern";
+const char lineNumberCapKey[] = "LineNumberCap";
+const char fileNameCapKey[] = "FileNameCap";
+const char messageCapKey[] = "MessageCap";
+const char channelKey[] = "Channel";
+const char exampleKey[] = "Example";
+
+namespace ProjectExplorer {
 
 bool CustomParserExpression::operator ==(const CustomParserExpression &other) const
 {
@@ -47,7 +72,7 @@ QString CustomParserExpression::pattern() const
     return m_regExp.pattern();
 }
 
-void ProjectExplorer::CustomParserExpression::setPattern(const QString &pattern)
+void CustomParserExpression::setPattern(const QString &pattern)
 {
     m_regExp.setPattern(pattern);
     QTC_CHECK(m_regExp.isValid());
@@ -60,9 +85,8 @@ CustomParserExpression::CustomParserChannel CustomParserExpression::channel() co
 
 void CustomParserExpression::setChannel(CustomParserExpression::CustomParserChannel channel)
 {
-    QTC_ASSERT(channel > ParseNoChannel && channel <= ParseBothChannels,
-               channel = ParseBothChannels);
-
+    if (channel == ParseNoChannel || channel > ParseBothChannels)
+        channel = ParseBothChannels;
     m_channel = channel;
 }
 
@@ -84,6 +108,28 @@ int CustomParserExpression::messageCap() const
 void CustomParserExpression::setMessageCap(int messageCap)
 {
     m_messageCap = messageCap;
+}
+
+QVariantMap CustomParserExpression::toMap() const
+{
+    QVariantMap map;
+    map.insert(patternKey, pattern());
+    map.insert(messageCapKey, messageCap());
+    map.insert(fileNameCapKey, fileNameCap());
+    map.insert(lineNumberCapKey, lineNumberCap());
+    map.insert(exampleKey, example());
+    map.insert(channelKey, channel());
+    return map;
+}
+
+void CustomParserExpression::fromMap(const QVariantMap &map)
+{
+    setPattern(map.value(patternKey).toString());
+    setMessageCap(map.value(messageCapKey).toInt());
+    setFileNameCap(map.value(fileNameCapKey).toInt());
+    setLineNumberCap(map.value(lineNumberCapKey).toInt());
+    setExample(map.value(exampleKey).toString());
+    setChannel(static_cast<CustomParserChannel>(map.value(channelKey).toInt()));
 }
 
 int CustomParserExpression::lineNumberCap() const
@@ -108,8 +154,54 @@ void CustomParserExpression::setFileNameCap(int fileNameCap)
 
 bool CustomParserSettings::operator ==(const CustomParserSettings &other) const
 {
-    return error == other.error && warning == other.warning;
+    return id == other.id && displayName == other.displayName
+            && error == other.error && warning == other.warning;
 }
+
+QVariantMap CustomParserSettings::toMap() const
+{
+    QVariantMap map;
+    map.insert(idKey, id.toSetting());
+    map.insert(nameKey, displayName);
+    map.insert(errorKey, error.toMap());
+    map.insert(warningKey, warning.toMap());
+    return map;
+}
+
+void CustomParserSettings::fromMap(const QVariantMap &map)
+{
+    id = Utils::Id::fromSetting(map.value(idKey));
+    displayName = map.value(nameKey).toString();
+    error.fromMap(map.value(errorKey).toMap());
+    warning.fromMap(map.value(warningKey).toMap());
+}
+
+CustomParsersAspect::CustomParsersAspect(Target *target)
+{
+    Q_UNUSED(target)
+    setId("CustomOutputParsers");
+    setSettingsKey("CustomOutputParsers");
+    setDisplayName(tr("Custom Output Parsers"));
+    setConfigWidgetCreator([this] {
+        const auto widget = new Internal::CustomParsersSelectionWidget;
+        widget->setSelectedParsers(m_parsers);
+        connect(widget, &Internal::CustomParsersSelectionWidget::selectionChanged,
+                this, [this, widget] { m_parsers = widget->selectedParsers(); });
+        return widget;
+    });
+}
+
+void CustomParsersAspect::fromMap(const QVariantMap &map)
+{
+    m_parsers = transform(map.value(settingsKey()).toList(), &Utils::Id::fromSetting);
+}
+
+void CustomParsersAspect::toMap(QVariantMap &map) const
+{
+    map.insert(settingsKey(), transform(m_parsers, &Utils::Id::toSetting));
+}
+
+namespace Internal {
 
 CustomParser::CustomParser(const CustomParserSettings &settings)
 {
@@ -118,84 +210,176 @@ CustomParser::CustomParser(const CustomParserSettings &settings)
     setSettings(settings);
 }
 
-void CustomParser::stdError(const QString &line)
-{
-    if (parseLine(line, CustomParserExpression::ParseStdErrChannel))
-        return;
-
-    IOutputParser::stdError(line);
-}
-
-void CustomParser::stdOutput(const QString &line)
-{
-    if (parseLine(line, CustomParserExpression::ParseStdOutChannel))
-        return;
-
-    IOutputParser::stdOutput(line);
-}
-
-void CustomParser::setWorkingDirectory(const QString &workingDirectory)
-{
-    m_workingDirectory = workingDirectory;
-}
-
 void CustomParser::setSettings(const CustomParserSettings &settings)
 {
     m_error = settings.error;
     m_warning = settings.warning;
 }
 
-Core::Id CustomParser::id()
+CustomParser *CustomParser::createFromId(Utils::Id id)
 {
-    return Core::Id("ProjectExplorer.OutputParser.Custom");
+    const CustomParserSettings parser = findOrDefault(ProjectExplorerPlugin::customParsers(),
+            [id](const CustomParserSettings &p) { return p.id == id; });
+    if (parser.id.isValid())
+        return new CustomParser(parser);
+    return nullptr;
 }
 
-FilePath CustomParser::absoluteFilePath(const QString &filePath) const
+Utils::Id CustomParser::id()
 {
-    if (m_workingDirectory.isEmpty())
-        return FilePath::fromUserInput(filePath);
-
-    return FilePath::fromString(m_workingDirectory).resolvePath(filePath);
+    return Utils::Id("ProjectExplorer.OutputParser.Custom");
 }
 
-bool CustomParser::hasMatch(const QString &line, CustomParserExpression::CustomParserChannel channel,
-                            const CustomParserExpression &expression, Task::TaskType taskType)
+OutputLineParser::Result CustomParser::handleLine(const QString &line, OutputFormat type)
+{
+    const CustomParserExpression::CustomParserChannel channel = type == StdErrFormat
+            ? CustomParserExpression::ParseStdErrChannel
+            : CustomParserExpression::ParseStdOutChannel;
+    return parseLine(line, channel);
+}
+
+OutputLineParser::Result CustomParser::hasMatch(
+        const QString &line,
+        CustomParserExpression::CustomParserChannel channel,
+        const CustomParserExpression &expression,
+        Task::TaskType taskType
+        )
 {
     if (!(channel & expression.channel()))
-        return false;
+        return Status::NotHandled;
 
     if (expression.pattern().isEmpty())
-        return false;
+        return Status::NotHandled;
 
     const QRegularExpressionMatch match = expression.match(line);
     if (!match.hasMatch())
-        return false;
+        return Status::NotHandled;
 
-    const FilePath fileName = absoluteFilePath(match.captured(expression.fileNameCap()));
+    const FilePath fileName = absoluteFilePath(FilePath::fromString(
+                                                   match.captured(expression.fileNameCap())));
     const int lineNumber = match.captured(expression.lineNumberCap()).toInt();
     const QString message = match.captured(expression.messageCap());
-
-    emit addTask(CompileTask(taskType, message, fileName, lineNumber), 1);
-    return true;
+    LinkSpecs linkSpecs;
+    addLinkSpecForAbsoluteFilePath(linkSpecs, fileName, lineNumber, match,
+                                   expression.fileNameCap());
+    scheduleTask(CompileTask(taskType, message, fileName, lineNumber), 1);
+    return {Status::Done, linkSpecs};
 }
 
-bool CustomParser::parseLine(const QString &rawLine, CustomParserExpression::CustomParserChannel channel)
+OutputLineParser::Result CustomParser::parseLine(
+        const QString &rawLine,
+        CustomParserExpression::CustomParserChannel channel
+        )
 {
     const QString line = rawLine.trimmed();
-
-    if (hasMatch(line, channel, m_error, Task::Error))
-        return true;
-
+    const Result res = hasMatch(line, channel, m_error, Task::Error);
+    if (res.status != Status::NotHandled)
+        return res;
     return hasMatch(line, channel, m_warning, Task::Warning);
 }
+
+namespace {
+class SelectionWidget : public QWidget
+{
+    Q_OBJECT
+public:
+    SelectionWidget(QWidget *parent = nullptr) : QWidget(parent)
+    {
+        const auto layout = new QVBoxLayout(this);
+        const auto explanatoryLabel = new QLabel(tr(
+            "Custom output parsers scan command line output for user-provided error patterns<br>"
+            "in order to create entries in the issues pane.<br>"
+            "The parsers can be configured <a href=\"dummy\">here</a>."));
+        layout->addWidget(explanatoryLabel);
+        connect(explanatoryLabel, &QLabel::linkActivated, [] {
+            Core::ICore::showOptionsDialog(Constants::CUSTOM_PARSERS_SETTINGS_PAGE_ID);
+        });
+        updateUi();
+        connect(ProjectExplorerPlugin::instance(), &ProjectExplorerPlugin::customParsersChanged,
+                this, &SelectionWidget::updateUi);
+    }
+
+    void setSelectedParsers(const QList<Utils::Id> &parsers)
+    {
+        for (const auto &p : qAsConst(parserCheckBoxes))
+            p.first->setChecked(parsers.contains(p.second));
+        emit selectionChanged();
+    }
+
+    QList<Utils::Id> selectedParsers() const
+    {
+        QList<Utils::Id> parsers;
+        for (const auto &p : qAsConst(parserCheckBoxes)) {
+            if (p.first->isChecked())
+                parsers << p.second;
+        }
+        return parsers;
+    }
+
+signals:
+    void selectionChanged();
+
+private:
+    void updateUi()
+    {
+        const auto layout = qobject_cast<QVBoxLayout *>(this->layout());
+        QTC_ASSERT(layout, return);
+        const QList<Utils::Id> parsers = selectedParsers();
+        for (const auto &p : qAsConst(parserCheckBoxes))
+            delete p.first;
+        parserCheckBoxes.clear();
+        for (const CustomParserSettings &s : ProjectExplorerPlugin::customParsers()) {
+            const auto checkBox = new QCheckBox(s.displayName, this);
+            connect(checkBox, &QCheckBox::stateChanged,
+                    this, &SelectionWidget::selectionChanged);
+            parserCheckBoxes << qMakePair(checkBox, s.id);
+            layout->addWidget(checkBox);
+        }
+        setSelectedParsers(parsers);
+    }
+
+    QList<QPair<QCheckBox *, Utils::Id>> parserCheckBoxes;
+};
+} // anonymous namespace
+
+CustomParsersSelectionWidget::CustomParsersSelectionWidget(QWidget *parent) : DetailsWidget(parent)
+{
+    const auto widget = new SelectionWidget(this);
+    connect(widget, &SelectionWidget::selectionChanged, [this] {
+        updateSummary();
+        emit selectionChanged();
+    });
+    setWidget(widget);
+    updateSummary();
+}
+
+void CustomParsersSelectionWidget::setSelectedParsers(const QList<Utils::Id> &parsers)
+{
+    qobject_cast<SelectionWidget *>(widget())->setSelectedParsers(parsers);
+}
+
+QList<Utils::Id> CustomParsersSelectionWidget::selectedParsers() const
+{
+    return qobject_cast<SelectionWidget *>(widget())->selectedParsers();
+}
+
+void CustomParsersSelectionWidget::updateSummary()
+{
+    const QList<Utils::Id> parsers
+            = qobject_cast<SelectionWidget *>(widget())->selectedParsers();
+    if (parsers.isEmpty())
+        setSummaryText(tr("There are no custom parsers active"));
+    else
+        setSummaryText(tr("There are %n custom parsers active", nullptr, parsers.count()));
+}
+
+} // namespace Internal
 
 // Unit tests:
 
 #ifdef WITH_TESTS
-#   include <QTest>
 
-#   include "projectexplorer.h"
-#   include "outputparser_test.h"
+using namespace Internal;
 
 void ProjectExplorerPlugin::testCustomOutputParsers_data()
 {
@@ -481,12 +665,18 @@ void ProjectExplorerPlugin::testCustomOutputParsers()
 
     CustomParser *parser = new CustomParser;
     parser->setSettings(settings);
-    parser->setWorkingDirectory(workDir);
+    parser->addSearchDir(FilePath::fromString(workDir));
+    parser->skipFileExistsCheck();
 
     OutputParserTester testbench;
-    testbench.appendOutputParser(parser);
+    testbench.addLineParser(parser);
     testbench.testParsing(input, inputChannel,
                           tasks, childStdOutLines, childStdErrLines,
                           outputLines);
 }
+
 #endif
+
+} // namespace ProjectExplorer
+
+#include <customparser.moc>

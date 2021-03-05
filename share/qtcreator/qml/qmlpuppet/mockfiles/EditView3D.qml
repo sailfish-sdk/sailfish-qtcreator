@@ -25,8 +25,6 @@
 
 import QtQuick 2.12
 import QtQuick3D 1.15
-import QtQuick.Controls 2.0
-import QtGraphicalEffects 1.0
 import MouseArea3D 1.0
 
 Item {
@@ -54,10 +52,14 @@ Item {
     property Node selectedNode: null // This is non-null only in single selection case
     property var selectedNodes: [] // All selected nodes
 
-    property var lightGizmos: []
+    property var lightIconGizmos: []
     property var cameraGizmos: []
     property var selectionBoxes: []
     property rect viewPortRect: Qt.rect(0, 0, 1000, 1000)
+
+    property bool shuttingDown: false
+
+    property real fps: 0
 
     signal selectionChanged(var selectedNodes)
     signal commitObjectProperty(var object, var propName)
@@ -72,6 +74,11 @@ Item {
     onTransformModeChanged:     _generalHelper.storeToolState(sceneId, "transformMode", transformMode);
 
     onActiveSceneChanged: updateActiveScene()
+
+    function aboutToShutDown()
+    {
+        shuttingDown = true;
+    }
 
     function createEditView()
     {
@@ -100,6 +107,7 @@ Item {
         if (editView) {
             // Destroy is async, so make sure we don't get any more updates for the old editView
             _generalHelper.enableItemUpdate(editView, false);
+            editView.visible = false;
             editView.destroy();
         }
 
@@ -107,15 +115,31 @@ Item {
         if (createEditView()) {
             if (activeScene) {
                 var toolStates = _generalHelper.getToolStates(sceneId);
-                if (Object.keys(toolStates).length > 0)
+                if (Object.keys(toolStates).length > 0) {
                     updateToolStates(toolStates, true);
-                else
+                } else {
+                    // Don't inherit the edit light state from the previous scene, but rather
+                    // turn the edit light on for scenes that do not have any scene
+                    // lights, and turn it off for scenes that have.
+                    var hasSceneLight = false;
+                    for (var i = 0; i < lightIconGizmos.length; ++i) {
+                        if (lightIconGizmos[i].scene === activeScene) {
+                            hasSceneLight = true;
+                            break;
+                        }
+                    }
+                    showEditLight = !hasSceneLight;
                     storeCurrentToolStates();
+                }
             } else {
                 // When active scene is deleted, this function gets called by object deletion
                 // handlers without going through setActiveScene, so make sure sceneId is cleared.
-                sceneId = "";
-                storeCurrentToolStates();
+                // This is skipped during application shutdown, as calling QQuickText::setText()
+                // during application shutdown can crash the application.
+                if (!shuttingDown) {
+                    sceneId = "";
+                    storeCurrentToolStates();
+                }
             }
 
             notifyActiveSceneChange();
@@ -141,12 +165,20 @@ Item {
             _generalHelper.enableItemUpdate(editView, (scene && scene === activeScene));
     }
 
+    function handleActiveSceneIdChange(newId)
+    {
+        if (sceneId !== newId) {
+            sceneId = newId;
+            storeCurrentToolStates();
+        }
+    }
+
     function fitToView()
     {
         if (editView) {
             var targetNode = selectionBoxes.length > 0
                     ? selectionBoxes[0].model : null;
-            cameraControl.focusObject(targetNode, editView.camera.eulerRotation, true);
+            cameraControl.focusObject(targetNode, editView.camera.eulerRotation, true, false);
         }
     }
 
@@ -182,7 +214,7 @@ Item {
         if ("transformMode" in toolStates)
             transformMode = toolStates.transformMode;
         else if (resetToDefault)
-            selectionMode = EditView3D.TransformMode.Move;
+            transformMode = EditView3D.TransformMode.Move;
 
         if ("editCamState" in toolStates)
             cameraControl.restoreCameraState(toolStates.editCamState);
@@ -244,10 +276,17 @@ Item {
 
     function handleObjectClicked(object, multi)
     {
-        var theObject = object;
+        var clickedObject;
+
+        // Click on locked object is treated same as click on empty space
+        if (!_generalHelper.isLocked(object))
+            clickedObject = object;
+
         if (selectionMode === EditView3D.SelectionMode.Group) {
-            while (theObject && theObject !== activeScene && theObject.parent !== activeScene)
-                theObject = theObject.parent;
+            while (clickedObject && clickedObject !== activeScene
+                   && (activeScene instanceof Model || clickedObject.parent !== activeScene)) {
+                clickedObject = clickedObject.parent;
+            }
         }
         // Object selection logic:
         // Regular click: Clear any multiselection, single-selects the clicked object
@@ -255,20 +294,20 @@ Item {
         //             One or more objects selected: Multiselect
         // Null object always clears entire selection
         var newSelection = [];
-        if (object !== null) {
+        if (clickedObject) {
             if (multi && selectedNodes.length > 0) {
                 var deselect = false;
                 for (var i = 0; i < selectedNodes.length; ++i) {
                     // Multiselecting already selected object clears that object from selection
-                    if (selectedNodes[i] !== object)
+                    if (selectedNodes[i] !== clickedObject)
                         newSelection[newSelection.length] = selectedNodes[i];
                     else
                         deselect = true;
                 }
                 if (!deselect)
-                    newSelection[newSelection.length] = object;
+                    newSelection[newSelection.length] = clickedObject;
             } else {
-                newSelection[0] = theObject;
+                newSelection[0] = clickedObject;
             }
         }
         selectObjects(newSelection);
@@ -277,47 +316,70 @@ Item {
 
     function addLightGizmo(scene, obj)
     {
-        // Insert into first available gizmo
-        for (var i = 0; i < lightGizmos.length; ++i) {
-            if (!lightGizmos[i].targetNode) {
-                lightGizmos[i].scene = scene;
-                lightGizmos[i].targetNode = obj;
+        // Insert into first available gizmo if we don't already have gizmo for this object
+        var slotFound = -1;
+        for (var i = 0; i < lightIconGizmos.length; ++i) {
+            if (!lightIconGizmos[i].targetNode) {
+                slotFound = i;
+            } else if (lightIconGizmos[i].targetNode === obj) {
+                lightIconGizmos[i].scene = scene;
                 return;
             }
         }
 
+        if (slotFound !== -1) {
+            lightIconGizmos[slotFound].scene = scene;
+            lightIconGizmos[slotFound].targetNode = obj;
+            lightIconGizmos[slotFound].locked = _generalHelper.isLocked(obj);
+            lightIconGizmos[slotFound].hidden = _generalHelper.isHidden(obj);
+            _generalHelper.registerGizmoTarget(obj);
+            return;
+        }
+
         // No free gizmos available, create a new one
-        var gizmoComponent = Qt.createComponent("LightGizmo.qml");
-        var modelComponent = Qt.createComponent("LightModel.qml");
-        if (gizmoComponent.status === Component.Ready && modelComponent.status === Component.Ready) {
-            var geometryName = _generalHelper.generateUniqueName("LightGeometry");
-            var model = modelComponent.createObject(overlayScene, {"geometryName": geometryName});
+        var gizmoComponent = Qt.createComponent("LightIconGizmo.qml");
+        if (gizmoComponent.status === Component.Ready) {
+            _generalHelper.registerGizmoTarget(obj);
             var gizmo = gizmoComponent.createObject(overlayView,
                                                     {"view3D": overlayView, "targetNode": obj,
                                                      "selectedNodes": selectedNodes, "scene": scene,
-                                                     "activeScene": activeScene});
-            lightGizmos[lightGizmos.length] = gizmo;
+                                                     "activeScene": activeScene,
+                                                     "locked": _generalHelper.isLocked(obj),
+                                                     "hidden": _generalHelper.isHidden(obj)});
+            lightIconGizmos[lightIconGizmos.length] = gizmo;
             gizmo.clicked.connect(handleObjectClicked);
             gizmo.selectedNodes = Qt.binding(function() {return selectedNodes;});
             gizmo.activeScene = Qt.binding(function() {return activeScene;});
-            gizmo.connectModel(model);
         }
     }
 
     function addCameraGizmo(scene, obj)
     {
-        // Insert into first available gizmo
+        // Insert into first available gizmo if we don't already have gizmo for this object
+        var slotFound = -1;
         for (var i = 0; i < cameraGizmos.length; ++i) {
             if (!cameraGizmos[i].targetNode) {
+                slotFound = i;
+            } else if (cameraGizmos[i].targetNode === obj) {
                 cameraGizmos[i].scene = scene;
-                cameraGizmos[i].targetNode = obj;
                 return;
             }
         }
+
+        if (slotFound !== -1) {
+            cameraGizmos[slotFound].scene = scene;
+            cameraGizmos[slotFound].targetNode = obj;
+            cameraGizmos[slotFound].locked = _generalHelper.isLocked(obj);
+            cameraGizmos[slotFound].hidden = _generalHelper.isHidden(obj);
+            _generalHelper.registerGizmoTarget(obj);
+            return;
+        }
+
         // No free gizmos available, create a new one
         var gizmoComponent = Qt.createComponent("CameraGizmo.qml");
         var frustumComponent = Qt.createComponent("CameraFrustum.qml");
         if (gizmoComponent.status === Component.Ready && frustumComponent.status === Component.Ready) {
+            _generalHelper.registerGizmoTarget(obj);
             var geometryName = _generalHelper.generateUniqueName("CameraGeometry");
             var frustum = frustumComponent.createObject(
                         overlayScene,
@@ -325,7 +387,8 @@ Item {
             var gizmo = gizmoComponent.createObject(
                         overlayView,
                         {"view3D": overlayView, "targetNode": obj,
-                         "selectedNodes": selectedNodes, "scene": scene, "activeScene": activeScene});
+                         "selectedNodes": selectedNodes, "scene": scene, "activeScene": activeScene,
+                         "locked": _generalHelper.isLocked(obj), "hidden": _generalHelper.isHidden(obj)});
 
             cameraGizmos[cameraGizmos.length] = gizmo;
             gizmo.clicked.connect(handleObjectClicked);
@@ -338,10 +401,11 @@ Item {
 
     function releaseLightGizmo(obj)
     {
-        for (var i = 0; i < lightGizmos.length; ++i) {
-            if (lightGizmos[i].targetNode === obj) {
-                lightGizmos[i].scene = null;
-                lightGizmos[i].targetNode = null;
+        for (var i = 0; i < lightIconGizmos.length; ++i) {
+            if (lightIconGizmos[i].targetNode === obj) {
+                lightIconGizmos[i].scene = null;
+                lightIconGizmos[i].targetNode = null;
+                _generalHelper.unregisterGizmoTarget(obj);
                 return;
             }
         }
@@ -353,6 +417,7 @@ Item {
             if (cameraGizmos[i].targetNode === obj) {
                 cameraGizmos[i].scene = null;
                 cameraGizmos[i].targetNode = null;
+                _generalHelper.unregisterGizmoTarget(obj);
                 return;
             }
         }
@@ -360,9 +425,9 @@ Item {
 
     function updateLightGizmoScene(scene, obj)
     {
-        for (var i = 0; i < lightGizmos.length; ++i) {
-            if (lightGizmos[i].targetNode === obj) {
-                lightGizmos[i].scene = scene;
+        for (var i = 0; i < lightIconGizmos.length; ++i) {
+            if (lightIconGizmos[i].targetNode === obj) {
+                lightIconGizmos[i].scene = scene;
                 return;
             }
         }
@@ -388,6 +453,40 @@ Item {
 
     onWidthChanged: _generalHelper.requestOverlayUpdate()
     onHeightChanged: _generalHelper.requestOverlayUpdate()
+
+    Connections {
+        target: _generalHelper
+        function onLockedStateChanged(node)
+        {
+            for (var i = 0; i < cameraGizmos.length; ++i) {
+                if (cameraGizmos[i].targetNode === node) {
+                    cameraGizmos[i].locked = _generalHelper.isLocked(node);
+                    return;
+                }
+            }
+            for (var i = 0; i < lightIconGizmos.length; ++i) {
+                if (lightIconGizmos[i].targetNode === node) {
+                    lightIconGizmos[i].locked = _generalHelper.isLocked(node);
+                    return;
+                }
+            }
+        }
+        function onHiddenStateChanged(node)
+        {
+            for (var i = 0; i < cameraGizmos.length; ++i) {
+                if (cameraGizmos[i].targetNode === node) {
+                    cameraGizmos[i].hidden = _generalHelper.isHidden(node);
+                    return;
+                }
+            }
+            for (var i = 0; i < lightIconGizmos.length; ++i) {
+                if (lightIconGizmos[i].targetNode === node) {
+                    lightIconGizmos[i].hidden = _generalHelper.isHidden(node);
+                    return;
+                }
+            }
+        }
+    }
 
     Node {
         id: overlayScene
@@ -455,10 +554,26 @@ Item {
             onRotateChange: viewRoot.changeObjectProperty(viewRoot.selectedNode, "eulerRotation")
         }
 
+        LightGizmo {
+            id: lightGizmo
+            targetNode: viewRoot.selectedNode
+            view3D: overlayView
+            dragHelper: gizmoDragHelper
+
+            onPropertyValueCommit: viewRoot.commitObjectProperty(targetNode, propName)
+            onPropertyValueChange: viewRoot.changeObjectProperty(targetNode, propName)
+        }
+
         AutoScaleHelper {
             id: autoScale
             view3D: overlayView
             position: moveGizmo.scenePosition
+        }
+
+        AutoScaleHelper {
+            id: pivotAutoScale
+            view3D: overlayView
+            position: pivotLine.startPos
         }
 
         Line3D {
@@ -487,14 +602,14 @@ Item {
             Model {
                 id: pivotCap
                 source: "#Sphere"
-                scale: autoScale.getScale(Qt.vector3d(0.03, 0.03, 0.03))
+                scale: pivotAutoScale.getScale(Qt.vector3d(0.03, 0.03, 0.03))
                 position: pivotLine.startPos
                 materials: [
                     DefaultMaterial {
                         id: lineMat
                         lighting: DefaultMaterial.NoLighting
                         cullMode: Material.NoCulling
-                        emissiveColor: pivotLine.color
+                        diffuseColor: pivotLine.color
                     }
                 ]
             }
@@ -517,15 +632,60 @@ Item {
             MouseArea {
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton
-                onClicked: {
+                hoverEnabled: false
+
+                property MouseArea3D freeDraggerArea
+                property point pressPoint
+                property bool initialMoveBlock: false
+
+                onPressed: {
                     if (viewRoot.editView) {
                         var pickResult = viewRoot.editView.pick(mouse.x, mouse.y);
                         handleObjectClicked(_generalHelper.resolvePick(pickResult.objectHit),
                                             mouse.modifiers & Qt.ControlModifier);
-                        if (!pickResult.objectHit)
+
+                        if (pickResult.objectHit) {
+                            if (transformMode === EditView3D.TransformMode.Move)
+                                freeDraggerArea = moveGizmo.freeDraggerArea;
+                            else if (transformMode === EditView3D.TransformMode.Rotate)
+                                freeDraggerArea = rotateGizmo.freeDraggerArea;
+                            else if (transformMode === EditView3D.TransformMode.Scale)
+                                freeDraggerArea = scaleGizmo.freeDraggerArea;
+                            pressPoint.x = mouse.x;
+                            pressPoint.y = mouse.y;
+                            initialMoveBlock = true;
+                        } else {
                             mouse.accepted = false;
+                        }
                     }
                 }
+                onPositionChanged: {
+                    if (freeDraggerArea) {
+                        if (initialMoveBlock && Math.abs(pressPoint.x - mouse.x) + Math.abs(pressPoint.y - mouse.y) > 10) {
+                            // Don't force press event at actual press, as that puts the gizmo
+                            // in free-dragging state, which is bad UX if drag is not actually done
+                            freeDraggerArea.forcePressEvent(pressPoint.x, pressPoint.y);
+                            freeDraggerArea.forceMoveEvent(mouse.x, mouse.y);
+                            initialMoveBlock = false;
+                        } else {
+                            freeDraggerArea.forceMoveEvent(mouse.x, mouse.y);
+                        }
+                    }
+                }
+
+                function handleRelease(mouse)
+                {
+                    if (freeDraggerArea) {
+                        if (initialMoveBlock)
+                            freeDraggerArea.forceReleaseEvent(pressPoint.x, pressPoint.y);
+                        else
+                            freeDraggerArea.forceReleaseEvent(mouse.x, mouse.y);
+                        freeDraggerArea = null;
+                    }
+                }
+
+                onReleased: handleRelease(mouse)
+                onCanceled: handleRelease(mouse)
             }
 
             DropArea {
@@ -557,6 +717,10 @@ Item {
                     Text {
                         id: gizmoLabelText
                         text: {
+                            // This is skipped during application shutdown, as calling QQuickText::setText()
+                            // during application shutdown can crash the application.
+                            if (shuttingDown)
+                                return text;
                             var l = Qt.locale();
                             var targetProperty;
                             if (viewRoot.selectedNode) {
@@ -586,18 +750,42 @@ Item {
                 border.width: 1
                 visible: rotateGizmo.dragging
                 parent: rotateGizmo.view3D
+                z: 3
 
                 Text {
                     id: rotateGizmoLabelText
                     text: {
+                        // This is skipped during application shutdown, as calling QQuickText::setText()
+                        // during application shutdown can crash the application.
+                        if (shuttingDown)
+                            return text;
                         var l = Qt.locale();
                         if (rotateGizmo.targetNode) {
                             var degrees = rotateGizmo.currentAngle * (180 / Math.PI);
-                            return qsTr(Number(degrees).toLocaleString(l, 'f', 1));
+                            return Number(degrees).toLocaleString(l, 'f', 1);
                         } else {
                             return "";
                         }
                     }
+                    anchors.centerIn: parent
+                }
+            }
+
+            Rectangle {
+                id: lightGizmoLabel
+                color: "white"
+                x: lightGizmo.currentMousePos.x - (10 + width)
+                y: lightGizmo.currentMousePos.y - (10 + height)
+                width: lightGizmoLabelText.width + 4
+                height: lightGizmoLabelText.height + 4
+                border.width: 1
+                visible: lightGizmo.dragging
+                parent: lightGizmo.view3D
+                z: 3
+
+                Text {
+                    id: lightGizmoLabelText
+                    text: lightGizmo.currentLabel
                     anchors.centerIn: parent
                 }
             }
@@ -618,6 +806,27 @@ Item {
             height: width
             editCameraCtrl: cameraControl
             selectedNode : viewRoot.selectedNodes.length ? selectionBoxes[0].model : null
+        }
+
+        Text {
+            id: sceneLabel
+            text: viewRoot.sceneId
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.margins: 4
+            font.pixelSize: 14
+            color: "white"
+        }
+
+        Text {
+            id: fpsLabel
+            text: viewRoot.fps
+            anchors.bottom: parent.bottom
+            anchors.left: parent.left
+            anchors.margins: 4
+            font.pixelSize: 12
+            color: "white"
+            visible: viewRoot.fps > 0
         }
     }
 }

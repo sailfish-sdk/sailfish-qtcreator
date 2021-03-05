@@ -29,12 +29,12 @@
 #include "ioutputparser.h"
 #include "devicesupport/idevice.h"
 
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QStringList>
 
 namespace ProjectExplorer {
 
-class PROJECTEXPLORER_EXPORT XcodebuildParser : public IOutputParser
+class PROJECTEXPLORER_EXPORT XcodebuildParser : public OutputTaskParser
 {
     Q_OBJECT
 public:
@@ -46,15 +46,15 @@ public:
 
     XcodebuildParser();
 
-    void stdOutput(const QString &line) override;
-    void stdError(const QString &line) override;
-    bool hasFatalErrors() const override;
-
 private:
+    Result handleLine(const QString &line, Utils::OutputFormat type) override;
+    bool hasDetectedRedirection() const override;
+    bool hasFatalErrors() const override { return m_fatalErrorCount > 0; }
+
     int m_fatalErrorCount = 0;
-    QRegExp m_failureRe;
-    QRegExp m_successRe;
-    QRegExp m_buildRe;
+    const QRegularExpression m_failureRe;
+    const QRegularExpression m_successRe;
+    const QRegularExpression m_buildRe;
     XcodebuildStatus m_xcodeBuildParserState = OutsideXcodebuild;
     QString m_lastTarget;
     QString m_lastProject;

@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2020 The Qt Company Ltd.
+** Copyright (C) 2021 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the Qt Creator documentation.
@@ -118,9 +118,18 @@
     The debugger then takes over and starts the program with suitable
     parameters.
 
+    When using GDB or CDB as debug backend, you can specify additional commands
+    to execute before and after the backend and debugged program are started or
+    attached in \uicontrol Tools > \uicontrol Options > \uicontrol Debugger >
+    \uicontrol GDB and \uicontrol CDB. For more information, see
+    \l{Specifying Debugger Settings}.
+
+    To allow reading the user's default .gdbinit file on debugger startup,
+    select the \uicontrol {Load .gdbinit file on startup} check box in
+    GDB settings. For more information, see \l{Specifying GDB Settings}.
+
     \note Starting a C++ program in the debugger can take a long time, typically
     in the range of several seconds to minutes if complex features are used.
-
 
     \section1 Launching the Debugger in Different Modes
 
@@ -131,7 +140,7 @@
     In general, \key F5 and the \uicontrol {Start Debugging of Startup Project}
     button are set up in a
     way to start the operating mode that is commonly used in a given context. So
-    if the current project is set up as a C++ application using the MinGW
+    if the current project is set up as a C++ application using the \MinGW
     toolchain targeting desktop Windows, the GDB engine will be started in Start
     Internal mode. If the current project is a QML application using C++
     plugins, a "mixed" QML/C++ engine will be started, with the C++ parts being
@@ -171,6 +180,13 @@
     \uicontrol {Run Settings} and select the \uicontrol {Run in terminal} check
     box.
 
+    If a console application does not start up properly in the configured
+    console and the subsequent attach fails, you can diagnose the issue by
+    using CDB's native console. Select \uicontrol Tools > \uicontrol Options >
+    \uicontrol Debugger > \uicontrol CDB > \uicontrol {Use CDB console} to
+    override the console set in the Windows system environment variables.
+    Note that the native console does not prompt on application exit.
+
     To launch the debugger in Start Internal mode, click the
     \uicontrol {Start Debugging} button for the active project.
 
@@ -204,6 +220,8 @@
             applications.
         \li Select the \uicontrol {Break at "main"} check box to stop the
             debugger at the main function.
+        \li In the \uicontrol {Override SysRoot} field, specify the path to
+            the \c sysroot to use instead of the default \c sysroot.
         \li In the \uicontrol {Debug information} field, specify the location
             for storing debug information. You cannot use an empty path.
         \li In the \uicontrol Recent field, you can select a recent
@@ -295,6 +313,8 @@
             executable.
         \li In the \uicontrol {Override start script} field, specify a
             script file to run instead of the default start script.
+        \li In the \uicontrol {Override SysRoot} field, specify the path to
+            the \c sysroot to use instead of the default \c sysroot.
     \endlist
 
     Also in this mode, using a properly configured project containing the
@@ -378,6 +398,8 @@
             debugger at the main function.
         \li In the \uicontrol {Server start script} field, specify a
             script file to run when the server starts.
+        \li In the \uicontrol {Override SysRoot} field, specify the path to
+            the \c sysroot to use instead of the default \c sysroot.
         \li In the \uicontrol {Init commands} field, enter the commands
             to execute immediately after the connection to a target has
             been established.
@@ -393,92 +415,12 @@
 
     \endlist
 
-    \section3 Specifying GDB Settings
-
-    To specify settings for managing the GDB process, select \uicontrol Tools >
-    \uicontrol Options > \uicontrol Debugger > \uicontrol GDB.
-
-    \image qtcreator-gdb-options.png "GDB options"
-
-    To specify a timeout for terminating non-responsive GDB processes, set the
-    number of seconds to wait in the \uicontrol {GDB timeout} field. The default
-    value of 20 seconds should be sufficient for most applications, but if
-    loading big libraries or listing source files takes much longer than
-    that on slow machines, you should increase the value.
-
-    To compress several steps into one step for less noisy debugging when
-    stepping into code, select the \uicontrol {Skip known frames when stepping}
-    check box. For example, the atomic reference counting code is skipped, and
-    a single \e {Step Into} for a signal emission ends up directly in the slot
-    connected to it.
-
-    To display a message box as soon as your application receives a signal, such
-    as SIGSEGV, during debugging, select the \uicontrol {Show a message box when
-    receiving a signal} check box.
-
-    GDB allows setting breakpoints on source lines for which no code was
-    generated. In such situations, the breakpoint is shifted to the next
-    source code line for which the code was actually generated. To reflect
-    such temporary changes by moving the breakpoint markers in the source
-    code editor, select the \uicontrol {Adjust breakpoint locations} check box.
-
-    To specify whether the dynamic or the static type of objects will be
-    displayed, select the \uicontrol {Use dynamic object type for display}
-    check box. Keep in mind that choosing the dynamic type might be slower.
-
-    To allow reading the user's default .gdbinit file on debugger startup,
-    select the \uicontrol {Load .gdbinit file on startup} check box.
-
-    To use the default GDB pretty printers installed in your system
-    or linked to the libraries your application uses, select the
-    \uicontrol {Load system GDB pretty printers} check box.
-
-    By default, GDB shows AT&T style disassembly. To switch to the Intel style,
-    select the \uicontrol {Use Intel style disassembly} check box.
-
-    To execute GDB commands after GDB has been started, but before the debugged
-    program is started or attached, and before the debugging helpers are
-    initialized, enter them in the \uicontrol {Additional Startup Commands}
-    field.
-
-    To execute GDB commands after GDB has successfully attached to remote
-    targets, enter them in the \uicontrol {Additional Attach Commands} field.
-    You can add commands to further set up the target here, such as
-    \c {monitor reset} or \c {load}.
-
-    To execute simple Python commands, prefix them with \c python. To execute
-    sequences of Python commands spanning multiple lines, prepend the block
-    with \c python  on a separate line, and append \c end on a separate line.
-    To execute arbitrary Python scripts, use
-    \c {python execfile('/path/to/script.py')}.
-
-    \section3 Specifying Extended GDB Settings
-
-    To specify extended settings for GBD, select \uicontrol Tools >
-    \uicontrol Options > \uicontrol Debugger > \uicontrol {GDB Extended}.
-    The settings give access to advanced or experimental functions of GDB.
-    Enabling them may negatively impact your debugging experience, so use
-    them with care.
-
-    \image qtcreator-gdb-extended-options.png "GDB Extended options"
-
-    To use asynchronous mode to control the inferior, select the
-    respective check box.
-
-    To add common paths to locations of debug information, such as
-    \c {/usr/src/debug}, when starting GDB, select the
-    \uicontrol {Use common locations for debug information} check box.
-
-    To stop when \c qWarning, \c qFatal, or \c abort is called, select the
-    respective check box.
-
-    To enable stepping backwards, select the \uicontrol {Enable reverse
-    debugging} check box. This feature is very slow and unstable on the
-    GDB side. It exhibits unpredictable behavior when going backwards over
-    system calls and is very likely to destroy your debugging session.
-
-    To keep debugging all children after a fork, select the
-    \uicontrol {Debug all child processes} check box.
+    By default, a non-responsive GDB process is terminated after 20 seconds.
+    To increase the timeout in the \uicontrol {GDB timeout} field, select
+    \uicontrol Tools > \uicontrol Options > \uicontrol Debugger >
+    \uicontrol GDB. For more information about settings that you can specify
+    to manage the GDB process, see \l{Specifying GDB Settings} and
+    \l{Specifying Extended GDB Settings}.
 
     \section3 Using CDB
 
@@ -544,6 +486,10 @@
             \li  Click \uicontrol OK to start debugging.
 
     \endlist
+
+    To specify settings for managing the CDB process, select \uicontrol Tools >
+    \uicontrol Options > \uicontrol Debugger > \uicontrol CDB. For more
+    information, see \l{Specifying CDB Settings}.
 */
 
 
@@ -608,7 +554,7 @@
     program you are debugging. The availability of views depends on whether
     you are debugging C++ or QML. Frequently used views are shown by
     default and rarely used ones are hidden. To change the default settings,
-    select \uicontrol Window > \uicontrol Views, and then select views to
+    select \uicontrol View > \uicontrol Views, and then select views to
     display or hide. Alternatively, you can enable or disable views from the
     context menu of the title bar of any visible debugger view.
 
@@ -616,10 +562,10 @@
 
     You can drag and drop the views in \QC to new positions on the screen. The
     size and position of views are saved for future sessions. Select
-    \uicontrol Window > \uicontrol Views > \uicontrol {Reset to Default Layout}
+    \uicontrol View > \uicontrol Views > \uicontrol {Reset to Default Layout}
     to reset the views to their original sizes and positions.
 
-    To save space on the screen, select \uicontrol Window > \uicontrol Views >
+    To save space on the screen, select \uicontrol View > \uicontrol Views >
     \uicontrol {Automatically Hide View Titlebars}.
 
     To show and hide columns in views, toggle \uicontrol {Show Column} in
@@ -676,6 +622,33 @@
 
     It is also possible to continue executing the program until the current
     function completes or jump to an arbitrary position in the current function.
+
+    \section2 Stepping Into Code
+
+    When using GDB as the debugging backend, you can compress several steps
+    into one step for less noisy debugging. For more information, see
+    \l{Specifying GDB Settings}.
+
+    The extended GDB settings provide the option to step backwards in code,
+    but this option should be used with care, as it is slow and unstable on the
+    GDB side. For more information, see \l{Specifying Extended GDB Settings}.
+
+   \section2 Customizing Debug Views
+
+    You can change the appearance and behavior of the debug views by specifying
+    settings in \uicontrol Options > \uicontrol Debugger. For example, you can:
+
+    \list
+        \li Use alternating row colors in debug views.
+        \li Adopt font size changes from the main editor.
+        \li Have tooltips displayed in the main editor while you are debugging.
+        \li Close temporary source and memory views and switch to the previously
+            used \QC mode when the debugger exits.
+        \li Bring \QC to the foreground when the debugged application is
+            interrupted.
+    \endlist
+
+    For more information, see \l{Specifying Debugger Settings}.
 
     \include creator-debugger-common.qdocinc debugger-breakpoints
     \include creator-debugger-common.qdocinc debugger-call-stack-trace
@@ -772,6 +745,12 @@
 
     By default, the \uicontrol Modules view is hidden.
 
+    When using CDB as debug backend, you can specify that the debugger should
+    break when application modules are loaded or unloaded. To enable breaking
+    for the specified modules, select \uicontrol Tools > \uicontrol Options >
+    \uicontrol Debugger > \uicontrol CDB. For more information, see
+    \l{Specifying CDB Settings}.
+
     \section2 Viewing Source Files
 
     The \uicontrol {Source Files} view lists all the source files included in
@@ -781,6 +760,11 @@
 
     Right-click the view to open a context menu that contains menu items for
     reloading data and opening files.
+
+    To enable the debugger to step into the code and display the source code
+    when using a copy of the source tree at a location different from the one
+    at which the libraries were built, you can map source paths to target
+    paths. For more information, see \l{Mapping Source Paths}.
 
     By default, the \uicontrol {Source Files} view is hidden.
 
@@ -797,6 +781,10 @@
     \uicontrol Debug > \uicontrol {Operate by Instruction} while the debugger is
     running. Alternatively, click the \inlineimage debugger_singleinstructionmode.png
     (\uicontrol {Operate by Instruction}) tool button on the debugger tool bar.
+
+    By default, GDB shows AT&T style disassembly. To switch to the Intel style,
+    select \uicontrol Tools > \uicontrol Options > \uicontrol Debugger >
+    \uicontrol GDB > \uicontrol {Use Intel style disassembly}.
 
     \section2 Viewing and Editing Register State
 
@@ -830,6 +818,8 @@
     \l{https://sourceware.org/gdb/onlinedocs/gdb/Core-File-Generation.html}.
 
     \endomit
+
+    \include creator-debugger-settings.qdocinc debugger-settings
 */
 
 
@@ -878,7 +868,7 @@
 
     \QC uses Python scripts to translate raw memory contents and type information
     data from native debugger backends (GDB, LLDB, and CDB are currently supported)
-    into the form presented to the user in the  \uicontrol {Locals} and
+    into the form presented to the user in the \uicontrol {Locals} and
     \uicontrol {Expressions} views.
 
     Unlike GDB's
@@ -888,6 +878,41 @@
     native debugging backend. That is, the same code can be used with GDB on
     Linux, LLDB on macOS, and CDB on Windows, or any other platform on which at
     least one of the three supported backends is available.
+
+    To use the default GDB pretty printers installed in your system or linked
+    to the libraries your application uses, select \uicontrol Options >
+    \uicontrol Debugger > \uicontrol GDB > \uicontrol {Load system GDB pretty
+    printers}. For more information, see \l{Specifying GDB Settings}.
+
+    \section2 Customizing Built-In Debugging Helpers
+
+    You can have commands executed after built-in debugging helpers have
+    been loaded and fully initialized. To load additional debugging helpers or
+    modify existing ones, select \uicontrol Tools > \uicontrol Options >
+    \uicontrol Debugger > \uicontrol {Locals & Expressions}, and enter the
+    commands in the \uicontrol {Debugging Helper Customization} field.
+
+    \image qtcreator-debugging-helper-options.png
+
+    If you receive error messages about receiving signals when using GDB, you
+    can specify \l{https://sourceware.org/gdb/onlinedocs/gdb/Signals.html}
+    {GDB commands} for handling the signals. For example, you can tell GDB to
+    ignore the \c SIGSTOP signal if you receive the following error message:
+    \c {The inferior stopped because it received a signal from the operating
+    system. Signal name: SIGSTOP}.
+
+    To stop GDB from handling the \c SIGSTOP signal, add the following commands
+    to the \uicontrol {Debugging Helper Customization} field:
+
+    \badcode
+    handle SIGSTOP nopass
+    handle SIGSTOP nostop
+    \endcode
+
+    To display a message box as soon as your application receives a signal
+    during debugging, select \uicontrol Tools > \uicontrol Options >
+    \uicontrol Debugger > \uicontrol GDB > \uicontrol {Show a message box
+    when receiving a signal}.
 
     \section2 Adding Custom Debugging Helpers
 
@@ -935,9 +960,6 @@
             \uicontrol Tools > \uicontrol Options > \uicontrol Debugger >
             \uicontrol {Locals & Expressions} >
             \uicontrol {Extra Debugging Helpers}.
-
-            \image qtcreator-debugging-helper-options.png
-
     \endlist
 
     The custom debugging helpers will be automatically picked up from
@@ -981,7 +1003,7 @@
         \li \c value of type \c Value, wrapping either a
             \l{https://sourceware.org/gdb/onlinedocs/gdb/Values-From-Inferior.html}
             {gdb.Value} or an
-            \l{http://lldb.llvm.org/cpp_reference/html/classlldb_1_1SBValue.html}
+            \l{https://lldb.llvm.org/cpp_reference/classlldb_1_1SBValue.html}
             {lldb.SBValue}.
 
     \endlist
@@ -1072,11 +1094,14 @@
     not to generate the wire format directly, but to use the abstraction
     layer provided by the Python Dumper classes, specifically the \c{Dumper}
     class itself, and the \c{Dumper:Value} and \c{Dumper:Type} abstractions.
-
     These provide a complete framework to take care of the \c iname and \c addr
     fields, to handle children of simple types, references, pointers, enums, and
     known and unknown structs, as well as some convenience functions to handle
     common situations.
+
+    When using CDB as debugger backend, you can enable the Python dumper by
+    selecting \uicontrol Tools > \uicontrol Options > \uicontrol Debugger >
+    \uicontrol CDB > \uicontrol {Use Python dumper}.
 
     \section3 Dumper Class
 
@@ -1096,7 +1121,6 @@
             with SubItem(self, name):
                 self.putValue(value)
                 self.putType("int")
-                self.putNumChild(0)
             \endcode
 
         \li \c{putBoolItem(self, name, value)} - Equivalent to:
@@ -1104,7 +1128,6 @@
             with SubItem(self, name):
                 self.putValue(value)
                 self.putType("bool")
-                self.putNumChild(0)
             \endcode
 
         \li \c{putCallItem(self, name, value, func, *args)} - Uses the native
@@ -1168,10 +1191,12 @@
 
         \li \c{putBetterType(self, type)} - Overrides the last recorded \c type.
 
+        \li \c{putExpandable(self)} - Announces the existence of child items
+            for the current value. The default are no children.
+
         \li \c{putNumChild(self, numchild)} - Announces the existence
             (\c numchild > 0) or non-existence of child items for the current
-            value. If \c putNumChild is not explicitly called, the
-            existence of child items is implied.
+            value.
 
         \li \c{putValue(self, value, encoding = None)} - Appends the file
             \c {value=''}, optionally followed by the field \c {valueencoding=''}.
@@ -1273,7 +1298,7 @@
         \li \c{bitsize(self)} - Returns the size of an object of this type in
             bits.
 
-        \li \c{(alignment(self)} - Returns the required alignment for objects of
+        \li \c{alignment(self)} - Returns the required alignment for objects of
             this type in bytes.
 
         \li \c{deference(self)} - Returns the dereferences type for pointer
@@ -1362,8 +1387,8 @@
         \li \c{pointer(self)} - Returns an interpretation of this value as a
             pointer in the current address space.
 
-        \li \c{members(self)} - Returns a list of \c{Dumper.Value} objects
-            representing the base objects and data members of this value.
+        \li \c{members(self, includeBases)} - Returns a list of \c{Dumper.Value}
+            objects representing the base objects and data members of this value.
 
         \li \c{dereference(self)} - For values describing pointers, returns the
             dereferenced value, and \c None otherwise.
@@ -1478,14 +1503,14 @@
         \li Make sure the debugger is set up properly. For more information,
             see \l{Setting Up Debugger}.
 
-        \li In the \uicontrol Debug mode, select \uicontrol Window >
+        \li In the \uicontrol Debug mode, select \uicontrol View >
             \uicontrol Views > \uicontrol {Debugger Log} to open the
             \uicontrol {Debugger Log} view. Browse the contents of the pane on
             the right hand side to find out what went wrong. Always attach the
             contents of the pane to debugger-related questions to the \QC
-            mailing list (qt-creator@trolltech.com) or paste them to
-            \l{http://creator.pastebin.com}{creator.pastebin.com} before asking
-            questions in the IRC (on the #qt-creator channel at FreeNode).
+            mailing list (qt-creator@qt-project.org) or paste them to a
+            \l{Pasting and Fetching Code Snippets}{code pasting service} before
+            asking questions in the IRC (on the #qt-creator channel at FreeNode).
 
     \endlist
 

@@ -79,7 +79,7 @@ public:
 
     Interpreter toInterpreter()
     {
-        return {m_currentId, m_name->text(), FilePath::fromUserInput(m_executable->path())};
+        return {m_currentId, m_name->text(), FilePath::fromUserInput(m_executable->filePath().toString())};
     }
     QLineEdit *m_name = nullptr;
     PathChooser *m_executable = nullptr;
@@ -123,9 +123,7 @@ InterpreterOptionsWidget::InterpreterOptionsWidget(const QList<Interpreter> &int
         }
         return {};
     });
-
-    for (const Interpreter &interpreter : interpreters)
-        m_model.appendItem(interpreter);
+    m_model.setAllData(interpreters);
 
     auto mainLayout = new QVBoxLayout();
     auto layout = new QHBoxLayout();
@@ -167,8 +165,8 @@ void InterpreterOptionsWidget::apply()
     }
 
     QList<Interpreter> interpreters;
-    for (const ListItem<Interpreter> *treeItem : m_model)
-        interpreters << treeItem->itemData;
+    for (const TreeItem *treeItem : m_model)
+        interpreters << static_cast<const ListItem<Interpreter> *>(treeItem)->itemData;
     PythonSettings::setInterpreter(interpreters, m_defaultId);
 }
 
@@ -308,11 +306,9 @@ void InterpreterOptionsWidget::makeDefault()
 {
     const QModelIndex &index = m_view.currentIndex();
     if (index.isValid()) {
-        QModelIndex defaultIndex;
-        if (auto *defaultItem = m_model.findItemByData(
-                [this](const Interpreter &interpreter) { return interpreter.id == m_defaultId; })) {
-            defaultIndex = m_model.indexForItem(defaultItem);
-        }
+        QModelIndex defaultIndex = m_model.findIndex([this](const Interpreter &interpreter) {
+            return interpreter.id == m_defaultId;
+        });
         m_defaultId = m_model.itemAt(index.row())->itemData.id;
         emit m_model.dataChanged(index, index, {Qt::FontRole});
         if (defaultIndex.isValid())

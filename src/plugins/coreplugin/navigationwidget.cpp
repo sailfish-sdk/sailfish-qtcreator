@@ -31,7 +31,6 @@
 #include "modemanager.h"
 #include "actionmanager/actionmanager.h"
 #include "actionmanager/command.h"
-#include "id.h"
 #include "imode.h"
 
 #include <utils/qtcassert.h>
@@ -47,6 +46,8 @@
 #include <QStandardItemModel>
 
 Q_DECLARE_METATYPE(Core::INavigationWidgetFactory *)
+
+using namespace Utils;
 
 namespace Core {
 

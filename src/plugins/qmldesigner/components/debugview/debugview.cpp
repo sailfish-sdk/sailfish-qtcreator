@@ -29,9 +29,10 @@
 #include <qmldesignerplugin.h>
 
 #include <bindingproperty.h>
-#include <signalhandlerproperty.h>
 #include <nodeabstractproperty.h>
 #include <nodelistproperty.h>
+#include <nodemetainfo.h>
+#include <signalhandlerproperty.h>
 #include <variantproperty.h>
 
 #include <qmlitemnode.h>
@@ -234,6 +235,36 @@ void DebugView::selectedNodesChanged(const QList<ModelNode> &selectedNodes /*sel
 
         message << lineBreak;
 
+        for (const SignalHandlerProperty &property : selectedNode.signalProperties())
+            message << property << lineBreak;
+
+        message << lineBreak;
+
+        if (selectedNode.metaInfo().isValid()) {
+            for (const NodeMetaInfo &metaInfo : selectedNode.metaInfo().classHierarchy())
+                message << metaInfo.typeName() << lineBreak;
+
+            message << lineBreak;
+            message << selectedNode.metaInfo().typeName();
+            message << lineBreak;
+
+            message << "Node Source" << selectedNode.nodeSource();
+            message << lineBreak;
+
+            message << "Is Component" << selectedNode.isComponent();
+            message << lineBreak;
+
+            message << "Node Source Type" << selectedNode.nodeSourceType();
+            message << lineBreak;
+
+            message << lineBreak;
+
+            for (const PropertyName &name : selectedNode.metaInfo().slotNames())
+                message << name << " ";
+
+            message << lineBreak;
+        }
+
         const QHash<PropertyName, QVariant> data = selectedNode.auxiliaryData();
 
         PropertyNameList names = data.keys();
@@ -408,10 +439,7 @@ void DebugView::instancesChildrenChanged(const QVector<ModelNode> & nodeList)
 
 void DebugView::customNotification(const AbstractView *view, const QString &identifier, const QList<ModelNode> &nodeList, const QList<QVariant> &data)
 {
-    if (identifier == "PuppetStatus" && data.count() == 1) {
-        m_debugViewWidget->setPuppetStatus(data.constFirst().toString());
-
-    } else if (isDebugViewEnabled()) {
+    if (isDebugViewEnabled()) {
         QTextStream message;
         QString string;
         message.setString(&string);

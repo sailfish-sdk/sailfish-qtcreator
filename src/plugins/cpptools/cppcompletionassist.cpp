@@ -424,17 +424,18 @@ IAssistProcessor *InternalCompletionAssistProvider::createProcessor() const
     return new InternalCppCompletionAssistProcessor;
 }
 
-AssistInterface *InternalCompletionAssistProvider::createAssistInterface(const QString &filePath,
-        const TextEditorWidget *textEditorWidget,
-        const LanguageFeatures &languageFeatures,
-        int position,
-        AssistReason reason) const
+AssistInterface *InternalCompletionAssistProvider::createAssistInterface(
+    const Utils::FilePath &filePath,
+    const TextEditorWidget *textEditorWidget,
+    const LanguageFeatures &languageFeatures,
+    int position,
+    AssistReason reason) const
 {
     QTC_ASSERT(textEditorWidget, return nullptr);
 
     return new CppCompletionAssistInterface(filePath,
                                             textEditorWidget,
-                                            BuiltinEditorDocumentParser::get(filePath),
+                                            BuiltinEditorDocumentParser::get(filePath.toString()),
                                             languageFeatures,
                                             position,
                                             reason,
@@ -851,12 +852,12 @@ bool InternalCppCompletionAssistProcessor::accepts() const
 
         return true;
     } else {
-        // Trigger completion after three characters of a name have been typed, when not editing an existing name
+        // Trigger completion after n characters of a name have been typed, when not editing an existing name
         QChar characterUnderCursor = m_interface->characterAt(pos);
 
         if (!isValidIdentifierChar(characterUnderCursor)) {
             const int startOfName = findStartOfName(pos);
-            if (pos - startOfName >= 3) {
+            if (pos - startOfName >= TextEditorSettings::completionSettings().m_characterThreshold) {
                 const QChar firstCharacter = m_interface->characterAt(startOfName);
                 if (isValidFirstIdentifierChar(firstCharacter)) {
                     // Finally check that we're not inside a comment or string (code copied from startOfOperator)
@@ -879,9 +880,12 @@ bool InternalCppCompletionAssistProcessor::accepts() const
                                && tokens.at(1).kind() == T_IDENTIFIER) {
                         const QString &line = tc.block().text();
                         const Token &idToken = tokens.at(1);
-                        const QStringRef &identifier =
-                                line.midRef(idToken.utf16charsBegin(),
-                                            idToken.utf16charsEnd() - idToken.utf16charsBegin());
+                        const QStringView &identifier = idToken.utf16charsEnd() > line.size()
+                                                            ? QStringView(line).mid(
+                                                                idToken.utf16charsBegin())
+                                                            : QStringView(line)
+                                                                  .mid(idToken.utf16charsBegin(),
+                                                                       idToken.utf16chars());
                         if (identifier == QLatin1String("include")
                                 || identifier == QLatin1String("include_next")
                                 || (m_interface->languageFeatures().objCEnabled && identifier == QLatin1String("import"))) {
@@ -1092,7 +1096,7 @@ int InternalCppCompletionAssistProcessor::startCompletionHelper()
 
     int line = 0, column = 0;
     Utils::Text::convertPosition(m_interface->textDocument(), startOfExpression, &line, &column);
-    const QString fileName = m_interface->fileName();
+    const QString fileName = m_interface->filePath().toString();
     return startCompletionInternal(fileName, line, column - 1, expression, endOfExpression);
 }
 
@@ -1117,7 +1121,7 @@ bool InternalCppCompletionAssistProcessor::tryObjCCompletion()
     const int startPos = tokens[start].bytesBegin() + tokens.startPosition();
     const QString expr = m_interface->textAt(startPos, m_interface->position() - startPos);
 
-    Document::Ptr thisDocument = m_interface->snapshot().document(m_interface->fileName());
+    Document::Ptr thisDocument = m_interface->snapshot().document(m_interface->filePath());
     if (!thisDocument)
         return false;
 
@@ -1260,7 +1264,7 @@ bool InternalCppCompletionAssistProcessor::completeInclude(const QTextCursor &cu
 
     // Make completion for all relevant includes
     ProjectExplorer::HeaderPaths headerPaths = m_interface->headerPaths();
-    const ProjectExplorer::HeaderPath currentFilePath(QFileInfo(m_interface->fileName()).path(),
+    const ProjectExplorer::HeaderPath currentFilePath(m_interface->filePath().toFileInfo().path(),
                                                       ProjectExplorer::HeaderPathType::User);
     if (!headerPaths.contains(currentFilePath))
         headerPaths.append(currentFilePath);
@@ -1312,7 +1316,7 @@ bool InternalCppCompletionAssistProcessor::objcKeywordsWanted() const
     if (!m_interface->languageFeatures().objCEnabled)
         return false;
 
-    const QString fileName = m_interface->fileName();
+    const QString fileName = m_interface->filePath().toString();
 
     const Utils::MimeType mt = Utils::mimeTypeForFile(fileName);
     return mt.matchesName(QLatin1String(CppTools::Constants::OBJECTIVE_C_SOURCE_MIMETYPE))

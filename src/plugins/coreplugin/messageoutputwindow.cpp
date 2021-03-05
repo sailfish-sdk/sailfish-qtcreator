@@ -54,9 +54,9 @@ MessageOutputWindow::MessageOutputWindow()
     p.setColor(QPalette::HighlightedText, activeHighlightedText);
     m_widget->setPalette(p);
 
-    connect(this, &IOutputPane::zoomIn, m_widget, &Core::OutputWindow::zoomIn);
-    connect(this, &IOutputPane::zoomOut, m_widget, &Core::OutputWindow::zoomOut);
-    connect(this, &IOutputPane::resetZoom, m_widget, &Core::OutputWindow::resetZoom);
+    connect(this, &IOutputPane::zoomInRequested, m_widget, &Core::OutputWindow::zoomIn);
+    connect(this, &IOutputPane::zoomOutRequested, m_widget, &Core::OutputWindow::zoomOut);
+    connect(this, &IOutputPane::resetZoomRequested, m_widget, &Core::OutputWindow::resetZoom);
     connect(this, &IOutputPane::fontChanged, m_widget, &OutputWindow::setBaseFont);
     connect(this, &IOutputPane::wheelZoomEnabledChanged, m_widget, &OutputWindow::setWheelZoomEnabled);
 
@@ -105,13 +105,9 @@ QString MessageOutputWindow::displayName() const
     return tr("General Messages");
 }
 
-void MessageOutputWindow::visibilityChanged(bool /*b*/)
-{
-}
-
 void MessageOutputWindow::append(const QString &text)
 {
-    m_widget->appendText(text);
+    m_widget->appendMessage(text, Utils::DebugFormat);
 }
 
 int MessageOutputWindow::priorityInStatusBar() const

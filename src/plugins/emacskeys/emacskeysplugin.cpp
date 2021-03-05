@@ -48,6 +48,15 @@ extern void qt_set_sequence_auto_mnemonic(bool enable);
 QT_END_NAMESPACE
 
 using namespace Core;
+using namespace Utils;
+
+namespace {
+QString plainSelectedText(const QTextCursor &cursor)
+{
+    // selectedText() returns U+2029 (PARAGRAPH SEPARATOR) instead of newline
+    return cursor.selectedText().replace(QChar::ParagraphSeparator, QLatin1Char('\n'));
+}
+}
 
 namespace EmacsKeys {
 namespace Internal {
@@ -216,7 +225,7 @@ void EmacsKeysPlugin::copy()
 
     m_currentState->beginOwnAction();
     QTextCursor cursor = m_currentEditorWidget->textCursor();
-    QApplication::clipboard()->setText(cursor.selectedText());
+    QApplication::clipboard()->setText(plainSelectedText(cursor));
     cursor.clearSelection();
     m_currentEditorWidget->setTextCursor(cursor);
     m_currentState->setMark(-1);
@@ -230,7 +239,7 @@ void EmacsKeysPlugin::cut()
 
     m_currentState->beginOwnAction();
     QTextCursor cursor = m_currentEditorWidget->textCursor();
-    QApplication::clipboard()->setText(cursor.selectedText());
+    QApplication::clipboard()->setText(plainSelectedText(cursor));
     cursor.removeSelectedText();
     m_currentState->setMark(-1);
     m_currentState->endOwnAction(KeysActionOther);
@@ -268,9 +277,9 @@ void EmacsKeysPlugin::killWord()
     cursor.movePosition(QTextCursor::NextWord, QTextCursor::KeepAnchor);
     if (m_currentState->lastAction() == KeysActionKillWord) {
         QApplication::clipboard()->setText(
-            QApplication::clipboard()->text() + cursor.selectedText());
+            QApplication::clipboard()->text() + plainSelectedText(cursor));
     } else {
-        QApplication::clipboard()->setText(cursor.selectedText());
+        QApplication::clipboard()->setText(plainSelectedText(cursor));
     }
     cursor.removeSelectedText();
     m_currentState->endOwnAction(KeysActionKillWord);
@@ -291,9 +300,9 @@ void EmacsKeysPlugin::killLine()
     }
     if (m_currentState->lastAction() == KeysActionKillLine) {
         QApplication::clipboard()->setText(
-            QApplication::clipboard()->text() + cursor.selectedText());
+            QApplication::clipboard()->text() + plainSelectedText(cursor));
     } else {
-        QApplication::clipboard()->setText(cursor.selectedText());
+        QApplication::clipboard()->setText(plainSelectedText(cursor));
     }
     cursor.removeSelectedText();
     m_currentState->endOwnAction(KeysActionKillLine);

@@ -38,9 +38,11 @@
 #include <QRegularExpression>
 
 using namespace Core;
+using namespace Utils;
 
 /*!
     \class Core::ILocatorFilter
+    \inheaderfile coreplugin/locator/ilocatorfilter.h
     \inmodule QtCreator
 
     \brief The ILocatorFilter class adds a locator filter.

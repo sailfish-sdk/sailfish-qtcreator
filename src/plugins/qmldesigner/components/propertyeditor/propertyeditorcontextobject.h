@@ -78,7 +78,7 @@ public:
 
     QQmlPropertyMap* backendValues() const { return m_backendValues; }
 
-    Q_INVOKABLE QString convertColorToString(const QColor &color);
+    Q_INVOKABLE QString convertColorToString(const QVariant &color);
     Q_INVOKABLE QColor colorFromString(const QString &colorString);
     Q_INVOKABLE QString translateFunction();
 
@@ -86,13 +86,18 @@ public:
 
     Q_INVOKABLE void toogleExportAlias();
 
+    Q_INVOKABLE void goIntoComponent();
+
     Q_INVOKABLE void changeTypeName(const QString &typeName);
     Q_INVOKABLE void insertKeyframe(const QString &propertyName);
 
     Q_INVOKABLE void hideCursor();
     Q_INVOKABLE void restoreCursor();
+    Q_INVOKABLE void holdCursorInPlace();
 
     Q_INVOKABLE QStringList styleNamesForFamily(const QString &family);
+
+    Q_INVOKABLE QStringList allStatesForId(const QString &id);
 
     int majorVersion() const;
     int majorQtQuickVersion() const;

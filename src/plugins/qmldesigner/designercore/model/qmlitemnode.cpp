@@ -44,7 +44,12 @@
 #include <QFileInfo>
 #include <QDir>
 
+#include <utils/algorithm.h>
 #include <utils/qtcassert.h>
+
+#ifndef QMLDESIGNER_TEST
+#include <designermcumanager.h>
+#endif
 
 namespace QmlDesigner {
 
@@ -73,46 +78,50 @@ QmlItemNode QmlItemNode::createQmlItemNode(AbstractView *view,
     return QmlItemNode(createQmlObjectNode(view, itemLibraryEntry, position, parentQmlItemNode));
 }
 
-QmlItemNode QmlItemNode::createQmlItemNodeFromImage(AbstractView *view, const QString &imageName, const QPointF &position, QmlItemNode parentQmlItemNode)
+QmlItemNode QmlItemNode::createQmlItemNodeFromImage(AbstractView *view, const QString &imageName, const QPointF &position, QmlItemNode parentQmlItemNode, bool executeInTransaction)
 {
     if (!parentQmlItemNode.isValid())
         parentQmlItemNode = QmlItemNode(view->rootModelNode());
 
     NodeAbstractProperty parentProperty = parentQmlItemNode.defaultNodeAbstractProperty();
 
-    return QmlItemNode::createQmlItemNodeFromImage(view, imageName, position, parentProperty);
+    return QmlItemNode::createQmlItemNodeFromImage(view, imageName, position, parentProperty, executeInTransaction);
 }
 
-QmlItemNode QmlItemNode::createQmlItemNodeFromImage(AbstractView *view, const QString &imageName, const QPointF &position, NodeAbstractProperty parentproperty)
+QmlItemNode QmlItemNode::createQmlItemNodeFromImage(AbstractView *view, const QString &imageName, const QPointF &position, NodeAbstractProperty parentproperty, bool executeInTransaction)
 {
     QmlItemNode newQmlItemNode;
 
-    if (parentproperty.isValid() && view->model()->hasNodeMetaInfo("QtQuick.Image")) {
-        view->executeInTransaction("QmlItemNode::createQmlItemNodeFromImage", [=, &newQmlItemNode, &parentproperty](){
-            NodeMetaInfo metaInfo = view->model()->metaInfo("QtQuick.Image");
-            QList<QPair<PropertyName, QVariant> > propertyPairList;
-            propertyPairList.append({PropertyName("x"), QVariant(qRound(position.x()))});
-            propertyPairList.append({PropertyName("y"), QVariant(qRound(position.y()))});
+    auto doCreateQmlItemNodeFromImage = [=, &newQmlItemNode, &parentproperty]() {
+        NodeMetaInfo metaInfo = view->model()->metaInfo("QtQuick.Image");
+        QList<QPair<PropertyName, QVariant> > propertyPairList;
+        propertyPairList.append({PropertyName("x"), QVariant(qRound(position.x()))});
+        propertyPairList.append({PropertyName("y"), QVariant(qRound(position.y()))});
 
-            QString relativeImageName = imageName;
+        QString relativeImageName = imageName;
 
-            //use relative path
-            if (QFileInfo::exists(view->model()->fileUrl().toLocalFile())) {
-                QDir fileDir(QFileInfo(view->model()->fileUrl().toLocalFile()).absolutePath());
-                relativeImageName = fileDir.relativeFilePath(imageName);
-                propertyPairList.append({PropertyName("source"), QVariant(relativeImageName)});
-            }
+        //use relative path
+        if (QFileInfo::exists(view->model()->fileUrl().toLocalFile())) {
+            QDir fileDir(QFileInfo(view->model()->fileUrl().toLocalFile()).absolutePath());
+            relativeImageName = fileDir.relativeFilePath(imageName);
+            propertyPairList.append({PropertyName("source"), QVariant(relativeImageName)});
+        }
 
-            newQmlItemNode = QmlItemNode(view->createModelNode("QtQuick.Image", metaInfo.majorVersion(), metaInfo.minorVersion(), propertyPairList));
-            parentproperty.reparentHere(newQmlItemNode);
+        newQmlItemNode = QmlItemNode(view->createModelNode("QtQuick.Image", metaInfo.majorVersion(), metaInfo.minorVersion(), propertyPairList));
+        parentproperty.reparentHere(newQmlItemNode);
 
-            newQmlItemNode.setId(view->generateNewId(QLatin1String("image")));
+        QFileInfo fi(relativeImageName);
+        newQmlItemNode.setId(view->generateNewId(fi.baseName(), "image"));
 
-            newQmlItemNode.modelNode().variantProperty("fillMode").setEnumeration("Image.PreserveAspectFit");
+        newQmlItemNode.modelNode().variantProperty("fillMode").setEnumeration("Image.PreserveAspectFit");
 
-            Q_ASSERT(newQmlItemNode.isValid());
-        });
-    }
+        Q_ASSERT(newQmlItemNode.isValid());
+    };
+
+    if (executeInTransaction)
+        view->executeInTransaction("QmlItemNode::createQmlItemNodeFromImage", doCreateQmlItemNodeFromImage);
+    else
+        doCreateQmlItemNodeFromImage();
 
     return newQmlItemNode;
 }
@@ -280,6 +289,41 @@ bool QmlItemNode::modelIsResizable() const
             && !modelNode().hasBindingProperty("height")
             && itemIsResizable(modelNode())
             && !modelIsInLayout();
+}
+
+static bool isMcuRotationAllowed(QString itemName, bool hasChildren)
+{
+#ifndef QMLDESIGNER_TEST
+    const QString propName = "rotation";
+    const DesignerMcuManager &manager = DesignerMcuManager::instance();
+    if (manager.isMCUProject()) {
+        if (manager.allowedItemProperties().contains(itemName)) {
+            const DesignerMcuManager::ItemProperties properties =
+                    manager.allowedItemProperties().value(itemName);
+            if (properties.properties.contains(propName)) {
+                if (hasChildren)
+                    return properties.allowChildren;
+                return true;
+            }
+        }
+
+        if (manager.bannedItems().contains(itemName))
+            return false;
+
+        if (manager.bannedProperties().contains(propName))
+            return false;
+    }
+#endif
+
+    return true;
+}
+
+bool QmlItemNode::modelIsRotatable() const
+{
+    return !modelNode().hasBindingProperty("rotation")
+            && itemIsResizable(modelNode())
+            && !modelIsInLayout()
+            && isMcuRotationAllowed(QString::fromUtf8(modelNode().type()), hasChildren());
 }
 
 bool QmlItemNode::modelIsInLayout() const
@@ -531,6 +575,30 @@ void QmlItemNode::setSize(const QSizeF &size)
         setVariantProperty("height", qRound(size.height()));
 }
 
+void QmlItemNode::setRotation(const qreal &angle)
+{
+    if (!hasBindingProperty("rotation"))
+        setVariantProperty("rotation", angle);
+}
+
+qreal QmlItemNode::rotation() const
+{
+    if (hasProperty("rotation") && !hasBindingProperty("rotation")) {
+        return modelNode().variantProperty("rotation").value().toReal();
+    }
+
+    return 0.0;
+}
+
+QVariant QmlItemNode::transformOrigin()
+{
+    if (hasProperty("transformOrigin")) {
+        return modelNode().variantProperty("transformOrigin").value();
+    }
+
+    return {};
+}
+
 bool QmlFlowItemNode::isValid() const
 {
     return isValidQmlFlowItemNode(modelNode());
@@ -600,6 +668,7 @@ void QmlFlowActionAreaNode::assignTargetFlowItem(const QmlFlowTargetNode &flowIt
 
 QmlFlowItemNode QmlFlowActionAreaNode::flowItemParent() const
 {
+    QTC_ASSERT(modelNode().hasParentProperty(), return QmlFlowItemNode({}));
     return modelNode().parentProperty().parentModelNode();
 }
 
@@ -611,32 +680,6 @@ void QmlFlowActionAreaNode::destroyTarget()
         QmlObjectNode(targetTransition()).destroy();
         modelNode().removeProperty("target");
     }
-}
-
-ModelNode QmlFlowActionAreaNode::decisionNodeForTransition(const ModelNode &transition) const
-{
-    ModelNode target = targetTransition();
-
-    if (target.isValid() && target.hasMetaInfo() && QmlVisualNode::isFlowTransition(target)) {
-
-        ModelNode finalTarget = target.bindingProperty("to").resolveToModelNode();
-
-        if (finalTarget.isValid() && finalTarget.hasMetaInfo() && QmlVisualNode::isFlowDecision(finalTarget)) {
-            if (finalTarget.hasBindingProperty("targets")
-                    && finalTarget.bindingProperty("targets").resolveToModelNodeList().contains(transition))
-                return finalTarget;
-        }
-        QmlFlowViewNode flowView(view()->rootModelNode());
-        if (flowView.isValid()) {
-            for (const ModelNode target : flowView.decicions()) {
-                if (target.hasBindingProperty("targets")
-                        && target.bindingProperty("targets").resolveToModelNodeList().contains(transition))
-                    return target;
-            }
-        }
-    }
-
-    return {};
 }
 
 bool QmlFlowViewNode::isValid() const
@@ -664,9 +707,7 @@ QList<QmlFlowItemNode> QmlFlowViewNode::flowItems() const
 
 ModelNode QmlFlowViewNode::addTransition(const QmlFlowTargetNode &from, const QmlFlowTargetNode &to)
 {
-    ModelNode transition = view()->createModelNode("FlowView.FlowTransition", 1, 0);
-
-    nodeListProperty("flowTransitions").reparentHere(transition);
+    ModelNode transition = createTransition();
 
     QmlFlowTargetNode f = from;
     QmlFlowTargetNode t = to;
@@ -684,8 +725,6 @@ const QList<ModelNode> QmlFlowViewNode::transitions() const
         return modelNode().nodeListProperty("flowTransitions").toModelNodeList();
 
     return {};
-
-
 }
 
 const QList<ModelNode> QmlFlowViewNode::wildcards() const
@@ -706,13 +745,12 @@ const QList<ModelNode> QmlFlowViewNode::decicions() const
 
 QList<ModelNode> QmlFlowViewNode::transitionsForTarget(const ModelNode &modelNode)
 {
-    QList<ModelNode> list;
-    for (const ModelNode &transition : transitions()) {
-        if (transition.hasBindingProperty("to")
-                && transition.bindingProperty("to").resolveToModelNode() == modelNode)
-            list.append(transition);
-    }
-    return list;
+    return transitionsForProperty("to", modelNode);
+}
+
+QList<ModelNode> QmlFlowViewNode::transitionsForSource(const ModelNode &modelNode)
+{
+    return transitionsForProperty("from", modelNode);
 }
 
 void QmlFlowViewNode::removeDanglingTransitions()
@@ -732,6 +770,9 @@ void QmlFlowTargetNode::assignTargetItem(const QmlFlowTargetNode &node)
 {
     if (QmlFlowActionAreaNode::isValidQmlFlowActionAreaNode(modelNode())) {
         QmlFlowActionAreaNode(modelNode()).assignTargetFlowItem(node);
+
+    } else if (isFlowItem()) {
+        flowView().addTransition(modelNode(), node);
     } else if (isFlowWildcard()) {
         destroyTargets();
         ModelNode transition = flowView().addTransition(ModelNode(),
@@ -782,12 +823,38 @@ QmlFlowViewNode QmlFlowTargetNode::flowView() const
     return view()->rootModelNode();
 }
 
+ModelNode QmlFlowItemNode::decisionNodeForTransition(const ModelNode &transition)
+{
+    ModelNode target = transition;
+
+    if (target.isValid() && target.hasMetaInfo() && QmlVisualNode::isFlowTransition(target)) {
+
+        ModelNode finalTarget = target.bindingProperty("to").resolveToModelNode();
+
+        if (finalTarget.isValid() && finalTarget.hasMetaInfo() && QmlVisualNode::isFlowDecision(finalTarget)) {
+            if (finalTarget.hasBindingProperty("targets")
+                    && finalTarget.bindingProperty("targets").resolveToModelNodeList().contains(transition))
+                return finalTarget;
+        }
+        QmlFlowViewNode flowView(transition.view()->rootModelNode());
+        if (flowView.isValid()) {
+            for (const ModelNode &target : flowView.decicions()) {
+                if (target.hasBindingProperty("targets")
+                        && target.bindingProperty("targets").resolveToModelNodeList().contains(transition))
+                    return target;
+            }
+        }
+    }
+
+    return {};
+}
+
 ModelNode QmlFlowTargetNode::findSourceForDecisionNode() const
 {
     if (!isFlowDecision())
         return {};
 
-    for (const ModelNode transition : flowView().transitionsForTarget(modelNode())) {
+    for (const ModelNode &transition : flowView().transitionsForTarget(modelNode())) {
         if (transition.hasBindingProperty("from")) {
             const ModelNode source = transition.bindingProperty("from").resolveToModelNode();
             if (source.isValid()) {
@@ -828,6 +895,81 @@ void QmlFlowViewNode::removeAllTransitions()
 
     if (hasProperty("flowTransitions"))
         removeProperty("flowTransitions");
+}
+
+void QmlFlowViewNode::setStartFlowItem(const QmlFlowItemNode &flowItem)
+{
+    QTC_ASSERT(flowItem.isValid(), return);
+    QmlFlowItemNode item = flowItem;
+
+    ModelNode transition;
+
+    for (const ModelNode &node : transitionsForSource(modelNode()))
+        transition = node;
+    if (!transition.isValid())
+        transition = createTransition();
+
+    transition.bindingProperty("from").setExpression(modelNode().validId());
+    transition.bindingProperty("to").setExpression(item.validId());
+}
+
+ModelNode QmlFlowViewNode::createTransition()
+{
+    ModelNode transition = view()->createModelNode("FlowView.FlowTransition", 1, 0);
+    nodeListProperty("flowTransitions").reparentHere(transition);
+
+    return transition;
+}
+
+QList<ModelNode> QmlFlowViewNode::transitionsForProperty(const PropertyName &propertyName,
+                                                         const ModelNode &modelNode)
+{
+    QList<ModelNode> list;
+    for (const ModelNode &transition : transitions()) {
+        if (transition.hasBindingProperty(propertyName)
+                && transition.bindingProperty(propertyName).resolveToModelNode() == modelNode)
+            list.append(transition);
+    }
+    return list;
+}
+
+PropertyNameList QmlFlowViewNode::st_mouseSignals = { "clicked", "doubleClicked", "pressAndHold",
+                                                      "pressed", "released", "wheel" };
+
+QList<QmlConnections> QmlFlowViewNode::getAssociatedConnections(const ModelNode &node)
+{
+    if (!node.isValid())
+        return {};
+
+    AbstractView *view = node.view();
+
+    return Utils::transform<QList<QmlConnections>>(Utils::filtered(view->allModelNodes(),
+                                                                   [&node](const ModelNode &n) {
+        const QmlConnections connection(n);
+        if (!connection.isValid())
+            return false;
+
+        const QList<SignalHandlerProperty> &signalProperties = connection.signalProperties();
+        for (const SignalHandlerProperty &property : signalProperties) {
+            auto signalWithoutPrefix = SignalHandlerProperty::prefixRemoved(property.name());
+            const QStringList sourceComponents = property.source().split(".");
+            QString sourceId;
+            QString sourceProperty;
+            if (sourceComponents.size() > 1) {
+                sourceId = sourceComponents[0];
+                sourceProperty = sourceComponents[1];
+            }
+
+            if (st_mouseSignals.contains(signalWithoutPrefix)
+                && sourceId == node.id()
+                && sourceProperty == "trigger()")
+                return true;
+        }
+
+        return false;
+    }), [](const ModelNode &n) {
+        return QmlConnections(n);
+    });
 }
 
 } //QmlDesigner

@@ -35,6 +35,7 @@
 #include <utils/hostosinfo.h>
 #include <utils/macroexpander.h>
 #include <utils/qtcassert.h>
+#include <utils/stringutils.h>
 #include <utils/synchronousprocess.h>
 #include <utils/utilsicons.h>
 #include <utils/winutils.h>
@@ -79,7 +80,7 @@ static QString getConfigurationOfGdbCommand(const FilePath &command)
 static QString extractGdbTargetAbiStringFromGdbOutput(const QString &gdbOutput)
 {
     const auto outputLines = gdbOutput.split('\n');
-    const auto whitespaceSeparatedTokens = outputLines.join(' ').split(' ', QString::SkipEmptyParts);
+    const auto whitespaceSeparatedTokens = outputLines.join(' ').split(' ', Qt::SkipEmptyParts);
 
     const QString targetKey{"--target="};
     const QString targetValue = Utils::findOrDefault(whitespaceSeparatedTokens,
@@ -107,8 +108,8 @@ DebuggerItem::DebuggerItem(const QVariant &id)
 DebuggerItem::DebuggerItem(const QVariantMap &data)
 {
     m_id = data.value(DEBUGGER_INFORMATION_ID).toString();
-    m_command = FilePath::fromUserInput(data.value(DEBUGGER_INFORMATION_COMMAND).toString());
-    m_workingDirectory = FilePath::fromUserInput(data.value(DEBUGGER_INFORMATION_WORKINGDIRECTORY).toString());
+    m_command = FilePath::fromVariant(data.value(DEBUGGER_INFORMATION_COMMAND));
+    m_workingDirectory = FilePath::fromVariant(data.value(DEBUGGER_INFORMATION_WORKINGDIRECTORY));
     m_unexpandedDisplayName = data.value(DEBUGGER_INFORMATION_DISPLAYNAME).toString();
     m_isAutoDetected = data.value(DEBUGGER_INFORMATION_AUTODETECTED, false).toBool();
     m_version = data.value(DEBUGGER_INFORMATION_VERSION).toString();
@@ -170,6 +171,18 @@ void DebuggerItem::reinitializeFromFile()
         return;
     }
 
+    // Prevent calling lldb on Windows because the lldb from the llvm package is linked against
+    // python but does not contain a python dll.
+    if (HostOsInfo::isWindowsHost() && m_command.fileName().startsWith("lldb")) {
+        QString errorMessage;
+        m_version = winGetDLLVersion(WinDLLFileVersion,
+                                     fileInfo.absoluteFilePath(),
+                                     &errorMessage);
+        m_engineType = LldbEngineType;
+        m_abis = Abi::abisOfBinary(m_command);
+        return;
+    }
+
     SynchronousProcess proc;
     SynchronousProcessResponse response = proc.runBlocking({m_command, {version}});
     if (response.result != SynchronousProcessResponse::Finished) {
@@ -223,12 +236,14 @@ void DebuggerItem::reinitializeFromFile()
         m_abis = Abi::abisOfBinary(m_command);
 
         // Version
-        if (output.startsWith(("lldb version "))) { // Linux typically.
+        // Self-build binaries also emit clang and llvm revision.
+        const QString line = output.split('\n')[0];
+        if (line.startsWith(("lldb version "))) { // Linux typically.
             int pos1 = int(strlen("lldb version "));
-            int pos2 = output.indexOf(' ', pos1);
-            m_version = output.mid(pos1, pos2 - pos1);
-        } else if (output.startsWith("lldb-") || output.startsWith("LLDB-")) { // Mac typically.
-            m_version = output.mid(5);
+            int pos2 = line.indexOf(' ', pos1);
+            m_version = line.mid(pos1, pos2 - pos1);
+        } else if (line.startsWith("lldb-") || line.startsWith("LLDB-")) { // Mac typically.
+            m_version = line.mid(5);
         }
         return;
     }
@@ -309,8 +324,8 @@ QVariantMap DebuggerItem::toMap() const
     QVariantMap data;
     data.insert(DEBUGGER_INFORMATION_DISPLAYNAME, m_unexpandedDisplayName);
     data.insert(DEBUGGER_INFORMATION_ID, m_id);
-    data.insert(DEBUGGER_INFORMATION_COMMAND, m_command.toString());
-    data.insert(DEBUGGER_INFORMATION_WORKINGDIRECTORY, m_workingDirectory.toString());
+    data.insert(DEBUGGER_INFORMATION_COMMAND, m_command.toVariant());
+    data.insert(DEBUGGER_INFORMATION_WORKINGDIRECTORY, m_workingDirectory.toVariant());
     data.insert(DEBUGGER_INFORMATION_ENGINETYPE, int(m_engineType));
     data.insert(DEBUGGER_INFORMATION_AUTODETECTED, m_isAutoDetected);
     data.insert(DEBUGGER_INFORMATION_VERSION, m_version);

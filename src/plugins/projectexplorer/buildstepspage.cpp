@@ -31,24 +31,23 @@
 #include "projectexplorericons.h"
 
 #include <coreplugin/icore.h>
-#include <coreplugin/coreicons.h>
 
-#include <utils/qtcassert.h>
 #include <utils/detailswidget.h>
 #include <utils/hostosinfo.h>
-#include <utils/theme/theme.h>
+#include <utils/qtcassert.h>
 
-#include <QLabel>
-#include <QPushButton>
-#include <QMenu>
-#include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QToolButton>
+#include <QLabel>
+#include <QMenu>
 #include <QMessageBox>
+#include <QPushButton>
+#include <QToolButton>
+#include <QVBoxLayout>
 
-using namespace ProjectExplorer;
-using namespace ProjectExplorer::Internal;
 using namespace Utils;
+
+namespace ProjectExplorer {
+namespace Internal {
 
 ToolWidget::ToolWidget(QWidget *parent) : FadingPanel(parent)
 {
@@ -171,7 +170,7 @@ void ToolWidget::setDownVisible(bool b)
 BuildStepsWidgetData::BuildStepsWidgetData(BuildStep *s) :
     step(s), widget(nullptr), detailsWidget(nullptr)
 {
-    widget = s->createConfigWidget();
+    widget = s->doCreateConfigWidget();
     Q_ASSERT(widget);
 
     detailsWidget = new DetailsWidget;
@@ -182,7 +181,7 @@ BuildStepsWidgetData::BuildStepsWidgetData(BuildStep *s) :
 
     detailsWidget->setToolWidget(toolWidget);
     detailsWidget->setContentsMargins(0, 0, 0, 1);
-    detailsWidget->setSummaryText(widget->summaryText());
+    detailsWidget->setSummaryText(s->summaryText());
 }
 
 BuildStepsWidgetData::~BuildStepsWidgetData()
@@ -225,65 +224,28 @@ BuildStepListWidget::~BuildStepListWidget()
     m_buildStepsData.clear();
 }
 
-void BuildStepListWidget::updateSummary()
-{
-    auto widget = qobject_cast<BuildStepConfigWidget *>(sender());
-    if (widget) {
-        foreach (const BuildStepsWidgetData *s, m_buildStepsData) {
-            if (s->widget == widget) {
-                s->detailsWidget->setSummaryText(widget->summaryText());
-                break;
-            }
-        }
-    }
-}
-
-void BuildStepListWidget::updateEnabledState()
-{
-    auto step = qobject_cast<BuildStep *>(sender());
-    if (step) {
-        foreach (const BuildStepsWidgetData *s, m_buildStepsData) {
-            if (s->step == step) {
-                s->toolWidget->setBuildStepEnabled(step->enabled());
-                break;
-            }
-        }
-    }
-}
-
 void BuildStepListWidget::updateAddBuildStepMenu()
 {
-    QMap<QString, QPair<Core::Id, BuildStepFactory *> > map;
-    //Build up a list of possible steps and save map the display names to the (internal) name and factories.
-    for (BuildStepFactory *factory : BuildStepFactory::allBuildStepFactories()) {
-        if (factory->canHandle(m_buildStepList)) {
-            const BuildStepInfo &info = factory->stepInfo();
-            if (info.flags & BuildStepInfo::Uncreatable)
-                continue;
-            if ((info.flags & BuildStepInfo::UniqueStep) && m_buildStepList->contains(info.id))
-                continue;
-            map.insert(info.displayName, qMakePair(info.id, factory));
-        }
-    }
-
-    // Ask the user which one to add
     QMenu *menu = m_addButton->menu();
     menu->clear();
-    if (!map.isEmpty()) {
-        QMap<QString, QPair<Core::Id, BuildStepFactory *> >::const_iterator it, end;
-        end = map.constEnd();
-        for (it = map.constBegin(); it != end; ++it) {
-            QAction *action = menu->addAction(it.key());
-            BuildStepFactory *factory = it.value().second;
-            Core::Id id = it.value().first;
 
-            connect(action, &QAction::triggered, [id, factory, this]() {
-                BuildStep *newStep = factory->create(m_buildStepList, id);
-                QTC_ASSERT(newStep, return);
-                int pos = m_buildStepList->count();
-                m_buildStepList->insertStep(pos, newStep);
-            });
-        }
+    for (BuildStepFactory *factory : BuildStepFactory::allBuildStepFactories()) {
+        if (!factory->canHandle(m_buildStepList))
+            continue;
+
+        const BuildStepInfo &info = factory->stepInfo();
+        if (info.flags & BuildStepInfo::Uncreatable)
+            continue;
+
+        if ((info.flags & BuildStepInfo::UniqueStep) && m_buildStepList->contains(info.id))
+            continue;
+
+        QAction *action = menu->addAction(info.displayName);
+        connect(action, &QAction::triggered, this, [factory, this] {
+            BuildStep *newStep = factory->create(m_buildStepList);
+            QTC_ASSERT(newStep, return);
+            m_buildStepList->appendStep(newStep);
+        });
     }
 }
 
@@ -297,11 +259,14 @@ void BuildStepListWidget::addBuildStep(int pos)
 
     m_vbox->insertWidget(pos, s->detailsWidget);
 
-    connect(s->widget, &BuildStepConfigWidget::updateSummary,
-            this, &BuildStepListWidget::updateSummary);
+    connect(s->step, &BuildStep::updateSummary, this, [s] {
+        s->detailsWidget->setSummaryText(s->step->summaryText());
+    });
 
-    connect(s->step, &BuildStep::enabledChanged,
-            this, &BuildStepListWidget::updateEnabledState);
+    connect(s->step, &BuildStep::enabledChanged, this, [s] {
+        s->toolWidget->setBuildStepEnabled(s->step->enabled());
+    });
+
 
     // Expand new build steps by default
     const bool expand = newStep->hasUserExpansionState()
@@ -381,10 +346,11 @@ void BuildStepListWidget::updateBuildStepButtonsState()
         connect(s->toolWidget, &ToolWidget::removeClicked,
                 this, [this, i] {
             if (!m_buildStepList->removeStep(i)) {
-                QMessageBox::warning(Core::ICore::mainWindow(),
+                QMessageBox::warning(Core::ICore::dialogParent(),
                                      tr("Removing Step failed"),
                                      tr("Cannot remove build step while building"),
-                                     QMessageBox::Ok, QMessageBox::Ok);
+                                     QMessageBox::Ok,
+                                     QMessageBox::Ok);
             }
         });
 
@@ -404,3 +370,6 @@ void BuildStepListWidget::updateBuildStepButtonsState()
         s->toolWidget->setUpVisible(m_buildStepList->count() != 1);
     }
 }
+
+} // Internal
+} // ProjectExplorer

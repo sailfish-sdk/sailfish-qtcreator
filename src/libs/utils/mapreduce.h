@@ -78,7 +78,7 @@ public:
             m_futureInterface.setProgressRange(0, MAX_PROGRESS);
         connect(&m_selfWatcher, &QFutureWatcher<void>::canceled,
                 this, &MapReduceBase::cancelAll);
-        m_selfWatcher.setFuture(futureInterface.future());
+        m_selfWatcher.setFuture(QFuture<void>(futureInterface.future()));
     }
 
     void exec()
@@ -149,7 +149,7 @@ protected:
             return;
         const double progressPerMap = MAX_PROGRESS / double(m_size);
         double progress = m_successfullyFinishedMapCount * progressPerMap;
-        foreach (const QFutureWatcher<MapResult> *watcher, m_mapWatcher) {
+        for (const QFutureWatcher<MapResult> *watcher : qAsConst(m_mapWatcher)) {
             if (watcher->progressMinimum() != watcher->progressMaximum()) {
                 const double range = watcher->progressMaximum() - watcher->progressMinimum();
                 progress += (watcher->progressValue() - watcher->progressMinimum()) / range * progressPerMap;
@@ -160,7 +160,7 @@ protected:
 
     void cancelAll()
     {
-        foreach (QFutureWatcher<MapResult> *watcher, m_mapWatcher)
+        for (QFutureWatcher<MapResult> *watcher : qAsConst(m_mapWatcher))
             watcher->cancel();
     }
 

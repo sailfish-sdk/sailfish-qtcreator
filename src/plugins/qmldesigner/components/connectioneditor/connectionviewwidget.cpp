@@ -38,6 +38,11 @@
 #include <designersettings.h>
 #include <qmldesignerplugin.h>
 
+#include <nodemetainfo.h>
+
+#include <bindingeditor/actioneditor.h>
+#include <bindingeditor/bindingeditor.h>
+
 #include <coreplugin/coreconstants.h>
 #include <utils/fileutils.h>
 #include <utils/utilsicons.h>
@@ -47,8 +52,6 @@
 #include <QMenu>
 #include <QShortcut>
 
-#include <bindingeditor/actioneditor.h>
-
 namespace QmlDesigner {
 
 namespace Internal {
@@ -57,29 +60,14 @@ ConnectionViewWidget::ConnectionViewWidget(QWidget *parent) :
     QFrame(parent),
     ui(new Ui::ConnectionViewWidget)
 {
-    m_actionEditor = new QmlDesigner::ActionEditor(this);
-    m_deleteShortcut = new QShortcut(this);
-    QObject::connect(m_actionEditor, &QmlDesigner::ActionEditor::accepted,
-                     [&]() {
-        if (m_actionEditor->hasModelIndex()) {
-            ConnectionModel *connectionModel = qobject_cast<ConnectionModel *>(ui->connectionView->model());
-            if (connectionModel->connectionView()->isWidgetEnabled()
-                    && (connectionModel->rowCount() > m_actionEditor->modelIndex().row()))
-            {
-                SignalHandlerProperty signalHandler =
-                        connectionModel->signalHandlerPropertyForRow(m_actionEditor->modelIndex().row());
-                signalHandler.setSource(m_actionEditor->bindingValue());
-            }
-            m_actionEditor->resetModelIndex();
-        }
+    m_connectionEditor = new QmlDesigner::ActionEditor(this);
+    m_bindingEditor = new QmlDesigner::BindingEditor(this);
+    m_dynamicEditor = new QmlDesigner::BindingEditor(this);
 
-        m_actionEditor->hideWidget();
-    });
-    QObject::connect(m_actionEditor, &QmlDesigner::ActionEditor::rejected,
-                     [&]() {
-        m_actionEditor->resetModelIndex();
-        m_actionEditor->hideWidget();
-    });
+    editorForConnection();
+    editorForBinding();
+    editorForDynamic();
+
 
     setWindowTitle(tr("Connections", "Title of connection view"));
     ui->setupUi(this);
@@ -123,9 +111,10 @@ ConnectionViewWidget::ConnectionViewWidget(QWidget *parent) :
 
 ConnectionViewWidget::~ConnectionViewWidget()
 {
-    delete m_actionEditor;
+    delete m_connectionEditor;
+    delete m_bindingEditor;
+    delete m_dynamicEditor;
     delete ui;
-    delete m_deleteShortcut;
 }
 
 void ConnectionViewWidget::setBindingModel(BindingModel *model)
@@ -152,30 +141,134 @@ void ConnectionViewWidget::setConnectionModel(ConnectionModel *model)
 
 void ConnectionViewWidget::contextMenuEvent(QContextMenuEvent *event)
 {
-    if (currentTab() != ConnectionTab || ui->connectionView == nullptr)
-        return;
+    auto tablePos = [&](QTableView *targetView) {
+        // adjusting qpoint to the qtableview entrances:
+        QPoint posInTable(targetView->mapFromGlobal(mapToGlobal(event->pos())));
+        posInTable.ry() -= targetView->horizontalHeader()->height();
+        return posInTable;
+    };
 
-    //adjusting qpoint to the qtableview entrances:
-    QPoint posInTable(ui->connectionView->mapFromGlobal(mapToGlobal(event->pos())));
-    posInTable = QPoint(posInTable.x(), posInTable.y() - ui->connectionView->horizontalHeader()->height());
+    switch (currentTab()) {
+    case ConnectionTab:
+        if (ui->connectionView != nullptr) {
+            QTableView *targetView = ui->connectionView;
+            // making sure that we have source column in our hands:
+            const QModelIndex index = targetView->indexAt(tablePos(targetView)).siblingAtColumn(ConnectionModel::SourceRow);
+            if (!index.isValid())
+                return;
 
-    //making sure that we have source column in our hands:
-    QModelIndex index = ui->connectionView->indexAt(posInTable).siblingAtColumn(ConnectionModel::SourceRow);
-    if (!index.isValid())
-        return;
+            QMenu menu(this);
 
-    QMenu menu(this);
+            menu.addAction(tr("Open Connection Editor"), [&]() {
+                auto *connectionModel = qobject_cast<ConnectionModel *>(targetView->model());
+                const SignalHandlerProperty property = connectionModel->signalHandlerPropertyForRow(index.row());
+                const ModelNode node = property.parentModelNode();
 
-    menu.addAction(tr("Open Connection Editor"), [&]() {
-        if (index.isValid()) {
-            m_actionEditor->showWidget(mapToGlobal(event->pos()).x(), mapToGlobal(event->pos()).y());
-            m_actionEditor->setBindingValue(index.data().toString());
-            m_actionEditor->setModelIndex(index);
-            m_actionEditor->updateWindowName();
+                m_connectionEditor->showWidget();
+                m_connectionEditor->setConnectionValue(index.data().toString());
+                m_connectionEditor->setModelIndex(index);
+                m_connectionEditor->setModelNode(node);
+                m_connectionEditor->prepareConnections();
+                m_connectionEditor->updateWindowName();
+            });
+
+            QMap<QString, QVariant> data;
+            data["ModelNode"] = index.siblingAtColumn(ConnectionModel::TargetModelNodeRow).data();
+            data["Signal"] = index.siblingAtColumn(ConnectionModel::TargetPropertyNameRow).data();
+            DesignerActionManager &designerActionManager = QmlDesignerPlugin::instance()->designerActionManager();
+            const auto actions = designerActionManager.actionsForTargetView(
+                ActionInterface::TargetView::ConnectionEditor);
+
+            for (auto actionInterface : actions) {
+                auto *action = actionInterface->action();
+                action->setData(data);
+                menu.addAction(action);
+            }
+
+            menu.exec(event->globalPos());
         }
-    });
+        break;
 
-    menu.exec(event->globalPos());
+    case BindingTab:
+        if (ui->bindingView != nullptr) {
+            QTableView *targetView = bindingTableView();
+            const QModelIndex index = targetView->indexAt(tablePos(targetView)).siblingAtColumn(BindingModel::SourcePropertyNameRow);
+            if (!index.isValid())
+                return;
+
+            QMenu menu(this);
+
+            menu.addAction(tr("Open Binding Editor"), [&]() {
+                BindingModel *bindingModel = qobject_cast<BindingModel*>(targetView->model());
+                const BindingProperty property = bindingModel->bindingPropertyForRow(index.row());
+
+                if (!property.isValid() || !property.isBindingProperty())
+                    return;
+
+                const ModelNode node = property.parentModelNode();
+                const TypeName typeName = property.isDynamic() ? property.dynamicTypeName()
+                                                               : node.metaInfo().propertyTypeName(property.name());
+
+                m_bindingEditor->showWidget();
+                m_bindingEditor->setBindingValue(property.expression());
+                m_bindingEditor->setModelNode(node);
+                m_bindingEditor->setBackendValueTypeName(typeName);
+                m_bindingEditor->prepareBindings();
+                m_bindingEditor->updateWindowName();
+
+                m_bindingIndex = index;
+            });
+            menu.exec(event->globalPos());
+        }
+        break;
+
+    case DynamicPropertiesTab:
+        if (ui->dynamicPropertiesView != nullptr) {
+            QTableView *targetView = dynamicPropertiesTableView();
+            const QModelIndex index = targetView->indexAt(tablePos(targetView)).siblingAtColumn(DynamicPropertiesModel::PropertyValueRow);
+            if (!index.isValid())
+                return;
+
+            DynamicPropertiesModel *propertiesModel = qobject_cast<DynamicPropertiesModel *>(targetView->model());
+            QMenu menu(this);
+
+            menu.addAction(tr("Open Binding Editor"), [&]() {
+                AbstractProperty abstractProperty = propertiesModel->abstractPropertyForRow(index.row());
+                if (!abstractProperty.isValid())
+                    return;
+
+                const ModelNode node = abstractProperty.parentModelNode();
+                QString newExpression;
+
+                if (abstractProperty.isBindingProperty())
+                    newExpression = abstractProperty.toBindingProperty().expression();
+                else if (abstractProperty.isVariantProperty())
+                    newExpression = abstractProperty.toVariantProperty().value().toString();
+                else
+                    return;
+
+                m_dynamicEditor->showWidget();
+                m_dynamicEditor->setBindingValue(newExpression);
+                m_dynamicEditor->setModelNode(node);
+                m_dynamicEditor->setBackendValueTypeName(abstractProperty.dynamicTypeName());
+                m_dynamicEditor->prepareBindings();
+                m_dynamicEditor->updateWindowName();
+
+                m_dynamicIndex = index;
+            });
+
+            menu.addAction(tr("Reset Property"), [&]() {
+                propertiesModel->resetProperty(propertiesModel->abstractPropertyForRow(index.row()).name());
+            });
+
+            menu.exec(event->globalPos());
+        }
+        break;
+    default:
+        break;
+
+    }
+
 }
 
 void ConnectionViewWidget::setDynamicPropertiesModel(DynamicPropertiesModel *model)
@@ -215,9 +308,11 @@ QList<QToolButton *> ConnectionViewWidget::createToolBarWidgets()
     connect(buttons.constLast(), &QAbstractButton::clicked, this, &ConnectionViewWidget::removeButtonClicked);
     connect(this, &ConnectionViewWidget::setEnabledRemoveButton, buttons.constLast(), &QWidget::setEnabled);
 
-    m_deleteShortcut->setKey(Qt::Key_Delete);
-    m_deleteShortcut->setContext(Qt::WidgetWithChildrenShortcut);
-    connect(m_deleteShortcut, &QShortcut::activated, this, &ConnectionViewWidget::removeButtonClicked);
+    QAction *deleteShortcut = new QAction(this);
+    this->addAction(deleteShortcut);
+    deleteShortcut->setShortcuts({QKeySequence::Delete, QKeySequence::Backspace});
+    deleteShortcut->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    connect(deleteShortcut, &QAction::triggered, this, &ConnectionViewWidget::removeButtonClicked);
 
     return buttons;
 }
@@ -356,6 +451,123 @@ void ConnectionViewWidget::addButtonClicked()
     }
 
     invalidateButtonStatus();
+}
+
+void ConnectionViewWidget::editorForConnection()
+{
+    QObject::connect(m_connectionEditor, &QmlDesigner::ActionEditor::accepted,
+                     [&]() {
+        if (m_connectionEditor->hasModelIndex()) {
+            ConnectionModel *connectionModel = qobject_cast<ConnectionModel *>(ui->connectionView->model());
+            if (connectionModel->connectionView()->isWidgetEnabled()
+                && (connectionModel->rowCount() > m_connectionEditor->modelIndex().row())) {
+                connectionModel->connectionView()
+                    ->executeInTransaction("ConnectionView::setSignal", [this, connectionModel]() {
+                        SignalHandlerProperty signalHandler
+                            = connectionModel->signalHandlerPropertyForRow(
+                                m_connectionEditor->modelIndex().row());
+                        signalHandler.setSource(m_connectionEditor->connectionValue());
+                    });
+            }
+            m_connectionEditor->resetModelIndex();
+        }
+
+        m_connectionEditor->hideWidget();
+    });
+    QObject::connect(m_connectionEditor, &QmlDesigner::ActionEditor::rejected,
+                     [&]() {
+        m_connectionEditor->resetModelIndex();
+        m_connectionEditor->hideWidget();
+    });
+}
+
+void ConnectionViewWidget::editorForBinding()
+{
+    QObject::connect(m_bindingEditor, &QmlDesigner::BindingEditor::accepted,
+                     [&]() {
+        BindingModel *bindingModel = qobject_cast<BindingModel *>(bindingTableView()->model());
+        QString newValue = m_bindingEditor->bindingValue().trimmed();
+
+        if (m_bindingIndex.isValid()) {
+            if (bindingModel->connectionView()->isWidgetEnabled()
+                && (bindingModel->rowCount() > m_bindingIndex.row())) {
+                bindingModel->connectionView()->executeInTransaction(
+                    "ConnectionView::setBindingProperty", [this, bindingModel, newValue]() {
+                        BindingProperty property = bindingModel->bindingPropertyForRow(
+                            m_bindingIndex.row());
+
+                        if (property.isValid()) {
+                            if (property.isBindingProperty()) {
+                                if (property.isDynamic()) {
+                                    property
+                                        .setDynamicTypeNameAndExpression(property.dynamicTypeName(),
+                                                                         newValue);
+                                } else {
+                                    property.setExpression(newValue);
+                                }
+                            }
+                        }
+                    });
+            }
+        }
+
+        m_bindingIndex = QModelIndex();
+        m_bindingEditor->hideWidget();
+    });
+    QObject::connect(m_bindingEditor, &QmlDesigner::BindingEditor::rejected,
+                     [&]() {
+        m_bindingIndex = QModelIndex(); //invalidating index
+        m_bindingEditor->hideWidget();
+    });
+}
+
+void ConnectionViewWidget::editorForDynamic()
+{
+    QObject::connect(m_dynamicEditor, &QmlDesigner::BindingEditor::accepted,
+                     [&]() {
+        DynamicPropertiesModel *propertiesModel = qobject_cast<DynamicPropertiesModel *>(dynamicPropertiesTableView()->model());
+        QString newValue = m_dynamicEditor->bindingValue().trimmed();
+
+        if (m_dynamicIndex.isValid()) {
+            if (propertiesModel->connectionView()->isWidgetEnabled()
+                && (propertiesModel->rowCount() > m_dynamicIndex.row())) {
+                propertiesModel->connectionView()->executeInTransaction(
+                    "ConnectionView::setBinding", [this, propertiesModel, newValue]() {
+                        AbstractProperty abProp = propertiesModel->abstractPropertyForRow(
+                            m_dynamicIndex.row());
+
+                        if (abProp.isValid()) {
+                            if (abProp.isBindingProperty()) {
+                                BindingProperty property = abProp.toBindingProperty();
+                                property.setDynamicTypeNameAndExpression(property.dynamicTypeName(),
+                                                                         newValue);
+                            }
+
+                            //if it's a variant property, then we remove it and replace with binding
+                            else if (abProp.isVariantProperty()) {
+                                VariantProperty property = abProp.toVariantProperty();
+                                PropertyName name = property.name();
+                                TypeName type = property.dynamicTypeName();
+
+                                BindingProperty newProperty = propertiesModel
+                                                                  ->replaceVariantWithBinding(name);
+                                if (newProperty.isValid()) {
+                                    newProperty.setDynamicTypeNameAndExpression(type, newValue);
+                                }
+                            }
+                        }
+                    });
+            }
+        }
+
+        m_dynamicIndex = QModelIndex();
+        m_dynamicEditor->hideWidget();
+    });
+    QObject::connect(m_dynamicEditor, &QmlDesigner::BindingEditor::rejected,
+                     [&]() {
+        m_dynamicIndex = QModelIndex(); //invalidating index
+        m_dynamicEditor->hideWidget();
+    });
 }
 
 void ConnectionViewWidget::bindingTableViewSelectionChanged(const QModelIndex &current, const QModelIndex & /*previous*/)

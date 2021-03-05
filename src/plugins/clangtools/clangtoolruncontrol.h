@@ -46,8 +46,9 @@ class ClangToolRunner;
 class ProjectBuilder;
 
 struct AnalyzeUnit {
-    AnalyzeUnit(const QString &file, const QStringList &options)
-        : file(file), arguments(options) {}
+    AnalyzeUnit(const FileInfo &fileInfo,
+                const Utils::FilePath &clangResourceDir,
+                const QString &clangVersion);
 
     QString file;
     QStringList arguments; // without file itself and "-o somePath"
@@ -75,7 +76,7 @@ public:
 
     int filesAnalyzed() const { return m_filesAnalyzed.size(); }
     int filesNotAnalyzed() const { return m_filesNotAnalyzed.size(); }
-    int totalFilesToAnalyze() const { return m_fileInfos.size(); }
+    int totalFilesToAnalyze() const { return int(m_fileInfos.size()); }
 
 signals:
     void buildFailed();
@@ -93,7 +94,8 @@ private:
     QList<RunnerCreator> runnerCreators();
     template <class T> ClangToolRunner *createRunner();
 
-    AnalyzeUnits unitsToAnalyze();
+    AnalyzeUnits unitsToAnalyze(const Utils::FilePath &clangIncludeDir,
+                                const QString &clangVersion);
     void analyzeNextFile();
 
     void handleFinished();
@@ -115,7 +117,7 @@ private:
     CppTools::ProjectInfo m_projectInfoBeforeBuild;
     CppTools::ProjectInfo m_projectInfo;
     QString m_targetTriple;
-    Core::Id m_toolChainType;
+    Utils::Id m_toolChainType;
 
     QFutureInterface<void> m_progress;
     QueueItems m_queue;

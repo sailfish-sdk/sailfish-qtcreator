@@ -30,6 +30,7 @@
 #include <utils/synchronousprocess.h>
 
 #include <QFileDialog>
+#include <QRegularExpression>
 #include <QMessageBox>
 
 using namespace Utils;
@@ -53,6 +54,20 @@ AndroidCreateKeystoreCertificate::AndroidCreateKeystoreCertificate(QWidget *pare
             this, &AndroidCreateKeystoreCertificate::checkCertificateAlias);
     connect(ui->countryLineEdit, &QLineEdit::textChanged,
             this, &AndroidCreateKeystoreCertificate::checkCountryCode);
+    connect(ui->keystoreShowPassCheckBox, &QCheckBox::stateChanged,
+            this, &AndroidCreateKeystoreCertificate::keystoreShowPassStateChanged);
+    connect(ui->certificateShowPassCheckBox, &QCheckBox::stateChanged,
+            this, &AndroidCreateKeystoreCertificate::certificateShowPassStateChanged);
+    connect(ui->samePasswordCheckBox, &QCheckBox::stateChanged,
+            this, &AndroidCreateKeystoreCertificate::samePasswordStateChanged);
+    connect(ui->buttonBox, &QDialogButtonBox::accepted,
+            this, &AndroidCreateKeystoreCertificate::buttonBoxAccepted);
+    connect(ui->buttonBox, &QDialogButtonBox::rejected,
+            this, &QDialog::reject);
+    connect(ui->keystorePassLineEdit,
+            &QLineEdit::editingFinished,
+            ui->keystoreRetypePassLineEdit,
+            QOverload<>::of(&QLineEdit::setFocus));
 }
 
 AndroidCreateKeystoreCertificate::~AndroidCreateKeystoreCertificate()
@@ -128,7 +143,7 @@ bool AndroidCreateKeystoreCertificate::checkCertificateAlias()
 
 bool AndroidCreateKeystoreCertificate::checkCountryCode()
 {
-    if (!ui->countryLineEdit->text().contains(QRegExp(QLatin1String("[A-Z]{2}")))) {
+    if (!ui->countryLineEdit->text().contains(QRegularExpression("[A-Z]{2}"))) {
         ui->infoLabel->setText(tr("<span style=\" color:#ff0000;\">Invalid country code</span>"));
         return false;
     }
@@ -137,19 +152,19 @@ bool AndroidCreateKeystoreCertificate::checkCountryCode()
     return true;
 }
 
-void AndroidCreateKeystoreCertificate::on_keystoreShowPassCheckBox_stateChanged(int state)
+void AndroidCreateKeystoreCertificate::keystoreShowPassStateChanged(int state)
 {
     ui->keystorePassLineEdit->setEchoMode(state == Qt::Checked ? QLineEdit::Normal : QLineEdit::Password);
     ui->keystoreRetypePassLineEdit->setEchoMode(ui->keystorePassLineEdit->echoMode());
 }
 
-void AndroidCreateKeystoreCertificate::on_certificateShowPassCheckBox_stateChanged(int state)
+void AndroidCreateKeystoreCertificate::certificateShowPassStateChanged(int state)
 {
     ui->certificatePassLineEdit->setEchoMode(state == Qt::Checked ? QLineEdit::Normal : QLineEdit::Password);
     ui->certificateRetypePassLineEdit->setEchoMode(ui->certificatePassLineEdit->echoMode());
 }
 
-void AndroidCreateKeystoreCertificate::on_buttonBox_accepted()
+void AndroidCreateKeystoreCertificate::buttonBoxAccepted()
 {
     if (!validateUserInput())
         return;
@@ -193,7 +208,7 @@ void AndroidCreateKeystoreCertificate::on_buttonBox_accepted()
     accept();
 }
 
-void AndroidCreateKeystoreCertificate::on_samePasswordCheckBox_stateChanged(int state)
+void AndroidCreateKeystoreCertificate::samePasswordStateChanged(int state)
 {
     if (state == Qt::Checked) {
         ui->certificatePassLineEdit->setDisabled(true);

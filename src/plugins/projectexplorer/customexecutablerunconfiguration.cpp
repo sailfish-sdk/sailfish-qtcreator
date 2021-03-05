@@ -35,11 +35,11 @@
 #include "target.h"
 
 #include <coreplugin/icore.h>
-#include <coreplugin/variablechooser.h>
 
 #include <utils/detailswidget.h>
 #include <utils/pathchooser.h>
 #include <utils/stringutils.h>
+#include <utils/variablechooser.h>
 
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -63,14 +63,14 @@ CustomExecutableRunConfiguration::CustomExecutableRunConfiguration(Target *targe
     : CustomExecutableRunConfiguration(target, CUSTOM_EXECUTABLE_ID)
 {}
 
-CustomExecutableRunConfiguration::CustomExecutableRunConfiguration(Target *target, Core::Id id)
+CustomExecutableRunConfiguration::CustomExecutableRunConfiguration(Target *target, Utils::Id id)
     : RunConfiguration(target, id)
 {
     auto envAspect = addAspect<LocalEnvironmentAspect>(target);
 
     auto exeAspect = addAspect<ExecutableAspect>();
     exeAspect->setSettingsKey("ProjectExplorer.CustomExecutableRunConfiguration.Executable");
-    exeAspect->setDisplayStyle(BaseStringAspect::PathChooserDisplay);
+    exeAspect->setDisplayStyle(StringAspect::PathChooserDisplay);
     exeAspect->setHistoryCompleter("Qt.CustomExecutable.History");
     exeAspect->setExpectedKind(PathChooser::ExistingCommand);
     exeAspect->setEnvironment(envAspect->environment());

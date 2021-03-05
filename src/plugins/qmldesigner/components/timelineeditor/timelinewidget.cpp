@@ -34,6 +34,7 @@
 #include "timelinepropertyitem.h"
 #include "timelinetoolbar.h"
 #include "timelineview.h"
+#include "navigation2d.h"
 
 #include <qmldesignerplugin.h>
 #include <qmlstate.h>
@@ -58,6 +59,9 @@
 #include <QSlider>
 #include <QVBoxLayout>
 #include <QtGlobal>
+#include <QSpacerItem>
+
+#include <cmath>
 
 namespace QmlDesigner {
 
@@ -113,11 +117,12 @@ TimelineWidget::TimelineWidget(TimelineView *view)
     , m_toolbar(new TimelineToolBar(this))
     , m_rulerView(new QGraphicsView(this))
     , m_graphicsView(new QGraphicsView(this))
-    , m_scrollbar(new QScrollBar(this))
+    , m_scrollbar(new Navigation2dScrollBar(this))
     , m_statusBar(new QLabel(this))
     , m_timelineView(view)
     , m_graphicsScene(new TimelineGraphicsScene(this))
     , m_addButton(new QPushButton(this))
+    , m_onboardingContainer(new QWidget(this))
 {
     setWindowTitle(tr("Timeline", "Title of timeline view"));
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
@@ -151,6 +156,7 @@ TimelineWidget::TimelineWidget(TimelineView *view)
     m_graphicsView->setFrameShape(QFrame::NoFrame);
     m_graphicsView->setFrameShadow(QFrame::Plain);
     m_graphicsView->setLineWidth(0);
+    m_graphicsView->setVerticalScrollBar(new Navigation2dScrollBar);
     m_graphicsView->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
     m_graphicsView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
@@ -185,6 +191,50 @@ TimelineWidget::TimelineWidget(TimelineView *view)
     m_addButton->setFlat(true);
     m_addButton->setFixedSize(32, 32);
 
+
+    widgetLayout->addWidget(m_onboardingContainer);
+
+    auto *onboardingTopLabel = new QLabel(m_onboardingContainer);
+    auto *onboardingBottomLabel = new QLabel(m_onboardingContainer);
+    auto *onboardingBottomIcon = new QLabel(m_onboardingContainer);
+
+    auto *onboardingLayout = new QVBoxLayout;
+    auto *onboardingSublayout = new QHBoxLayout;
+    auto *leftSpacer = new QSpacerItem(40, 20, QSizePolicy::Expanding, QSizePolicy::Minimum);
+    auto *rightSpacer = new QSpacerItem(40, 20, QSizePolicy::Expanding, QSizePolicy::Minimum);
+    auto *topSpacer = new QSpacerItem(40, 20, QSizePolicy::Minimum, QSizePolicy::Expanding);
+    auto *bottomSpacer = new QSpacerItem(40, 20, QSizePolicy::Minimum, QSizePolicy::Expanding);
+
+    QString labelText =
+            tr("This file does not contain a timeline. <br><br> \
+            To create an animation, add a timeline by clicking the + button.");
+    onboardingTopLabel->setText(labelText);
+    onboardingTopLabel->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
+
+    m_onboardingContainer->setLayout(onboardingLayout);
+    onboardingLayout->setContentsMargins(0, 0, 0, 0);
+    onboardingLayout->setSpacing(0);
+    onboardingLayout->addSpacerItem(topSpacer);
+    onboardingLayout->addWidget(onboardingTopLabel);
+    onboardingLayout->addLayout(onboardingSublayout);
+
+    onboardingSublayout->setContentsMargins(0, 0, 0, 0);
+    onboardingSublayout->setSpacing(0);
+    onboardingSublayout->addSpacerItem(leftSpacer);
+
+    onboardingBottomLabel->setAlignment(Qt::AlignRight | Qt::AlignTop);
+    onboardingBottomLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    onboardingSublayout->addWidget(onboardingBottomLabel);
+    onboardingBottomLabel->setText(tr("To edit the timeline settings, click "));
+
+    onboardingBottomIcon->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    onboardingBottomIcon->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    onboardingSublayout->addWidget(onboardingBottomIcon);
+    onboardingBottomIcon->setPixmap(TimelineIcons::ANIMATION.pixmap());
+
+    onboardingSublayout->addSpacerItem(rightSpacer);
+    onboardingLayout->addSpacerItem(bottomSpacer);
+
     widgetLayout->addLayout(contentLayout);
     this->setLayout(widgetLayout);
 
@@ -201,6 +251,14 @@ TimelineWidget::TimelineWidget(TimelineView *view)
     connect(m_addButton, &QPushButton::clicked, this, [this]() {
         m_timelineView->addNewTimelineDialog();
     });
+
+    Navigation2dFilter *filter = new Navigation2dFilter(this, m_scrollbar);
+    connect(filter, &Navigation2dFilter::zoomChanged, [this](double scale, const QPointF& pos) {
+        int s = static_cast<int>(std::round(scale*100.));
+        double ps = m_graphicsScene->mapFromScene(pos.x());
+        m_graphicsScene->setZoom(std::clamp(m_graphicsScene->zoom() + s, 0, 100), ps);
+    });
+    installEventFilter(filter);
 }
 
 void TimelineWidget::connectToolbar()
@@ -212,10 +270,8 @@ void TimelineWidget::connectToolbar()
 
     connect(graphicsScene(), &TimelineGraphicsScene::scroll, this, &TimelineWidget::scroll);
 
-    connect(m_toolbar, &TimelineToolBar::curveChanged, this, &TimelineWidget::updateAnimationCurve);
-
-    auto setRulerScaling = [this](int val) { m_graphicsScene->setRulerScaling(val); };
-    connect(m_toolbar, &TimelineToolBar::scaleFactorChanged, setRulerScaling);
+    auto setZoomFactor = [this](int val) { m_graphicsScene->setZoom(val); };
+    connect(m_toolbar, &TimelineToolBar::scaleFactorChanged, setZoomFactor);
 
     auto setToFirstFrame = [this]() {
         graphicsScene()->setCurrentFrame(graphicsScene()->startFrame());
@@ -291,101 +347,6 @@ void TimelineWidget::scroll(const TimelineUtils::Side &side)
         m_scrollbar->setValue(m_scrollbar->value() + m_scrollbar->singleStep());
 }
 
-ModelNode getTargetNode(DesignTools::PropertyTreeItem *item, const QmlTimeline &timeline)
-{
-    if (const DesignTools::NodeTreeItem *nodeItem = item->parentNodeTreeItem()) {
-        QString targetId = nodeItem->name();
-        if (timeline.isValid()) {
-            for (auto &&target : timeline.allTargets()) {
-                if (target.displayName() == targetId)
-                    return target;
-            }
-        }
-    }
-    return ModelNode();
-}
-
-QmlTimelineKeyframeGroup timelineKeyframeGroup(QmlTimeline &timeline,
-                                               DesignTools::PropertyTreeItem *item)
-{
-    ModelNode node = getTargetNode(item, timeline);
-    if (node.isValid())
-        return timeline.keyframeGroup(node, item->name().toLatin1());
-
-    return QmlTimelineKeyframeGroup();
-}
-
-void attachEasingCurve(double frame,
-                       const QEasingCurve &curve,
-                       const QmlTimelineKeyframeGroup &group)
-{
-    ModelNode frameNode = group.keyframe(frame);
-    if (frameNode.isValid()) {
-        auto expression = EasingCurve(curve).toString();
-        frameNode.bindingProperty("easing.bezierCurve").setExpression(expression);
-    }
-}
-
-void TimelineWidget::updateAnimationCurve(DesignTools::PropertyTreeItem *item)
-{
-    QmlTimeline currentTimeline = graphicsScene()->currentTimeline();
-    QmlTimelineKeyframeGroup group = timelineKeyframeGroup(currentTimeline, item);
-
-    if (group.isValid()) {
-        ModelNode groupNode = group.modelNode();
-
-        if (groupNode.isValid()) {
-            if (item->locked())
-                groupNode.setAuxiliaryData("locked", true);
-            else
-                groupNode.removeAuxiliaryData("locked");
-
-            if (item->pinned())
-                groupNode.setAuxiliaryData("pinned", true);
-            else
-                groupNode.removeAuxiliaryData("pinned");
-
-            if (item->hasUnified())
-                groupNode.setAuxiliaryData("unified", item->unifyString());
-            else
-                groupNode.removeAuxiliaryData("unified");
-        }
-
-        auto replaceKeyframes = [&group, item, this]() {
-            m_toolbar->setBlockReflection(true);
-            for (auto frame : group.keyframes())
-                frame.destroy();
-
-            DesignTools::Keyframe previous;
-            for (auto &&frame : item->curve().keyframes()) {
-                QPointF pos = frame.position();
-                group.setValue(QVariant(pos.y()), pos.x());
-
-                if (previous.isValid()) {
-                    if (frame.interpolation() == DesignTools::Keyframe::Interpolation::Bezier) {
-                        DesignTools::CurveSegment segment(previous, frame);
-                        if (segment.isValid())
-                            attachEasingCurve(pos.x(), segment.easingCurve(), group);
-                    } else if (frame.interpolation()
-                               == DesignTools::Keyframe::Interpolation::Easing) {
-                        QVariant data = frame.data();
-                        if (data.type() == static_cast<int>(QMetaType::QEasingCurve))
-                            attachEasingCurve(pos.x(), data.value<QEasingCurve>(), group);
-                    } else if (frame.interpolation() == DesignTools::Keyframe::Interpolation::Step) {
-                        // Warning: Keyframe::Interpolation::Step not yet implemented
-                    }
-                }
-
-                previous = frame;
-            }
-            m_toolbar->setBlockReflection(false);
-        };
-
-        timelineView()->executeInTransaction("TimelineWidget::handleKeyframeReplacement",
-                                             replaceKeyframes);
-    }
-}
-
 void TimelineWidget::selectionChanged()
 {
     if (graphicsScene()->hasSelection())
@@ -444,7 +405,7 @@ void TimelineWidget::init()
 
     // setScaleFactor uses QSignalBlocker.
     m_toolbar->setScaleFactor(0);
-    m_graphicsScene->setRulerScaling(0);
+    m_graphicsScene->setZoom(0);
 }
 
 void TimelineWidget::reset()
@@ -517,11 +478,11 @@ void TimelineWidget::setTimelineId(const QString &id)
     if (m_timelineView->isAttached() && !empty) {
         m_toolbar->setCurrentTimeline(m_timelineView->modelNodeForId(id));
         m_toolbar->setCurrentState(m_timelineView->currentState().name());
-        m_timelineView->setTimelineRecording(false);
     } else {
         m_toolbar->setCurrentTimeline({});
         m_toolbar->setCurrentState({});
     }
+    m_timelineView->setTimelineRecording(false);
 }
 
 void TimelineWidget::setTimelineActive(bool b)
@@ -532,6 +493,7 @@ void TimelineWidget::setTimelineActive(bool b)
         m_rulerView->setVisible(true);
         m_scrollbar->setVisible(true);
         m_addButton->setVisible(false);
+        m_onboardingContainer->setVisible(false);
         m_graphicsView->update();
         m_rulerView->update();
     } else {
@@ -540,22 +502,42 @@ void TimelineWidget::setTimelineActive(bool b)
         m_rulerView->setVisible(false);
         m_scrollbar->setVisible(false);
         m_addButton->setVisible(true);
+        m_onboardingContainer->setVisible(true);
     }
+}
+
+void TimelineWidget::setFocus()
+{
+    m_graphicsView->setFocus();
 }
 
 void TimelineWidget::showEvent(QShowEvent *event)
 {
     Q_UNUSED(event)
+
+    m_timelineView->setEnabled(true);
+
+    if (m_timelineView->model())
+        init();
+
     graphicsScene()->setWidth(m_graphicsView->viewport()->width());
     graphicsScene()->invalidateLayout();
     graphicsScene()->invalidate();
     graphicsScene()->onShow();
+
+    QWidget::showEvent(event);
 }
 
 void TimelineWidget::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     graphicsScene()->setWidth(m_graphicsView->viewport()->width());
+}
+
+void TimelineWidget::hideEvent(QHideEvent *event)
+{
+    m_timelineView->setEnabled(false);
+    QWidget::hideEvent(event);
 }
 
 TimelineView *TimelineWidget::timelineView() const

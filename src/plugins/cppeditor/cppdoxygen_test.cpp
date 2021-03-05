@@ -204,11 +204,11 @@ void DoxygenTest::testBasic_data()
 
     QTest::newRow("cpp_styleA_indented_preserve_mixed_indention_continuation") << _(
          "\t bool preventFolding;\n"
-         "\t /// \brief a|\n"
+         "\t /// \\brief a|\n"
          "\t int a;\n"
         ) << _(
          "\t bool preventFolding;\n"
-         "\t /// \brief a\n"
+         "\t /// \\brief a\n"
          "\t /// \n"
          "\t int a;\n"
     );
@@ -294,6 +294,48 @@ void DoxygenTest::testBasic_data()
           " * @brief f\n"
           " */\n"
           "API void f();\n"
+    );
+
+    QTest::newRow("withAccessSpecifierBeforeFunction") << _(
+          "class C {\n"
+          "    /**|\n"
+          "    public: void f();\n"
+          "};\n"
+        ) << _(
+          "class C {\n"
+          "    /**\n"
+          "     * @brief f\n"
+          "     */\n"
+          "    public: void f();\n"
+          "};\n"
+    );
+
+    QTest::newRow("continuation_after_text_in_first_line") << _(
+        "bool preventFolding;\n"
+        "/*! leading comment|\n"
+        " */\n"
+        "int a;\n"
+        ) << _(
+        "bool preventFolding;\n"
+        "/*! leading comment\n"
+        " *  \n"
+        " */\n"
+        "int a;\n"
+    );
+
+    QTest::newRow("continuation_after_extra_indent") << _(
+        "bool preventFolding;\n"
+        "/*! leading comment\n"
+        " *  cont|\n"
+        " */\n"
+        "int a;\n"
+        ) << _(
+        "bool preventFolding;\n"
+        "/*! leading comment\n"
+        " *  cont\n"
+        " *  \n"
+        " */\n"
+        "int a;\n"
     );
 }
 

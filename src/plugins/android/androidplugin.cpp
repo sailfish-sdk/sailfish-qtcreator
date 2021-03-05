@@ -47,8 +47,8 @@
 #endif
 
 #include <coreplugin/icore.h>
-#include <coreplugin/infobar.h>
 #include <utils/checkablemessagebox.h>
+#include <utils/infobar.h>
 
 #include <projectexplorer/devicesupport/devicemanager.h>
 #include <projectexplorer/buildconfiguration.h>
@@ -77,8 +77,8 @@ public:
         setConfigBaseId("Qt4ProjectManager.AndroidDeployConfiguration2");
         addSupportedTargetDeviceType(Constants::ANDROID_DEVICE_TYPE);
         setDefaultDisplayName(QCoreApplication::translate("Android::Internal",
-                                                          "Deploy to Android device"));
-        addInitialStep(AndroidDeployQtStep::stepId());
+                                                          "Deploy to Android Device"));
+        addInitialStep(Constants::ANDROID_DEPLOY_QT_ID);
     }
 };
 
@@ -120,22 +120,22 @@ public:
     RunWorkerFactory runWorkerFactory{
         RunWorkerFactory::make<AndroidRunSupport>(),
         {NORMAL_RUN_MODE},
-        {runConfigFactory.id()}
+        {runConfigFactory.runConfigurationId()}
     };
     RunWorkerFactory debugWorkerFactory{
         RunWorkerFactory::make<AndroidDebugSupport>(),
         {DEBUG_RUN_MODE},
-        {runConfigFactory.id()}
+        {runConfigFactory.runConfigurationId()}
     };
     RunWorkerFactory profilerWorkerFactory{
         RunWorkerFactory::make<AndroidQmlToolingSupport>(),
         {QML_PROFILER_RUN_MODE},
-        {runConfigFactory.id()}
+        {runConfigFactory.runConfigurationId()}
     };
     RunWorkerFactory qmlPreviewWorkerFactory{
         RunWorkerFactory::make<AndroidQmlToolingSupport>(),
         {QML_PREVIEW_RUN_MODE},
-        {runConfigFactory.id()}
+        {runConfigFactory.runConfigurationId()}
     };
     RunWorkerFactory qmlPreviewWorkerFactory2{
         RunWorkerFactory::make<AndroidQmlPreviewWorker>(),
@@ -194,12 +194,12 @@ void AndroidPlugin::askUserAboutAndroidSetup()
         || !Core::ICore::infoBar()->canInfoBeAdded(kSetupAndroidSetting))
         return;
 
-    Core::InfoBarEntry info(
-        kSetupAndroidSetting,
-        tr("Would you like to configure Android options? This will ensure "
-           "Android kits can be usable and all essential packages are installed. "
-           "To do it later, select Options > Devices > Android."),
-        Core::InfoBarEntry::GlobalSuppression::Enabled);
+    Utils::InfoBarEntry
+        info(kSetupAndroidSetting,
+             tr("Would you like to configure Android options? This will ensure "
+                "Android kits can be usable and all essential packages are installed. "
+                "To do it later, select Options > Devices > Android."),
+             Utils::InfoBarEntry::GlobalSuppression::Enabled);
     info.setCustomButtonInfo(tr("Configure Android"), [this] {
         Core::ICore::infoBar()->removeInfo(kSetupAndroidSetting);
         Core::ICore::infoBar()->globallySuppressInfo(kSetupAndroidSetting);

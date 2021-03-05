@@ -28,10 +28,12 @@
 #include "clangtoolsdiagnosticview.h"
 #include "clangtoolsprojectsettings.h"
 #include "clangtoolsutils.h"
+#include "diagnosticmark.h"
 
 #include <coreplugin/fileiconprovider.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/session.h>
+#include <texteditor/textmark.h>
 #include <utils/qtcassert.h>
 #include <utils/utilsicons.h>
 
@@ -56,7 +58,7 @@ QVariant FilePathItem::data(int column, int role) const
         case Qt::DisplayRole:
             return m_filePath;
         case Qt::DecorationRole:
-            return Core::FileIconProvider::icon(m_filePath);
+            return Core::FileIconProvider::icon(QFileInfo(m_filePath));
         case Debugger::DetailedErrorView::FullTextRole:
             return m_filePath;
         default:
@@ -100,7 +102,7 @@ QDebug operator<<(QDebug debug, const Diagnostic &d)
                  ;
 }
 
-void ClangToolsDiagnosticModel::addDiagnostics(const Diagnostics &diagnostics)
+void ClangToolsDiagnosticModel::addDiagnostics(const Diagnostics &diagnostics, bool generateMarks)
 {
     const auto onFixitStatusChanged =
         [this](const QModelIndex &index, FixitStatus oldStatus, FixitStatus newStatus) {
@@ -127,7 +129,7 @@ void ClangToolsDiagnosticModel::addDiagnostics(const Diagnostics &diagnostics)
 
         // Add to file path item
         qCDebug(LOG) << "Adding diagnostic:" << d;
-        filePathItem->appendChild(new DiagnosticItem(d, onFixitStatusChanged, this));
+        filePathItem->appendChild(new DiagnosticItem(d, onFixitStatusChanged, generateMarks, this));
     }
 }
 
@@ -198,70 +200,9 @@ void ClangToolsDiagnosticModel::addWatchedPath(const QString &path)
     m_filesWatcher->addPath(path);
 }
 
-static QString fixitStatus(FixitStatus status)
+static QString lineColumnString(const Debugger::DiagnosticLocation &location)
 {
-    switch (status) {
-    case FixitStatus::NotAvailable:
-        return ClangToolsDiagnosticModel::tr("No Fixits");
-    case FixitStatus::NotScheduled:
-        return ClangToolsDiagnosticModel::tr("Not Scheduled");
-    case FixitStatus::Invalidated:
-        return ClangToolsDiagnosticModel::tr("Invalidated");
-    case FixitStatus::Scheduled:
-        return ClangToolsDiagnosticModel::tr("Scheduled");
-    case FixitStatus::FailedToApply:
-        return ClangToolsDiagnosticModel::tr("Failed to Apply");
-    case FixitStatus::Applied:
-        return ClangToolsDiagnosticModel::tr("Applied");
-    }
-    return QString();
-}
-
-static QString createDiagnosticToolTipString(const Diagnostic &diagnostic, FixitStatus fixItStatus)
-{
-    using StringPair = QPair<QString, QString>;
-    QList<StringPair> lines;
-
-    if (!diagnostic.category.isEmpty()) {
-        lines << qMakePair(
-                     QCoreApplication::translate("ClangTools::Diagnostic", "Category:"),
-                     diagnostic.category.toHtmlEscaped());
-    }
-
-    if (!diagnostic.type.isEmpty()) {
-        lines << qMakePair(
-                     QCoreApplication::translate("ClangTools::Diagnostic", "Type:"),
-                     diagnostic.type.toHtmlEscaped());
-    }
-
-    if (!diagnostic.description.isEmpty()) {
-        lines << qMakePair(
-                     QCoreApplication::translate("ClangTools::Diagnostic", "Description:"),
-                     diagnostic.description.toHtmlEscaped());
-    }
-
-    lines << qMakePair(
-        QCoreApplication::translate("ClangTools::Diagnostic", "Location:"),
-                createFullLocationString(diagnostic.location));
-
-    lines << qMakePair(
-        QCoreApplication::translate("ClangTools::Diagnostic", "Fixit status:"),
-        fixitStatus(fixItStatus));
-
-    QString html = QLatin1String("<html>"
-                   "<head>"
-                   "<style>dt { font-weight:bold; } dd { font-family: monospace; }</style>\n"
-                   "<body><dl>");
-
-    foreach (const StringPair &pair, lines) {
-        html += QLatin1String("<dt>");
-        html += pair.first;
-        html += QLatin1String("</dt><dd>");
-        html += pair.second;
-        html += QLatin1String("</dd>\n");
-    }
-    html += QLatin1String("</dl></body></html>");
-    return html;
+    return QString("%1:%2").arg(QString::number(location.line), QString::number(location.column));
 }
 
 static QString createExplainingStepToolTipString(const ExplainingStep &step)
@@ -319,11 +260,6 @@ static QString createExplainingStepString(const ExplainingStep &explainingStep, 
 }
 
 
-static QString lineColumnString(const Debugger::DiagnosticLocation &location)
-{
-    return QString("%1:%2").arg(QString::number(location.line), QString::number(location.column));
-}
-
 static QString fullText(const Diagnostic &diagnostic)
 {
     QString text = diagnostic.location.filePath + QLatin1Char(':');
@@ -348,10 +284,12 @@ static QString fullText(const Diagnostic &diagnostic)
 
 DiagnosticItem::DiagnosticItem(const Diagnostic &diag,
                                const OnFixitStatusChanged &onFixitStatusChanged,
+                               bool generateMark,
                                ClangToolsDiagnosticModel *parent)
     : m_diagnostic(diag)
     , m_onFixitStatusChanged(onFixitStatusChanged)
     , m_parentModel(parent)
+    , m_mark(generateMark ? new DiagnosticMark(diag) : nullptr)
 {
     if (diag.hasFixits)
         m_fixitStatus = FixitStatus::NotScheduled;
@@ -373,6 +311,13 @@ DiagnosticItem::DiagnosticItem(const Diagnostic &diag,
 DiagnosticItem::~DiagnosticItem()
 {
     setFixitOperations(ReplacementOperations());
+    delete m_mark;
+}
+
+void DiagnosticItem::setTextMarkVisible(bool visible)
+{
+    if (m_mark)
+        m_mark->setVisible(visible);
 }
 
 Qt::ItemFlags DiagnosticItem::flags(int column) const
@@ -383,17 +328,10 @@ Qt::ItemFlags DiagnosticItem::flags(int column) const
     return itemFlags;
 }
 
-static QVariant iconData(const QString &type)
+static QVariant iconData(const Diagnostic &diagnostic)
 {
-    if (type == "warning")
-        return Utils::Icons::CODEMODEL_WARNING.icon();
-    if (type == "error" || type == "fatal")
-        return Utils::Icons::CODEMODEL_ERROR.icon();
-    if (type == "note")
-        return Utils::Icons::INFO.icon();
-    if (type == "fix-it")
-        return Utils::Icons::CODEMODEL_FIXIT.icon();
-    return QVariant();
+    QIcon icon = diagnostic.icon();
+    return icon.isNull() ? QVariant() : QVariant(icon);
 }
 
 QVariant DiagnosticItem::data(int column, int role) const
@@ -439,9 +377,9 @@ QVariant DiagnosticItem::data(int column, int role) const
             return QString("%1: %2").arg(lineColumnString(m_diagnostic.location),
                                          m_diagnostic.description);
         case Qt::ToolTipRole:
-            return createDiagnosticToolTipString(m_diagnostic, m_fixitStatus);
+            return createDiagnosticToolTipString(m_diagnostic, m_fixitStatus, false);
         case Qt::DecorationRole:
-            return iconData(m_diagnostic.type);
+            return iconData(m_diagnostic);
         default:
             return QVariant();
         }
@@ -475,6 +413,10 @@ void DiagnosticItem::setFixItStatus(const FixitStatus &status)
     update();
     if (m_onFixitStatusChanged && status != oldStatus)
         m_onFixitStatusChanged(index(), oldStatus, status);
+    if (status == FixitStatus::Applied || status == FixitStatus::Invalidated) {
+        delete m_mark;
+        m_mark = nullptr;
+    }
 }
 
 void DiagnosticItem::setFixitOperations(const ReplacementOperations &replacements)
@@ -603,6 +545,12 @@ void DiagnosticFilterModel::setProject(ProjectExplorer::Project *project)
     handleSuppressedDiagnosticsChanged();
 }
 
+void DiagnosticFilterModel::addSuppressedDiagnostics(const SuppressedDiagnosticsList &diags)
+{
+    m_suppressedDiagnostics << diags;
+    invalidate();
+}
+
 void DiagnosticFilterModel::addSuppressedDiagnostic(const SuppressedDiagnostic &diag)
 {
     QTC_ASSERT(!m_project, return);
@@ -688,8 +636,10 @@ bool DiagnosticFilterModel::filterAcceptsRow(int sourceRow, const QModelIndex &s
         const Diagnostic &diag = diagnosticItem->diagnostic();
 
         // Filtered out?
-        if (m_filterOptions && !m_filterOptions->checks.contains(diag.name))
+        if (m_filterOptions && !m_filterOptions->checks.contains(diag.name)) {
+            diagnosticItem->setTextMarkVisible(false);
             return false;
+        }
 
         // Explicitly suppressed?
         foreach (const SuppressedDiagnostic &d, m_suppressedDiagnostics) {
@@ -699,10 +649,12 @@ bool DiagnosticFilterModel::filterAcceptsRow(int sourceRow, const QModelIndex &s
             QFileInfo fi(filePath);
             if (fi.isRelative())
                 filePath = m_lastProjectDirectory.toString() + QLatin1Char('/') + filePath;
-            if (filePath == diag.location.filePath)
+            if (filePath == diag.location.filePath) {
+                diagnosticItem->setTextMarkVisible(false);
                 return false;
+            }
         }
-
+        diagnosticItem->setTextMarkVisible(true);
         return true;
     }
 

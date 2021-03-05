@@ -1,4 +1,4 @@
-/****************************************************************************
+﻿/****************************************************************************
 **
 ** Copyright (C) 2018 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
@@ -171,6 +171,17 @@ void TimelineSectionItem::updateFramesForTarget(QGraphicsItem *item, const Model
     }
 }
 
+void TimelineSectionItem::updateHeightForTarget(QGraphicsItem *item, const ModelNode &target)
+{
+    if (!target.isValid())
+        return;
+
+    if (auto sectionItem = qgraphicsitem_cast<TimelineSectionItem *>(item)) {
+        if (sectionItem->targetNode() == target)
+            sectionItem->updateHeight();
+    }
+}
+
 void TimelineSectionItem::moveAllFrames(qreal offset)
 {
     if (m_timeline.isValid())
@@ -209,21 +220,13 @@ ModelNode TimelineSectionItem::targetNode() const
 QVector<qreal> TimelineSectionItem::keyframePositions() const
 {
     QVector<qreal> out;
-    for (auto frame : m_timeline.keyframeGroupsForTarget(m_targetNode))
+    for (const auto &frame : m_timeline.keyframeGroupsForTarget(m_targetNode))
         out.append(timelineScene()->keyframePositions(frame));
 
     return out;
 }
 
-QTransform rotatationTransform(qreal degrees)
-{
-    QTransform transform;
-    transform.rotate(degrees);
-
-    return transform;
-}
-
-QPixmap rotateby90(const QPixmap &pixmap)
+static QPixmap rotateby90(const QPixmap &pixmap)
 {
     QImage sourceImage = pixmap.toImage();
     QImage destImage(pixmap.height(), pixmap.width(), sourceImage.format());
@@ -321,7 +324,8 @@ void TimelineSectionItem::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event)
 
     if (event->button() == Qt::LeftButton) {
         event->accept();
-        toggleCollapsed();
+        if (!ModelNode::isThisOrAncestorLocked(m_targetNode))
+            toggleCollapsed();
     }
 }
 
@@ -353,7 +357,8 @@ void TimelineSectionItem::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
         if (m_targetNode.isValid())
             m_targetNode.view()->setSelectedModelNode(m_targetNode);
     } else {
-        toggleCollapsed();
+        if (!ModelNode::isThisOrAncestorLocked(m_targetNode))
+            toggleCollapsed();
     }
     update();
 }
@@ -422,6 +427,12 @@ void TimelineSectionItem::updateFrames()
     update();
 }
 
+void TimelineSectionItem::updateHeight()
+{
+    invalidateHeight();
+    update();
+}
+
 void TimelineSectionItem::invalidateHeight()
 {
     int height = 0;
@@ -472,7 +483,8 @@ void TimelineSectionItem::invalidateFrames()
 
 bool TimelineSectionItem::collapsed() const
 {
-    return m_targetNode.isValid() && !m_targetNode.hasAuxiliaryData("timeline_expanded");
+    return m_targetNode.isValid()
+            && (!m_targetNode.hasAuxiliaryData("timeline_expanded") || m_targetNode.locked());
 }
 
 void TimelineSectionItem::createPropertyItems()
@@ -550,9 +562,16 @@ void TimelineRulerSectionItem::invalidateRulerSize(const QmlTimeline &timeline)
     m_end = timeline.endKeyframe();
 }
 
-void TimelineRulerSectionItem::setRulerScaleFactor(int scaling)
+void TimelineRulerSectionItem::invalidateRulerSize(const qreal length)
 {
-    qreal blend = qreal(scaling) / 100.0;
+    m_duration = length;
+    m_start = 0;
+    m_end = length;
+}
+
+void TimelineRulerSectionItem::setZoom(int zoom)
+{
+    qreal blend = qreal(zoom) / 100.0;
 
     qreal width = size().width() - qreal(TimelineConstants::sectionWidth);
     qreal duration = rulerDuration();
@@ -573,7 +592,7 @@ void TimelineRulerSectionItem::setRulerScaleFactor(int scaling)
     update();
 }
 
-int TimelineRulerSectionItem::getRulerScaleFactor() const
+int TimelineRulerSectionItem::zoom() const
 {
     qreal width = size().width() - qreal(TimelineConstants::sectionWidth);
     qreal duration = rulerDuration();
@@ -590,7 +609,7 @@ int TimelineRulerSectionItem::getRulerScaleFactor() const
     qreal rcount = width / m_scaling;
     qreal rblend = TimelineUtils::reverseLerp(rcount, minCount, maxCount);
 
-    int rfactor = std::round(rblend * 100);
+    int rfactor = static_cast<int>(std::round(rblend * 100));
     return TimelineUtils::clamp(rfactor, 0, 100);
 }
 
@@ -627,10 +646,12 @@ void TimelineRulerSectionItem::paint(QPainter *painter, const QStyleOptionGraphi
     static const QColor highlightColor = Theme::instance()->Theme::qmlDesignerButtonColor();
     static const QColor handleColor = Theme::getColor(Theme::QmlDesigner_HighlightColor);
 
+    const int scrollOffset = TimelineGraphicsScene::getScrollOffset(scene());
+
     painter->save();
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing);
-    painter->translate(-timelineScene()->scrollOffset(), 0);
+    painter->translate(-scrollOffset, 0);
     painter->fillRect(TimelineConstants::sectionWidth,
                       0,
                       size().width() - TimelineConstants::sectionWidth,
@@ -666,11 +687,13 @@ void TimelineRulerSectionItem::paint(QPainter *painter, const QStyleOptionGraphi
 
     const int height = size().height() - 1;
 
+
+
     drawLine(painter,
-             TimelineConstants::sectionWidth + timelineScene()->scrollOffset()
+             TimelineConstants::sectionWidth + scrollOffset
                  - TimelineConstants::timelineLeftOffset,
              height,
-             size().width() + timelineScene()->scrollOffset(),
+             size().width() + scrollOffset,
              height);
 
     QFont font = painter->font();
@@ -720,9 +743,12 @@ void TimelineRulerSectionItem::paintTicks(QPainter *painter)
 
     m_frameTick = qreal(deltaLine);
 
+    int scrollOffset = TimelineGraphicsScene::getScrollOffset(scene());
+
     int height = size().height();
-    const int totalWidth = (size().width() + timelineScene()->scrollOffset()) / m_scaling;
-    for (int i = timelineScene()->scrollOffset() / m_scaling; i < totalWidth; ++i) {
+    const int totalWidth = (size().width() + scrollOffset) / m_scaling;
+
+    for (int i = scrollOffset / m_scaling; i < totalWidth; ++i) {
         if ((i % deltaText) == 0) {
             drawCenteredText(painter,
                              TimelineConstants::sectionWidth + i * m_scaling,
@@ -760,7 +786,7 @@ void TimelineRulerSectionItem::resizeEvent(QGraphicsSceneResizeEvent *event)
 {
     QGraphicsWidget::resizeEvent(event);
 
-    auto factor = getRulerScaleFactor();
+    auto factor = zoom();
 
     if (factor < 0) {
         if (event->oldSize().width() < event->newSize().width())
@@ -769,7 +795,7 @@ void TimelineRulerSectionItem::resizeEvent(QGraphicsSceneResizeEvent *event)
             factor = 100;
     }
 
-    emit scaleFactorChanged(factor);
+    emit zoomChanged(factor);
 }
 
 void TimelineRulerSectionItem::setSizeHints(int width)
@@ -794,11 +820,11 @@ void TimelineBarItem::itemMoved(const QPointF &start, const QPointF &end)
 
     qreal min = qreal(TimelineConstants::sectionWidth + TimelineConstants::timelineLeftOffset
                       - scrollOffset());
-    qreal max = qreal(timelineScene()->rulerWidth() - TimelineConstants::sectionWidth
+    qreal max = qreal(abstractScrollGraphicsScene()->rulerWidth() - TimelineConstants::sectionWidth
                       + rect().width());
 
-    const qreal minFrameX = mapFromFrameToScene(timelineScene()->startFrame());
-    const qreal maxFrameX = mapFromFrameToScene(timelineScene()->endFrame());
+    const qreal minFrameX = mapFromFrameToScene(abstractScrollGraphicsScene()->startFrame() - 1);
+    const qreal maxFrameX = mapFromFrameToScene(abstractScrollGraphicsScene()->endFrame()+ 1000);
 
     if (min < minFrameX)
         min = minFrameX;
@@ -811,7 +837,7 @@ void TimelineBarItem::itemMoved(const QPointF &start, const QPointF &end)
     else
         dragHandle(rect(), end, min, max);
 
-    timelineScene()->statusBarMessageChanged(
+    abstractScrollGraphicsScene()->statusBarMessageChanged(
         tr("Range from %1 to %2")
             .arg(qRound(mapFromSceneToFrame(rect().x())))
             .arg(qRound(mapFromSceneToFrame(rect().width() + rect().x()))));
@@ -837,6 +863,11 @@ void TimelineBarItem::commitPosition(const QPointF & /*point*/)
     m_bounds = Location::Undefined;
     m_pivot = 0.0;
     m_oldRect = QRectF();
+}
+
+bool TimelineBarItem::isLocked() const
+{
+    return sectionItem()->targetNode().isValid() && sectionItem()->targetNode().locked();
 }
 
 void TimelineBarItem::scrollOffsetChanged()
@@ -898,7 +929,9 @@ void TimelineBarItem::hoverMoveEvent(QGraphicsSceneHoverEvent *event)
     const auto p = event->pos();
 
     QRectF left, right;
-    if (handleRects(rect(), left, right)) {
+    if (isLocked() && rect().contains(p)) {
+        setCursor(QCursor(Qt::ForbiddenCursor));
+    } else if (handleRects(rect(), left, right)) {
         if (left.contains(p) || right.contains(p)) {
             if (cursor().shape() != Qt::SizeHorCursor)
                 setCursor(QCursor(Qt::SizeHorCursor));
@@ -914,6 +947,9 @@ void TimelineBarItem::hoverMoveEvent(QGraphicsSceneHoverEvent *event)
 
 void TimelineBarItem::contextMenuEvent(QGraphicsSceneContextMenuEvent* event)
 {
+    if (isLocked())
+        return;
+
     QMenu menu;
     QAction* overrideColor = menu.addAction(tr("Override Color"));
 
@@ -975,7 +1011,7 @@ void TimelineBarItem::dragCenter(QRectF rect, const QPointF &pos, qreal min, qre
     if (validateBounds(pos.x() - rect.topLeft().x())) {
         qreal targetX = pos.x() - m_pivot;
         if (QApplication::keyboardModifiers() & Qt::ShiftModifier) { // snapping
-            qreal snappedTargetFrame = timelineScene()->snap(mapFromSceneToFrame(targetX));
+            qreal snappedTargetFrame = abstractScrollGraphicsScene()->snap(mapFromSceneToFrame(targetX));
             targetX = mapFromFrameToScene(snappedTargetFrame);
         }
         rect.moveLeft(targetX);
@@ -999,7 +1035,7 @@ void TimelineBarItem::dragHandle(QRectF rect, const QPointF &pos, qreal min, qre
         if (validateBounds(pos.x() - left.topLeft().x())) {
             qreal targetX = pos.x() - m_pivot;
             if (QApplication::keyboardModifiers() & Qt::ShiftModifier) { // snapping
-                qreal snappedTargetFrame = timelineScene()->snap(mapFromSceneToFrame(targetX));
+                qreal snappedTargetFrame = abstractScrollGraphicsScene()->snap(mapFromSceneToFrame(targetX));
                 targetX = mapFromFrameToScene(snappedTargetFrame);
             }
             rect.setLeft(targetX);
@@ -1015,7 +1051,7 @@ void TimelineBarItem::dragHandle(QRectF rect, const QPointF &pos, qreal min, qre
         if (validateBounds(pos.x() - right.topRight().x())) {
             qreal targetX = pos.x() - m_pivot;
             if (QApplication::keyboardModifiers() & Qt::ShiftModifier) { // snapping
-                qreal snappedTargetFrame = timelineScene()->snap(mapFromSceneToFrame(targetX));
+                qreal snappedTargetFrame = abstractScrollGraphicsScene()->snap(mapFromSceneToFrame(targetX));
                 targetX = mapFromFrameToScene(snappedTargetFrame);
             }
             rect.setRight(targetX);

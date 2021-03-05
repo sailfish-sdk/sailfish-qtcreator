@@ -31,8 +31,9 @@
     \list
         \li \l{Getting Started}
             \list
-                \li \l{Exporting Artwork from Design Tools}
+                \li \l{Exporting from Design Tools}
                     \list
+                        \li \l{Exporting Designs from Adobe Illustrator}
                         \li \l{Exporting Designs from Adobe Photoshop}
                             \list
                                 \li \l{Setting Up Qt Bridge for Adobe Photoshop}
@@ -43,16 +44,29 @@
                                 \li \l{Setting Up Qt Bridge for Sketch}
                                 \li \l{Using Qt Bridge for Sketch}
                             \endlist
+                        \li \l{Exporting Designs from Figma}
+                            \list
+                                \li \l{Setting Up Qt Bridge for Figma}
+                                \li \l{Using Qt Bridge for Figma}
+                            \endlist
+                        \li \l{Exporting from Blender}
                         \li \l{Exporting from Maya}
+                        \li \l{Exporting from Qt 3D Studio}
                     \endlist
                 \li \l{User Interface}
                     \list
                         \li \l{Selecting Modes}
-                        \li \l{Browsing Project Contents}
-                        \li \l{Viewing Output}
                      \endlist
                 \li \l{Editing QML Files in Design Mode}
+                    \list
+                        \li \l{Managing Workspaces}
+                        \li \l{Managing Sessions}
+                     \endlist
                 \li \l{Tutorials}
+                \li \l{Qt Quick Best Practices}
+                    \list
+                         \li \l{Creating Optimized 3D Scenes}
+                    \endlist
             \endlist
         \li \l{Managing Projects}
             \list
@@ -64,17 +78,27 @@
                         \li \l{Importing 3D Assets}
                     \endlist
                 \li \l{Converting UI Projects to Applications}
+                \li \l{Exporting QML}
             \endlist
         \li \l{Creating UIs}
             \list
+                \li \l{Designing Application Flows}
                 \li \l{Creating Components}
                 \list
                     \li \l{Editing 2D Content}
+                    \li \l{Shapes}
+                    \li \l{Text}
+                    \li \l{Images}
+                    \li \l{User Interaction Methods}
+                    \li \l{Lists and Other Data Models}
+                    \li \l{2D Effects}
+                    \li \l{Logic Helpers}
                     \li \l{Creating Buttons}
                     \li \l{Creating Scalable Buttons and Borders}
                 \endlist
                 \li \l{Managing Item Hierarchy}
                 \li \l{Specifying Item Properties}
+                \li \l{Positioning Items}
                 \li \l{Using Custom Fonts}
                 \li \l{Annotating Designs}
                 \li \l{Qt Quick UI Forms}
@@ -89,7 +113,6 @@
                     \li\l{Adding Bindings Between Properties}
                 \endlist
                 \li \l{Adding States}
-                \li \l{Editing PathView Properties}
             \endlist
         \li \l{Editing 3D Scenes}
                 \list
@@ -98,13 +121,17 @@
                     \li \l{Adding 3D Views}
                     \li \l{Using 3D Components}
                     \list
-                       \li \l{Setting Node Properties}
+                       \li \l{Setting Group Properties}
                        \li \l{Adding Models}
                        \li \l{Using Materials and Shaders}
-                        \li \l{Attaching Textures to Materials}
-                        \li \l{Using Lights}
-                        \li \l{Using Scene Camera}
-                        \li \l{Setting Scene Environment}
+                       \li \l{Attaching Textures to Materials}
+                       \li \l{Using 3D Materials}
+                       \li \l{Applying 3D Effects}
+                       \li \l{Using Custom Shaders}
+                       \li \l{Creating Custom Effects and Materials}
+                       \li \l{Using Lights}
+                       \li \l{Using Scene Camera}
+                       \li \l{Setting Scene Environment}
                     \endlist
                \endlist
         \li \l{Previewing}
@@ -115,6 +142,7 @@
             \endlist
         \li \l{Advanced Topics}
         \list
+
             \li \l{Supported Platforms}
             \li \l{Keyboard Shortcuts}
             \li \l{Coding}
@@ -122,6 +150,11 @@
                 \li \l{Writing Code}
                     \list
                         \li \l{Working in Edit Mode}
+                            \list
+                                \li \l{Working with Sidebars}
+                                \li \l{Browsing Project Contents}
+                                \li \l{Viewing Output}
+                            \endlist
                         \li \l{Semantic Highlighting}
                         \li \l{Checking Code Syntax}
                         \li \l{Completing Code}
@@ -140,7 +173,13 @@
                         \li \l{Specifying Text Editor Settings}
                     \endlist
                 \endlist
-            \li \l{Simulating Application Logic}
+            \li \l{Simulating Data Input}
+            \list
+                \li \l{Loading Placeholder Data}
+                \li \l{Simulating Application Logic}
+                \li \l{Simulating Dynamic Systems}
+                \li \l{Using QML Modules with Plugins}
+            \endlist
             \li \l{Debugging and Profiling}
                 \list
                     \li \l{Debugging Qt Quick Projects}
@@ -148,6 +187,7 @@
                     \li \l{Profiling QML Applications}
                 \endlist
             \li \l{Using External Tools}
+            \li \l{Managing Data Collection Settings}
         \endlist
         \li \l{Help}
         \list
@@ -156,6 +196,7 @@
             \li \l{Frequently Asked Questions}
             \li \l{Concepts and Terms}
         \endlist
+        \li \l{Technical Support}
         \li \l{Acknowledgements}
     \endlist
 */

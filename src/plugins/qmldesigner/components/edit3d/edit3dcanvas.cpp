@@ -30,6 +30,9 @@
 #include "nodehints.h"
 #include "qmlvisualnode.h"
 
+#include <qmldesignerplugin.h>
+#include <qmldesignerconstants.h>
+
 #include <QtCore/qmimedata.h>
 #include <QPainter>
 
@@ -41,6 +44,7 @@ Edit3DCanvas::Edit3DCanvas(Edit3DWidget *parent)
 {
     setMouseTracking(true);
     setAcceptDrops(true);
+    setFocusPolicy(Qt::ClickFocus);
 }
 
 void Edit3DCanvas::updateRenderImage(const QImage &img)
@@ -92,7 +96,7 @@ void Edit3DCanvas::paintEvent(QPaintEvent *e)
 
     QPainter painter(this);
 
-    painter.drawImage(rect(), m_image, rect());
+    painter.drawImage(rect(), m_image, QRect(0, 0, m_image.width(), m_image.height()));
 }
 
 void Edit3DCanvas::resizeEvent(QResizeEvent *e)
@@ -102,14 +106,21 @@ void Edit3DCanvas::resizeEvent(QResizeEvent *e)
 
 void Edit3DCanvas::dragEnterEvent(QDragEnterEvent *e)
 {
-    QByteArray data = e->mimeData()->data(QStringLiteral("application/vnd.bauhaus.itemlibraryinfo"));
-    if (!data.isEmpty()) {
-        QDataStream stream(data);
-        stream >> m_itemLibraryEntry;
-        bool canDrop = NodeHints::fromItemLibraryEntry(m_itemLibraryEntry).canBeDroppedInView3D();
+    // Block all drags if scene root node is locked
+    ModelNode node;
+    if (m_parent->view()->hasModelNodeForInternalId(m_activeScene))
+        node = m_parent->view()->modelNodeForInternalId(m_activeScene);
 
-        if (canDrop)
-            e->accept();
+    // Allow drop when there is no valid active scene, as the drop goes under the root node of
+    // the document in that case.
+    if (!node.isValid() || !ModelNode::isThisOrAncestorLocked(node)) {
+        QByteArray data = e->mimeData()->data(QStringLiteral("application/vnd.bauhaus.itemlibraryinfo"));
+        if (!data.isEmpty()) {
+            QDataStream stream(data);
+            stream >> m_itemLibraryEntry;
+            if (NodeHints::fromItemLibraryEntry(m_itemLibraryEntry).canBeDroppedInView3D())
+                e->accept();
+        }
     }
 }
 
@@ -123,6 +134,19 @@ void Edit3DCanvas::dropEvent(QDropEvent *e)
         e->accept();
         m_parent->view()->setSelectedModelNode(modelNode);
     }
+}
+
+void Edit3DCanvas::focusOutEvent(QFocusEvent *focusEvent)
+{
+    QmlDesignerPlugin::emitUsageStatisticsTime(Constants::EVENT_3DEDITOR_TIME,
+                                               m_usageTimer.elapsed());
+    QWidget::focusOutEvent(focusEvent);
+}
+
+void Edit3DCanvas::focusInEvent(QFocusEvent *focusEvent)
+{
+    m_usageTimer.restart();
+    QWidget::focusInEvent(focusEvent);
 }
 
 }

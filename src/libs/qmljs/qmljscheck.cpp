@@ -34,7 +34,7 @@
 
 #include <QColor>
 #include <QDir>
-#include <QRegExp>
+#include <QRegularExpression>
 
 using namespace QmlJS;
 using namespace QmlJS::AST;
@@ -502,13 +502,13 @@ protected:
         return false;
     }
 
-    bool visit(Block *) override
+    bool openBlock()
     {
         ++_block;
         return true;
     }
 
-    void endVisit(Block *) override
+    void closeBlock()
     {
         auto it = _declaredBlockVariables.begin();
         auto end = _declaredBlockVariables.end();
@@ -519,6 +519,26 @@ protected:
                 ++it;
         }
         --_block;
+    }
+
+    bool visit(Block *) override
+    {
+        return openBlock();
+    }
+
+    void endVisit(Block *) override
+    {
+        closeBlock();
+    }
+
+    bool visit(Catch *) override
+    {
+        return openBlock();
+    }
+
+    void endVisit(Catch *) override
+    {
+        closeBlock();
     }
 
     void throwRecursionDepthError() override
@@ -621,7 +641,6 @@ class UnsupportedTypesByQmlUi : public QStringList
 public:
     UnsupportedTypesByQmlUi() : QStringList({"ShaderEffect",
                                              "Component",
-                                             "Transition",
                                              "Drawer"})
     {
         append(UnsupportedTypesByVisualDesigner());
@@ -812,10 +831,10 @@ void Check::endVisit(UiObjectInitializer *)
     m_propertyStack.pop();
     m_typeStack.pop();
     UiObjectDefinition *objectDefinition = cast<UiObjectDefinition *>(parent());
-    if (objectDefinition && objectDefinition->qualifiedTypeNameId->name == "Component")
+    if (objectDefinition && objectDefinition->qualifiedTypeNameId->name == QLatin1String("Component"))
         m_idStack.pop();
     UiObjectBinding *objectBinding = cast<UiObjectBinding *>(parent());
-    if (objectBinding && objectBinding->qualifiedTypeNameId->name == "Component")
+    if (objectBinding && objectBinding->qualifiedTypeNameId->name == QLatin1String("Component"))
         m_idStack.pop();
 }
 
@@ -907,7 +926,7 @@ static bool checkTopLevelBindingForParentReference(ExpressionStatement *expStmt,
     SourceLocation location = locationFromRange(expStmt->firstSourceLocation(), expStmt->lastSourceLocation());
     QString stmtSource = source.mid(int(location.begin()), int(location.length));
 
-    if (stmtSource.contains(QRegExp("(^|\\W)parent\\.")))
+    if (stmtSource.contains(QRegularExpression("(^|\\W)parent\\.")))
         return true;
 
     return false;
@@ -941,6 +960,9 @@ void Check::visitQmlObject(Node *ast, UiQualifiedId *typeId,
 
     if (checkTypeForDesignerSupport(typeId))
         addMessage(WarnUnsupportedTypeInVisualDesigner, typeErrorLocation, typeName);
+
+    if (QFileInfo(_doc->fileName()).baseName() == getRightMostIdentifier(typeId)->name.toString())
+        addMessage(ErrTypeIsInstantiatedRecursively, typeErrorLocation, typeName);
 
     if (checkTypeForQmlUiSupport(typeId))
         addMessage(ErrUnsupportedTypeInQmlUi, typeErrorLocation, typeName);
@@ -1006,7 +1028,7 @@ void Check::visitQmlObject(Node *ast, UiQualifiedId *typeId,
 bool Check::visit(UiScriptBinding *ast)
 {
     // special case for id property
-    if (ast->qualifiedId->name == "id" && !ast->qualifiedId->next) {
+    if (ast->qualifiedId->name == QLatin1String("id") && !ast->qualifiedId->next) {
         if (! ast->statement)
             return false;
 
@@ -1103,20 +1125,20 @@ bool Check::visit(UiPublicMember *ast)
 {
     if (ast->type == UiPublicMember::Property) {
         if (ast->defaultToken.isValid() || ast->readonlyToken.isValid()) {
-            const QStringRef typeName = ast->memberType->name;
+            const QStringView typeName = ast->memberType->name;
             if (!typeName.isEmpty() && typeName.at(0).isLower()) {
                 const QString typeNameS = typeName.toString();
                 if (!isValidBuiltinPropertyType(typeNameS))
                     addMessage(ErrInvalidPropertyType, ast->typeToken, typeNameS);
             }
 
-            const QStringRef name = ast->name;
+            const QStringView name = ast->name;
 
-            if (name == "data")
+            if (name == QLatin1String("data"))
                 addMessage(ErrInvalidPropertyName, ast->identifierToken, name.toString());
 
             // warn about dubious use of var/variant
-            if (typeName == "variant" || typeName == "var") {
+            if (typeName == QLatin1String("variant") || typeName == QLatin1String("var")) {
                 Evaluate evaluator(&_scopeChain);
                 const Value *init = evaluator(ast->statement);
                 QString preferredType;
@@ -1559,7 +1581,7 @@ void Check::addMessage(StaticAnalysis::Type type, const SourceLocation &location
 void Check::scanCommentsForAnnotations()
 {
     m_disabledMessageTypesByLine.clear();
-    QRegExp disableCommentPattern(Message::suppressionPattern());
+    const QRegularExpression disableCommentPattern = Message::suppressionPattern();
 
     foreach (const SourceLocation &commentLoc, _doc->engine()->comments()) {
         const QString &comment = _doc->source().mid(int(commentLoc.begin()), int(commentLoc.length));
@@ -1572,14 +1594,15 @@ void Check::scanCommentsForAnnotations()
         int lastOffset = -1;
         QList<MessageTypeAndSuppression> disabledMessageTypes;
         forever {
-            lastOffset = disableCommentPattern.indexIn(comment, lastOffset + 1);
-            if (lastOffset == -1)
+            const QRegularExpressionMatch match = disableCommentPattern.match(comment, lastOffset + 1);
+            if (!match.hasMatch())
                 break;
+            lastOffset = match.capturedStart();
             MessageTypeAndSuppression entry;
-            entry.type = static_cast<StaticAnalysis::Type>(disableCommentPattern.cap(1).toInt());
+            entry.type = static_cast<StaticAnalysis::Type>(match.captured(1).toInt());
             entry.wasSuppressed = false;
             entry.suppressionSource = SourceLocation(commentLoc.offset + quint32(lastOffset),
-                                                     quint32(disableCommentPattern.matchedLength()),
+                                                     quint32(match.capturedLength()),
                                                      commentLoc.startLine,
                                                      commentLoc.startColumn + quint32(lastOffset));
             disabledMessageTypes += entry;
@@ -1643,16 +1666,16 @@ bool Check::visit(NewMemberExpression *ast)
 
     // check for Number, Boolean, etc constructor usage
     if (IdentifierExpression *idExp = cast<IdentifierExpression *>(ast->base)) {
-        const QStringRef name = idExp->name;
-        if (name == "Number") {
+        const QStringView name = idExp->name;
+        if (name == QLatin1String("Number")) {
             addMessage(WarnNumberConstructor, idExp->identifierToken);
-        } else if (name == "Boolean") {
+        } else if (name == QLatin1String("Boolean")) {
             addMessage(WarnBooleanConstructor, idExp->identifierToken);
-        } else if (name == "String") {
+        } else if (name == QLatin1String("String")) {
             addMessage(WarnStringConstructor, idExp->identifierToken);
-        } else if (name == "Object") {
+        } else if (name == QLatin1String("Object")) {
             addMessage(WarnObjectConstructor, idExp->identifierToken);
-        } else if (name == "Array") {
+        } else if (name == QLatin1String("Array")) {
             bool ok = false;
             if (ast->arguments && ast->arguments->expression && !ast->arguments->next) {
                 Evaluate evaluate(&_scopeChain);
@@ -1662,7 +1685,7 @@ bool Check::visit(NewMemberExpression *ast)
             }
             if (!ok)
                 addMessage(WarnArrayConstructor, idExp->identifierToken);
-        } else if (name == "Function") {
+        } else if (name == QLatin1String("Function")) {
             addMessage(WarnFunctionConstructor, idExp->identifierToken);
         }
     }
@@ -1812,6 +1835,12 @@ const Value *Check::checkScopeObjectMember(const UiQualifiedId *id)
         if (value)
             break;
     }
+
+    const bool isListElementScope = (!m_typeStack.isEmpty() && m_typeStack.last() == "ListElement");
+
+    if (isListElementScope)
+        return nullptr;
+
     if (!value) {
         addMessage(ErrInvalidPropertyName, id->identifierToken, propertyName);
         return nullptr;

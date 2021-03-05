@@ -41,6 +41,8 @@
 
 #include <QComboBox>
 
+#include <utils/layoutbuilder.h>
+
 using namespace Core;
 using namespace ProjectExplorer;
 
@@ -69,7 +71,7 @@ QmlMainFileAspect::~QmlMainFileAspect()
     delete m_fileListCombo;
 }
 
-void QmlMainFileAspect::addToLayout(LayoutBuilder &builder)
+void QmlMainFileAspect::addToLayout(Utils::LayoutBuilder &builder)
 {
     QTC_ASSERT(!m_fileListCombo, delete m_fileListCombo);
     m_fileListCombo = new QComboBox;
@@ -82,7 +84,7 @@ void QmlMainFileAspect::addToLayout(LayoutBuilder &builder)
     connect(m_fileListCombo, QOverload<int>::of(&QComboBox::activated),
             this, &QmlMainFileAspect::setMainScript);
 
-    builder.addItems(tr("Main QML file:"), m_fileListCombo.data());
+    builder.addItems({tr("Main QML file:"), m_fileListCombo.data()});
 }
 
 void QmlMainFileAspect::toMap(QVariantMap &map) const

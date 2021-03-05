@@ -39,14 +39,22 @@ ClassDefinition::ClassDefinition(QWidget *parent) :
     m_ui.iconPathChooser->setHistoryCompleter(QLatin1String("Qmake.Icon.History"));
     m_ui.iconPathChooser->setPromptDialogTitle(tr("Select Icon"));
     m_ui.iconPathChooser->setPromptDialogFilter(tr("Icon files (*.png *.ico *.jpg *.xpm *.tif *.svg)"));
+
+    connect(m_ui.libraryRadio, &QRadioButton::toggled, this, &ClassDefinition::enableButtons);
+    connect(m_ui.skeletonCheck, &QCheckBox::toggled, this, &ClassDefinition::enableButtons);
+    connect(m_ui.widgetLibraryEdit, &QLineEdit::textChanged,
+            this, &ClassDefinition::widgetLibraryChanged);
+    connect(m_ui.widgetHeaderEdit, &QLineEdit::textChanged,
+            this, &ClassDefinition::widgetHeaderChanged);
+    connect(m_ui.pluginClassEdit, &QLineEdit::textChanged,
+            this, &ClassDefinition::pluginClassChanged);
+    connect(m_ui.pluginHeaderEdit, &QLineEdit::textChanged,
+            this, &ClassDefinition::pluginHeaderChanged);
+    connect(m_ui.domXmlEdit, &QTextEdit::textChanged,
+            this, [this] { m_domXmlChanged = true; });
 }
 
 void ClassDefinition::enableButtons()
-{
-    on_libraryRadio_toggled();
-}
-
-void ClassDefinition::on_libraryRadio_toggled()
 {
     const bool enLib = m_ui.libraryRadio->isChecked();
     m_ui.widgetLibraryLabel->setEnabled(enLib);
@@ -66,11 +74,6 @@ void ClassDefinition::on_libraryRadio_toggled()
         (m_ui.libraryRadio->isChecked() ? QLatin1String(".pro") : QLatin1String(".pri")));
 }
 
-void ClassDefinition::on_skeletonCheck_toggled()
-{
-    on_libraryRadio_toggled();
-}
-
 static inline QString xmlFromClassName(const QString &name)
 {
     QString rc = QLatin1String("<widget class=\"");
@@ -79,7 +82,7 @@ static inline QString xmlFromClassName(const QString &name)
     if (!name.isEmpty()) {
         rc += name.left(1).toLower();
         if (name.size() > 1)
-            rc += name.midRef(1);
+            rc += name.mid(1);
     }
     rc += QLatin1String("\">\n</widget>\n");
     return rc;
@@ -96,31 +99,25 @@ void ClassDefinition::setClassName(const QString &name)
     }
 }
 
-void ClassDefinition::on_widgetLibraryEdit_textChanged()
+void ClassDefinition::widgetLibraryChanged(const QString &text)
 {
-    m_ui.widgetProjectEdit->setText(
-        m_ui.widgetLibraryEdit->text() +
+    m_ui.widgetProjectEdit->setText(text +
         (m_ui.libraryRadio->isChecked() ? QLatin1String(".pro") : QLatin1String(".pri")));
 }
 
-void ClassDefinition::on_widgetHeaderEdit_textChanged()
+void ClassDefinition::widgetHeaderChanged(const QString &text)
 {
-    m_ui.widgetSourceEdit->setText(m_fileNamingParameters.headerToSourceFileName(m_ui.widgetHeaderEdit->text()));
+    m_ui.widgetSourceEdit->setText(m_fileNamingParameters.headerToSourceFileName(text));
 }
 
-void ClassDefinition::on_pluginClassEdit_textChanged()
+void ClassDefinition::pluginClassChanged(const QString &text)
 {
-    m_ui.pluginHeaderEdit->setText(m_fileNamingParameters.headerFileName(m_ui.pluginClassEdit->text()));
+    m_ui.pluginHeaderEdit->setText(m_fileNamingParameters.headerFileName(text));
 }
 
-void ClassDefinition::on_pluginHeaderEdit_textChanged()
+void ClassDefinition::pluginHeaderChanged(const QString &text)
 {
-    m_ui.pluginSourceEdit->setText(m_fileNamingParameters.headerToSourceFileName(m_ui.pluginHeaderEdit->text()));
-}
-
-void ClassDefinition::on_domXmlEdit_textChanged()
-{
-    m_domXmlChanged = true;
+    m_ui.pluginSourceEdit->setText(m_fileNamingParameters.headerToSourceFileName(text));
 }
 
 PluginOptions::WidgetOptions ClassDefinition::widgetOptions(const QString &className) const
@@ -140,7 +137,7 @@ PluginOptions::WidgetOptions ClassDefinition::widgetOptions(const QString &class
     wo.pluginClassName = m_ui.pluginClassEdit->text();
     wo.pluginHeaderFile = m_ui.pluginHeaderEdit->text();
     wo.pluginSourceFile = m_ui.pluginSourceEdit->text();
-    wo.iconFile = m_ui.iconPathChooser->path();
+    wo.iconFile = m_ui.iconPathChooser->filePath().toString();
     wo.group = m_ui.groupEdit->text();
     wo.toolTip = m_ui.tooltipEdit->text();
     wo.whatsThis = m_ui.whatsthisEdit->toPlainText();

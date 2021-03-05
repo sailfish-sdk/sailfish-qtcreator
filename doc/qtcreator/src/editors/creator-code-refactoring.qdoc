@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the Qt Creator documentation.
@@ -115,9 +115,10 @@
     When you rename a class, you can also change filenames that match the
     class name.
 
-    To rename a specific symbol in a Qt project, place the cursor
-     on it and select \uicontrol Tools > \uicontrol {C++} >
+    To rename a C++ symbol in a project, place the cursor
+    on it and select \uicontrol Tools > \uicontrol {C++} >
     \uicontrol {Rename Symbol Under Cursor} or press \key {Ctrl+Shift+R}.
+    Use the keyboard shortcut to rename Python symbols.
     \endif
 
     To rename a QML type in a project, select \uicontrol Tools >
@@ -152,9 +153,14 @@
 
     \section1 Column Editing
 
-    To apply a change to several rows in a column simultaneously, press
-    \key Alt, select the rows, and enter or remove text. The changes are made
-    simultaneously at the cursor position on all the selected rows.
+    To apply a change to several rows in a column simultaneously, hold
+    \key Alt, select the rows using the mouse, and enter or remove text.
+    The changes are made simultaneously at the cursor position on all the
+    selected rows.
+
+    On Windows and Linux, you can also hold \key {Alt+Shift} and select
+    the rows using the arrow keys and the \key PageUp, \key PageDown,
+    \key Home, \key End keys.
 
     \section1 Applying Refactoring Actions
 
@@ -173,6 +179,47 @@
 
     You can also press \key {Alt+Enter} to open a context menu that contains
     refactoring actions available in the current cursor position.
+
+    \if defined(qtcreator)
+    \section1 Creating Functions
+
+    You can apply refactoring actions to implement member functions, insert
+    virtual functions of base classes, and greate getter and setter functions.
+
+    \section2 Implementing Member Functions
+
+    You can apply the \uicontrol {Create Implementations for Member Functions}
+    refactoring action to create implementations for all member functions in
+    one go. In the \uicontrol {Member Function Implementations} dialog, you can
+    specify whether the member functions are generated inline or outside the
+    class.
+
+    \image qtcreator-refactoring-member-function-implementations.png "Implement Member Functions dialog"
+
+    \section2 Inserting Virtual Functions
+
+    You can apply the \uicontrol {Insert Virtual Functions of Base Classes}
+    refactoring action to insert declarations and the corresponding definitions
+    inside or outside the class or in an implementation file (if it exists).
+
+    \image qtcreator-refactoring-virtual-function-dialog.png "Insert Virtual Functions dialog"
+
+    Select the functions to insert in the list of available functions. You can
+    filter the list and hide reimplemented functions from it.
+
+    You can add \e virtual or the \e override equivalent to the function
+    declaration.
+
+    \section2 Creating Getters and Setters
+
+    You can apply the \uicontrol {Create Getter and Setter Member Functions}
+    refactoring action to create either both getter and setter member functions
+    for member variables or only a getter or setter.
+
+    \image qtcreator-refactoring-getters-and-setters.png "Getters and Setters dialog"
+    \endif
+
+    \section1 Summary of Refactoring Actions
 
     \if defined(qtcreator)
     If you use the \l{Parsing C++ Files with the Clang Code Model}
@@ -502,6 +549,19 @@
                 \c {protected slot}, or \c {private slot}.
             \li Function name
         \row
+            \li Add Class Member
+            \li Adds a member declaration for the class member being
+                initialized if it is not yet declared. You must enter
+                the data type of the member.
+            \li Identifier
+        \row
+            \li Create Implementations for Member Functions
+            \li Creates implementations for all member functions in one go.
+                In the \uicontrol {Member Function Implementations} dialog,
+                you can specify whether the member functions are generated
+                inline or outside the class.
+            \li Function name
+        \row
             \li Switch with Next/Previous Parameter
             \li Moves a parameter down or up one position in a parameter list.
             \li Parameter in the declaration or definition of a function
@@ -573,6 +633,11 @@
             \li Add #include for undeclared or forward declared identifier
             \li Adds an \c {#include} directive to the current file to make the
                 definition of a symbol available.
+            \li Undeclared identifier
+        \row
+            \li Add Forward Declaration
+            \li Adds a forward declaration for an undeclared identifier
+                operation.
             \li Undeclared identifier
         \row
             \li Reformat Pointers or References
@@ -698,17 +763,10 @@
 
             \li Function call or class name
         \row
-            \li Insert (Pure) Virtual Functions
-            \li Select an insertion mode:
-            \list
-                \li Insert only declarations.
-                \li Insert declarations and the corresponding definitions inside the class.
-                \li Insert declarations and the corresponding definitions outside the class.
-                \li Insert declarations and the corresponding definitions in the implementation file
-                (only if an implementation file exists).
-            \endlist
-            \image qtcreator-refactoring-virtual-function-dialog.png
-
+            \li Insert Virtual Functions of Base Classes
+            \li Inserts declarations and the corresponding definitions inside or
+                outside the class or in an implementation file (if it exists).
+                For more information, see \l{Inserting Virtual Functions}.
             \li Class or base class name
         \row
             \li Optimize for-Loop
@@ -785,13 +843,24 @@
                 respected yet.
             \li Stack Variable
         \row
+            \li Remove \c {using namespace} and Adjust Type Names Accordingly
+            \li Remove occurrences of \c {using namespace} in the local scope
+                and adjust type names accordingly.
+            \li \c using directive
+       \row
+            \li Remove All Occurrences of \c {using namespace} in Global Scope
+                and Adjust Type Names Accordingly
+            \li Remove all occurrences of \c {using namespace} in the global
+                scope and adjust type names accordingly.
+            \li \c using directive
+        \row
             \li Convert connect() to Qt 5 Style
             \li Converts a Qt 4 QObject::connect() to Qt 5 style.
             \li QObject::connect() (Qt 4 style)
     \endtable
-    \endif
 
     \section2 Refactoring QML Code
+    \endif
 
     You can apply the following types of refactoring actions to QML code:
 

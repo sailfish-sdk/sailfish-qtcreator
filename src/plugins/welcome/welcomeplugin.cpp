@@ -41,13 +41,14 @@
 #include <coreplugin/modemanager.h>
 
 #include <utils/algorithm.h>
-#include <utils/icon.h>
 #include <utils/fileutils.h>
 #include <utils/hostosinfo.h>
+#include <utils/icon.h>
+#include <utils/porting.h>
 #include <utils/qtcassert.h>
 #include <utils/styledbar.h>
-#include <utils/treemodel.h>
 #include <utils/theme/theme.h>
+#include <utils/treemodel.h>
 
 #include <QDesktopServices>
 #include <QHeaderView>
@@ -194,7 +195,7 @@ public:
         setLayout(layout);
     }
 
-    void enterEvent(QEvent *) override
+    void enterEvent(EnterEvent *) override
     {
         QPalette pal;
         pal.setColor(QPalette::Window, themeColor(Theme::Welcome_HoverColor));
@@ -286,6 +287,7 @@ public:
             auto l = new QVBoxLayout;
             l->setContentsMargins(0, 0, 0, 0);
             l->setSpacing(5);
+            l->addWidget(new IconAndLink("download", tr("Get Qt"), "https://www.qt.io/download", this));
             l->addWidget(new IconAndLink("qtaccount", tr("Qt Account"), "https://account.qt.io", this));
             l->addWidget(new IconAndLink("community", tr("Online Community"), "https://forum.qt.io", this));
             l->addWidget(new IconAndLink("blogs", tr("Blogs"), "https://planet.qt.io", this));
@@ -372,7 +374,7 @@ void WelcomeMode::initPlugins()
     if (!m_activePage.isValid() && !m_pageButtons.isEmpty()) {
         const int welcomeIndex = Utils::indexOf(m_pluginList,
                                                 Utils::equal(&IWelcomePage::id,
-                                                             Core::Id("Examples")));
+                                                             Utils::Id("Examples")));
         const int defaultIndex = welcomeIndex >= 0 ? welcomeIndex : 0;
         m_activePage = m_pluginList.at(defaultIndex)->id();
         m_pageButtons.at(defaultIndex)->click();

@@ -69,19 +69,6 @@
            </property>
           </widget>
          </item>
-         <item>
-          <widget class="Utils::InfoLabel" name="warningLabel">
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-           <property name="text">
-            <string>SDK manager is not available with the current version of SDK tools. Use native SDK manager.</string>
-           </property>
-          </widget>
-         </item>
         </layout>
        </item>
        <item row="1" column="0">
@@ -118,29 +105,14 @@
            <property name="orientation">
             <enum>Qt::Vertical</enum>
            </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>20</width>
-             <height>40</height>
-            </size>
-           </property>
           </spacer>
          </item>
          <item>
           <widget class="QGroupBox" name="packagesTypeGroup">
-           <property name="minimumSize">
-            <size>
-             <width>0</width>
-             <height>0</height>
-            </size>
-           </property>
            <property name="title">
             <string>Show Packages</string>
            </property>
            <layout class="QVBoxLayout" name="verticalLayout">
-            <property name="spacing">
-             <number>12</number>
-            </property>
             <item>
              <widget class="QRadioButton" name="showAvailableRadio">
               <property name="text">
@@ -172,29 +144,6 @@
           <widget class="QPushButton" name="optionsButton">
            <property name="text">
             <string>Advanced Options...</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <spacer name="verticalSpacer_2">
-           <property name="orientation">
-            <enum>Qt::Vertical</enum>
-           </property>
-           <property name="sizeType">
-            <enum>QSizePolicy::Fixed</enum>
-           </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>0</width>
-             <height>5</height>
-            </size>
-           </property>
-          </spacer>
-         </item>
-         <item>
-          <widget class="QPushButton" name="nativeSdkManagerButton">
-           <property name="text">
-            <string>Native SDK Manager...</string>
            </property>
           </widget>
          </item>
@@ -285,13 +234,6 @@
    </item>
   </layout>
  </widget>
- <customwidgets>
-  <customwidget>
-   <class>Utils::InfoLabel</class>
-   <extends>QLabel</extends>
-   <header location="global">utils/infolabel.h</header>
-  </customwidget>
- </customwidgets>
  <tabstops>
   <tabstop>packagesView</tabstop>
   <tabstop>showAllRadio</tabstop>

@@ -652,11 +652,11 @@ def openVcsLog():
         waitForObject("{text='Version Control' type='QLabel' unnamed='1' visible='1' "
                       "window=':Qt Creator_Core::Internal::MainWindow'}", 2000)
     except:
-        invokeMenuItem("Window", "Output Panes", "Version Control")
+        invokeMenuItem("View", "Output Panes", "Version Control")
 
 def openGeneralMessages():
     if not object.exists(":Qt Creator_Core::OutputWindow"):
-        invokeMenuItem("Window", "Output Panes", "General Messages")
+        invokeMenuItem("View", "Output Panes", "General Messages")
 
 # function that retrieves a specific child object by its class
 # this is sometimes the best way to avoid using waitForObject() on objects that
@@ -670,9 +670,9 @@ def getChildByClass(parent, classToSearchFor, occurrence=1):
         return children[occurrence - 1]
 
 def getHelpViewer():
-    return waitForObject("{type='Help::Internal::TextBrowserHelpWidget' unnamed='1' "
-                         "visible='1' window=':Qt Creator_Core::Internal::MainWindow'}",
+    return waitForObject("{type='QLiteHtmlWidget' unnamed='1' visible='1' "
+                         "window=':Qt Creator_Core::Internal::MainWindow'}",
                          1000)
 
 def getHelpTitle():
-    return str(getHelpViewer().documentTitle)
+    return str(getHelpViewer().title())

@@ -32,9 +32,11 @@
 
 #include <projectexplorer/abstractprocessstep.h>
 #include <projectexplorer/processparameters.h>
-#include <projectexplorer/projectconfigurationaspects.h>
 #include <projectexplorer/project.h>
+#include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/target.h>
+
+#include <utils/aspects.h>
 
 #include <QDateTime>
 #include <QDir>
@@ -72,77 +74,58 @@ static QString projectDirRelativeToBuildDir(BuildConfiguration *bc)
 // * represented by an instance of the class MakeStepConfigWidget.
 // */
 
-class ConfigureStep : public ProjectExplorer::AbstractProcessStep
+class ConfigureStep final : public AbstractProcessStep
 {
     Q_DECLARE_TR_FUNCTIONS(AutotoolsProjectManager::Internal::ConfigureStep)
 
 public:
-    ConfigureStep(BuildStepList *bsl, Core::Id id);
+    ConfigureStep(BuildStepList *bsl, Id id);
 
     void setAdditionalArguments(const QString &list);
 
 private:
-    bool init() override;
-    void doRun() override;
+    void doRun() final;
 
-    ProjectExplorer::BaseStringAspect *m_additionalArgumentsAspect = nullptr;
     bool m_runConfigure = false;
 };
 
-ConfigureStep::ConfigureStep(BuildStepList *bsl, Core::Id id)
+ConfigureStep::ConfigureStep(BuildStepList *bsl, Id id)
     : AbstractProcessStep(bsl, id)
 {
-    setDefaultDisplayName(tr("Configure"));
+    auto arguments = addAspect<StringAspect>();
+    arguments->setDisplayStyle(StringAspect::LineEditDisplay);
+    arguments->setSettingsKey("AutotoolsProjectManager.ConfigureStep.AdditionalArguments");
+    arguments->setLabelText(tr("Arguments:"));
+    arguments->setHistoryCompleter("AutotoolsPM.History.ConfigureArgs");
 
-    m_additionalArgumentsAspect = addAspect<BaseStringAspect>();
-    m_additionalArgumentsAspect->setDisplayStyle(BaseStringAspect::LineEditDisplay);
-    m_additionalArgumentsAspect->setSettingsKey(
-                "AutotoolsProjectManager.ConfigureStep.AdditionalArguments");
-    m_additionalArgumentsAspect->setLabelText(tr("Arguments:"));
-    m_additionalArgumentsAspect->setHistoryCompleter("AutotoolsPM.History.ConfigureArgs");
-
-    connect(m_additionalArgumentsAspect, &ProjectConfigurationAspect::changed, this, [this] {
+    connect(arguments, &BaseAspect::changed, this, [this] {
         m_runConfigure = true;
     });
 
-    setSummaryUpdater([this] {
+    setWorkingDirectoryProvider([this] { return project()->projectDirectory(); });
+
+    setCommandLineProvider([this, arguments] {
         BuildConfiguration *bc = buildConfiguration();
 
+        return CommandLine({FilePath::fromString(projectDirRelativeToBuildDir(bc) + "configure"),
+                            arguments->value(),
+                            CommandLine::Raw});
+    });
+
+    setSummaryUpdater([this] {
         ProcessParameters param;
-        param.setMacroExpander(bc->macroExpander());
-        param.setEnvironment(bc->environment());
-        param.setWorkingDirectory(bc->buildDirectory());
-        param.setCommandLine({FilePath::fromString(projectDirRelativeToBuildDir(bc) + "configure"),
-                              m_additionalArgumentsAspect->value(),
-                              CommandLine::Raw});
+        setupProcessParameters(&param);
 
         return param.summaryInWorkdir(displayName());
     });
 }
 
-bool ConfigureStep::init()
-{
-    BuildConfiguration *bc = buildConfiguration();
-
-    ProcessParameters *pp = processParameters();
-    pp->setMacroExpander(bc->macroExpander());
-    pp->setEnvironment(bc->environment());
-    pp->setWorkingDirectory(bc->buildDirectory());
-    pp->setCommandLine({FilePath::fromString(projectDirRelativeToBuildDir(bc) + "configure"),
-                        m_additionalArgumentsAspect->value(),
-                        CommandLine::Raw});
-
-    return AbstractProcessStep::init();
-}
-
 void ConfigureStep::doRun()
 {
-    BuildConfiguration *bc = buildConfiguration();
-
     //Check whether we need to run configure
-    const QString projectDir(bc->target()->project()->projectDirectory().toString());
+    const QString projectDir(project()->projectDirectory().toString());
     const QFileInfo configureInfo(projectDir + "/configure");
-    const QFileInfo configStatusInfo(bc->buildDirectory().toString() + "/config.status");
+    const QFileInfo configStatusInfo(buildDirectory().toString() + "/config.status");
 
     if (!configStatusInfo.exists()
         || configStatusInfo.lastModified() < configureInfo.lastModified()) {
@@ -150,7 +133,7 @@ void ConfigureStep::doRun()
     }
 
     if (!m_runConfigure) {
-        emit addOutput(tr("Configuration unchanged, skipping configure step."), BuildStep::OutputFormat::NormalMessage);
+        emit addOutput(tr("Configuration unchanged, skipping configure step."), OutputFormat::NormalMessage);
         emit finished(true);
         return;
     }

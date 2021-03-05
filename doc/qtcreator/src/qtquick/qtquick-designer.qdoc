@@ -33,7 +33,7 @@
     \page creator-using-qt-quick-designer.html
     \if defined(qtdesignstudio)
     \previouspage creator-modes.html
-    \nextpage {Tutorials}
+    \nextpage creator-project-managing-workspaces.html
     \else
     \previouspage quick-projects.html
     \nextpage quick-uis.html
@@ -49,11 +49,13 @@
     \image studio-design-mode.png "Design mode"
 
     The Design mode contains different views for designing UIs. To open the
-    following views, select \uicontrol Window > \uicontrol Views:
+    following views, select \uicontrol View > \uicontrol Views:
 
     \list
-        \li \uicontrol {Form Editor} (1) provides a canvas for designing 2D UIs.
-            For more information, see \l {Editing 2D Content}.
+        \li \uicontrol {Form Editor} (1) provides a canvas for designing
+            2D UIs. For more information, see \l {Editing 2D Content}.
+            When you are editing 3D scenes, the \uicontrol {Form Editor} is
+            used as a canvas for the 3D scene projected by the camera.
 
         \li \uicontrol {3D Editor} provides an editor for files you created
             using 3D graphics applications and stored in one of the supported
@@ -78,7 +80,7 @@
             \uicontrol {Text Editor}. For more information, see
             \l {Specifying Item Properties}.
 
-        \li \uicontrol Connections (5) enables you to create connections
+        \li \uicontrol {Connection View} (5) enables you to create connections
             between objects, signals, and object properties. For more
             information, see \l{Adding Connections}.
 
@@ -88,22 +90,35 @@
 
         \li \uicontrol {Open Documents} shows currently open files.
 
-        \li \uicontrol {Projects} shows a list of projects open in the
+        \li \uicontrol {Projects} (6) shows a list of projects open in the
             current session. For more information, see
             \l{Viewing Project Files}.
 
-        \li \uicontrol {States} (6) displays the different states of the item.
+        \li \uicontrol {States} displays the different states of the item.
             QML states typically describe user interface configurations, such as
             the UI controls, their properties and behavior and the available
             actions. For more information, see \l{Adding States}.
 
+        \li \uicontrol {Transition Editor} enables you to make movement between
+            states smooth by animating the changes between states. For more
+            information, see \l{Animating Transitions Between States}.
+
         \li \uicontrol Timeline (7) provides a timeline and keyframe based
             editor that enables you to animate the properties of UI components.
             For more information, see \l{Creating Animations}.
+
+        \li \uicontrol {Curve Editor} enables you to view and modify the whole
+            animation curve by inserting keyframes to the curve and dragging
+            them and the point handlers to modify the curve. You can modify the
+            appearance of the curve in the style editor. For more information,
+            see \l {Editing Animation Curves}.
 
     \endlist
 
     You can move the views anywhere on the screen and save them as
     \e workspaces, as instructed in \l {Managing Workspaces}.
 
+    Watch a video about using the Design mode views:
+
+    \youtube RfEYO-5Mw6s
 */

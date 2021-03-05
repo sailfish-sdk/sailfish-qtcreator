@@ -43,8 +43,9 @@
 namespace ClangCodeModel {
 namespace Internal {
 
-ClangCompletionAssistProvider::ClangCompletionAssistProvider(BackendCommunicator &communicator)
-    : m_communicator(communicator)
+ClangCompletionAssistProvider::ClangCompletionAssistProvider(BackendCommunicator &communicator,
+                                                             CompletionType type)
+    : m_communicator(communicator), m_type(type)
 {
 }
 
@@ -59,15 +60,17 @@ TextEditor::IAssistProcessor *ClangCompletionAssistProvider::createProcessor() c
 }
 
 TextEditor::AssistInterface *ClangCompletionAssistProvider::createAssistInterface(
-        const QString &filePath,
-        const TextEditor::TextEditorWidget *textEditorWidget,
-        const CPlusPlus::LanguageFeatures &/*languageFeatures*/,
-        int position,
-        TextEditor::AssistReason reason) const
+    const Utils::FilePath &filePath,
+    const TextEditor::TextEditorWidget *textEditorWidget,
+    const CPlusPlus::LanguageFeatures & /*languageFeatures*/,
+    int position,
+    TextEditor::AssistReason reason) const
 {
-    const CppTools::ProjectPart::Ptr projectPart = Utils::projectPartForFileBasedOnProcessor(filePath);
+    const CppTools::ProjectPart::Ptr projectPart = projectPartForFileBasedOnProcessor(
+        filePath.toString());
     if (projectPart) {
         return new ClangCompletionAssistInterface(m_communicator,
+                                                  m_type,
                                                   textEditorWidget,
                                                   position,
                                                   filePath,

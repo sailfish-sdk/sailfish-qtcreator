@@ -41,7 +41,6 @@
 #include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/actionmanager/command.h>
 #include <coreplugin/icore.h>
-#include <coreplugin/id.h>
 #include <coreplugin/icontext.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/editormanager/ieditor.h>
@@ -144,9 +143,9 @@ void MacroManagerPrivate::initialize()
     }
 }
 
-static Core::Id makeId(const QString &name)
+static Utils::Id makeId(const QString &name)
 {
-    return Core::Id(Macros::Constants::PREFIX_MACRO).withSuffix(name);
+    return Utils::Id(Macros::Constants::PREFIX_MACRO).withSuffix(name);
 }
 
 void MacroManagerPrivate::addMacro(Macro *macro)
@@ -187,7 +186,7 @@ void MacroManagerPrivate::changeMacroDescription(Macro *macro, const QString &de
     if (!macro->load())
         return;
     macro->setDescription(description);
-    macro->save(macro->fileName(), Core::ICore::mainWindow());
+    macro->save(macro->fileName(), Core::ICore::dialogParent());
 
     QAction *action = actions[macro->displayName()];
     QTC_ASSERT(action, return);
@@ -210,9 +209,10 @@ bool MacroManagerPrivate::executeMacro(Macro *macro)
     }
 
     if (error) {
-        QMessageBox::warning(Core::ICore::mainWindow(),
-                             MacroManager::tr("Playing Macro"),
-                             MacroManager::tr("An error occurred while replaying the macro, execution stopped."));
+        QMessageBox::warning(
+            Core::ICore::dialogParent(),
+            MacroManager::tr("Playing Macro"),
+            MacroManager::tr("An error occurred while replaying the macro, execution stopped."));
     }
 
     // Set the focus back to the editor
@@ -225,8 +225,7 @@ bool MacroManagerPrivate::executeMacro(Macro *macro)
 
 void MacroManagerPrivate::showSaveDialog()
 {
-    QWidget *mainWindow = Core::ICore::mainWindow();
-    SaveDialog dialog(mainWindow);
+    SaveDialog dialog(Core::ICore::dialogParent());
     if (dialog.exec()) {
         if (dialog.name().isEmpty())
             return;
@@ -235,7 +234,7 @@ void MacroManagerPrivate::showSaveDialog()
         QString fileName = q->macrosDirectory() + QLatin1Char('/') + dialog.name()
                            + QLatin1Char('.') + QLatin1String(Constants::M_EXTENSION);
         currentMacro->setDescription(dialog.description());
-        currentMacro->save(fileName, mainWindow);
+        currentMacro->save(fileName, Core::ICore::dialogParent());
         addMacro(currentMacro);
     }
 }

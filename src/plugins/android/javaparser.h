@@ -28,28 +28,26 @@
 #include <projectexplorer/ioutputparser.h>
 #include <utils/fileutils.h>
 
-#include <QRegExp>
+#include <QRegularExpression>
 
 namespace Android {
 namespace Internal {
 
-class JavaParser : public ProjectExplorer::IOutputParser
+class JavaParser : public ProjectExplorer::OutputTaskParser
 {
     Q_OBJECT
 
 public:
     JavaParser();
-    void stdOutput(const QString &line) override;
-    void stdError(const QString &line) override;
     void setProjectFileList(const QStringList &fileList);
 
     void setBuildDirectory(const Utils::FilePath &buildDirectory);
     void setSourceDirectory(const Utils::FilePath &sourceDirectory);
 
 private:
-    void parse(const QString &line);
+    Result handleLine(const QString &line, Utils::OutputFormat type) override;
 
-    QRegExp m_javaRegExp;
+    QRegularExpression m_javaRegExp;
     QStringList m_fileList;
     Utils::FilePath m_sourceDirectory;
     Utils::FilePath m_buildDirectory;

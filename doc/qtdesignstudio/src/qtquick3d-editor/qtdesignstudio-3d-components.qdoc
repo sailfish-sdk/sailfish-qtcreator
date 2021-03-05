@@ -32,14 +32,18 @@
 
     To add 3D components to the scene, drag and drop a them from
     \uicontrol Library > \uicontrol {QML Types} > \uicontrol {Qt Quick 3D} to
-    the scene or to a 3D view in the \uicontrol Navigator.
+    the scene or to a 3D view in \uicontrol Navigator.
 
-    To edit 3D components, select the component in the 3D editor or in the
+    \note Using 3D components will affect the performance of your UI. You should
+    not use 3D components if the same results can be achieved using 2D
+    components.
+
+    To edit 3D components, select the component in \uicontrol {3D Editor} or in
     \uicontrol Navigator and set its properties in the \uicontrol Properties
     view.
 
     \list
-        \li \l {Setting Node Properties}
+        \li \l {Setting Group Properties}
 
             You can set the opacity, visibility, and transform properties
             of all 3D components.
@@ -47,7 +51,7 @@
 
             You can use the model component to load static mesh data from
             storage or one of the built-in primitive types: cube, cone,
-            cylinder, rectangle, or sphere. You can attach materials to
+            cylinder, plane (rectangle), or sphere. You can attach materials to
             meshes and sub-meshes.
         \li \l {Using Materials and Shaders}
 
@@ -58,15 +62,32 @@
             You can use a Texture component to specify an image and how it is
             mapped to meshes in a 3D scene. Texture components can use image
             data either from a file or a Qt Quick QML type.
+        \li \l {Using 3D Materials}
+
+            You can apply a set of predefined 3D materials on your models.
+
+        \li \l {Applying 3D Effects}
+
+            You can use 3D effect components to generate post-processing
+            effects.
+        \li \l {Using Custom Shaders}
+
+            You can use 3D shader utilities to construct your own effects and
+            materials.
+        \li \l{Creating Custom Effects and Materials}
+
+            If the ready-made 3D effects and materials don't meet your needs,
+            you can use 3D shader utilities to construct your own effects and
+            materials.
         \li \l{Using Lights}
 
             You can use several light types as the source of lighting in a
             scene and set their properties.
         \li \l {Using Scene Camera}
 
-            To project a 3D scene to a 2D viewport, it is necessary to view
-            the scene from a camera. You can select the camera type and set
-            its properties.
+            To project a 3D scene to a 2D viewport, such as
+            \uicontrol {Form Editor}, it is necessary to view the scene from a
+            camera. You can select the camera type and set its properties.
         \li \l {Setting Scene Environment}
 
             You can use the SceneEnvironment type to specify how the scene is

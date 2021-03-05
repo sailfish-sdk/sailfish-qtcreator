@@ -53,6 +53,7 @@ class Diagnostic
 {
 public:
     bool isValid() const;
+    QIcon icon() const;
 
     QString name;
     QString description;

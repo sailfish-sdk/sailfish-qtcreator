@@ -49,6 +49,7 @@ constexpr const char DocumentOnTypeFormattingRequest::methodName[];
 constexpr const char RenameRequest::methodName[];
 constexpr const char SignatureHelpRequest::methodName[];
 constexpr const char SemanticHighlightNotification::methodName[];
+constexpr const char PrepareRenameRequest::methodName[];
 
 HoverContent LanguageServerProtocol::Hover::content() const
 {
@@ -242,6 +243,10 @@ bool DocumentOnTypeFormattingParams::isValid(ErrorHierarchy *error) const
 
 DocumentOnTypeFormattingRequest::DocumentOnTypeFormattingRequest(
         const DocumentFormattingParams &params)
+    : Request(methodName, params)
+{ }
+
+PrepareRenameRequest::PrepareRenameRequest(const TextDocumentPositionParams &params)
     : Request(methodName, params)
 { }
 
@@ -491,10 +496,59 @@ void SemanticHighlightToken::appendToByteArray(QByteArray &byteArray) const
     byteArray.append(char((scope & 0x00ff)));
 }
 
+Utils::variant<VersionedTextDocumentIdentifier, TextDocumentIdentifier>
+SemanticHighlightingParams::textDocument() const
+{
+    VersionedTextDocumentIdentifier textDocument = fromJsonValue<VersionedTextDocumentIdentifier>(
+        value(textDocumentKey));
+    ErrorHierarchy error;
+    if (!textDocument.isValid(&error)) {
+        return TextDocumentIdentifier(textDocument);
+    } else {
+        return textDocument;
+    }
+}
+
 bool SemanticHighlightingParams::isValid(ErrorHierarchy *error) const
 {
-    return check<VersionedTextDocumentIdentifier>(error, textDocumentKey)
-            && checkArray<SemanticHighlightingInformation>(error, linesKey);
+    return checkVariant<VersionedTextDocumentIdentifier, TextDocumentIdentifier>(error,
+                                                                                 textDocumentKey)
+           && checkArray<SemanticHighlightingInformation>(error, linesKey);
 }
+
+PrepareRenameResult::PrepareRenameResult()
+    : Utils::variant<PlaceHolderResult, Range, std::nullptr_t>(nullptr)
+{}
+
+PrepareRenameResult::PrepareRenameResult(
+    const Utils::variant<PlaceHolderResult, Range, std::nullptr_t> &val)
+    : Utils::variant<PlaceHolderResult, Range, std::nullptr_t>(val)
+{}
+
+PrepareRenameResult::PrepareRenameResult(const PlaceHolderResult &val)
+    : Utils::variant<PlaceHolderResult, Range, std::nullptr_t>(val)
+
+{}
+
+PrepareRenameResult::PrepareRenameResult(const Range &val)
+    : Utils::variant<PlaceHolderResult, Range, std::nullptr_t>(val)
+{}
+
+PrepareRenameResult::PrepareRenameResult(const QJsonValue &val)
+{
+    if (val.isNull()) {
+        emplace<std::nullptr_t>(nullptr);
+    } else if (val.isObject()) {
+        const QJsonObject object = val.toObject();
+        if (object.keys().contains(rangeKey))
+            emplace<PlaceHolderResult>(PlaceHolderResult(object));
+        else
+            emplace<Range>(Range(object));
+    }
+}
+
+SemanticHighlightNotification::SemanticHighlightNotification(const SemanticHighlightingParams &params)
+    : Notification(methodName, params)
+{}
 
 } // namespace LanguageServerProtocol

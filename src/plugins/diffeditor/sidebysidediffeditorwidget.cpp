@@ -45,6 +45,7 @@
 #include <coreplugin/find/highlightscrollbarcontroller.h>
 #include <coreplugin/minisplitter.h>
 
+#include <utils/porting.h>
 #include <utils/tooltip/tooltip.h>
 
 using namespace Core;
@@ -87,6 +88,7 @@ public:
     void clearAll(const QString &message);
     void clearAllData();
     void saveState();
+    using TextEditor::TextEditorWidget::restoreState;
     void restoreState();
 
     void setFolded(int blockNumber, bool folded);
@@ -292,7 +294,7 @@ QString SideDiffEditorWidget::plainTextFromSelection(const QTextCursor &cursor) 
                 if (textInserted)
                     text += '\n';
                 if (block == endBlock)
-                    text += block.text().leftRef(endPosition - block.position());
+                    text += make_stringview(block.text()).left(endPosition - block.position());
                 else
                     text += block.text();
             }
@@ -327,7 +329,7 @@ int SideDiffEditorWidget::blockNumberForFileIndex(int fileIndex) const
     if (fileIndex < 0 || fileIndex >= m_fileInfo.count())
         return -1;
 
-    return (m_fileInfo.constBegin() + fileIndex).key();
+    return std::next(m_fileInfo.constBegin(), fileIndex).key();
 }
 
 int SideDiffEditorWidget::fileIndexForBlockNumber(int blockNumber) const
@@ -801,20 +803,14 @@ SideBySideDiffEditorWidget::SideBySideDiffEditorWidget(QWidget *parent)
     l->addWidget(m_splitter);
     setFocusProxy(m_leftEditor);
 
-    m_leftContext = new IContext(this);
-    m_leftContext->setWidget(m_leftEditor);
-    m_leftContext->setContext(Core::Context(Core::Id(Constants::SIDE_BY_SIDE_VIEW_ID).withSuffix(1)));
-    Core::ICore::addContextObject(m_leftContext);
-    m_rightContext = new IContext(this);
-    m_rightContext->setWidget(m_rightEditor);
-    m_rightContext->setContext(Core::Context(Core::Id(Constants::SIDE_BY_SIDE_VIEW_ID).withSuffix(2)));
-    Core::ICore::addContextObject(m_rightContext);
-}
-
-SideBySideDiffEditorWidget::~SideBySideDiffEditorWidget()
-{
-    Core::ICore::removeContextObject(m_leftContext);
-    Core::ICore::removeContextObject(m_rightContext);
+    auto leftContext = new IContext(this);
+    leftContext->setWidget(m_leftEditor);
+    leftContext->setContext(Core::Context(Utils::Id(Constants::SIDE_BY_SIDE_VIEW_ID).withSuffix(1)));
+    Core::ICore::addContextObject(leftContext);
+    auto rightContext = new IContext(this);
+    rightContext->setWidget(m_rightEditor);
+    rightContext->setContext(Core::Context(Utils::Id(Constants::SIDE_BY_SIDE_VIEW_ID).withSuffix(2)));
+    Core::ICore::addContextObject(rightContext);
 }
 
 TextEditorWidget *SideBySideDiffEditorWidget::leftEditorWidget() const

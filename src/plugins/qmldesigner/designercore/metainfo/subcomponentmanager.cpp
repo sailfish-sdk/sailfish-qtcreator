@@ -277,11 +277,12 @@ void SubComponentManager::parseFile(const QString &canonicalFilePath, bool addTo
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
         return;
 
-    QString dir = QFileInfo(canonicalFilePath).path();
+    const QFileInfo fi(canonicalFilePath);
+    const QString dir = fi.path();
     foreach (const QString &qualifier, m_dirToQualifier.values(dir)) {
-        registerQmlFile(canonicalFilePath, qualifier, addToLibrary);
+        registerQmlFile(fi, qualifier, addToLibrary);
     }
-    registerQmlFile(canonicalFilePath, qualification, addToLibrary);
+    registerQmlFile(fi, qualification, addToLibrary);
 }
 
 void SubComponentManager::parseFile(const QString &canonicalFilePath)
@@ -336,6 +337,7 @@ void SubComponentManager::registerQmlFile(const QFileInfo &fileInfo, const QStri
         itemLibraryEntry.setType(componentName.toUtf8());
         itemLibraryEntry.setName(baseComponentName);
         itemLibraryEntry.setCategory(tr("My QML Components"));
+        itemLibraryEntry.setCustomComponentSource(fileInfo.absoluteFilePath());
         if (!qualifier.isEmpty()) {
             itemLibraryEntry.setRequiredImport(fixedQualifier);
         }
@@ -403,7 +405,7 @@ void SubComponentManager::parseQuick3DAssetDir(const QString &assetPath)
                 QString iconName = qmlIt.fileInfo().absolutePath() + '/'
                         + Constants::QUICK_3D_ASSET_ICON_DIR + '/' + name
                         + Constants::QUICK_3D_ASSET_LIBRARY_ICON_SUFFIX;
-                if (!QFileInfo(iconName).exists())
+                if (!QFileInfo::exists(iconName))
                     iconName = iconPath;
                 itemLibraryEntry.setLibraryEntryIconPath(iconName);
                 itemLibraryEntry.setTypeIcon(QIcon(iconName));
@@ -420,8 +422,7 @@ void SubComponentManager::parseQuick3DAssetDir(const QString &assetPath)
                     itemLibraryEntry.addHints(hints);
                 }
 
-                if (!model()->metaInfo().itemLibraryInfo()->containsEntry(itemLibraryEntry))
-                    model()->metaInfo().itemLibraryInfo()->addEntries({itemLibraryEntry});
+                model()->metaInfo().itemLibraryInfo()->addEntries({itemLibraryEntry}, true);
             }
         }
     }
@@ -444,7 +445,7 @@ QStringList SubComponentManager::quick3DAssetPaths() const
     QStringList retPaths;
     for (const auto &impPath : impPaths) {
         const QString assetPath = impPath + QLatin1String(Constants::QUICK_3D_ASSETS_FOLDER);
-        if (QFileInfo(assetPath).exists())
+        if (QFileInfo::exists(assetPath))
             retPaths << assetPath;
     }
     return retPaths;
@@ -504,7 +505,7 @@ void SubComponentManager::update(const QUrl &filePath, const QList<Import> &impo
         }
 
         if (!newDir.filePath().isEmpty())
-            m_dirToQualifier.insertMulti(newDir.canonicalFilePath(), QString());
+            m_dirToQualifier.insert(newDir.canonicalFilePath(), QString());
     }
 
     //

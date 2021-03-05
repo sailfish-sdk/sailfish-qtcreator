@@ -437,7 +437,7 @@ void IosDeviceToolHandlerPrivate::processXml()
             // until the corresponding EndElement. Attributes are reported in attributes(),
             // namespace declarations in namespaceDeclarations().
         {
-            QStringRef elName = outputParser.name();
+            const auto elName = outputParser.name();
             if (elName == QLatin1String("msg")) {
                 stack.append(ParserState(ParserState::Msg));
             } else if (elName == QLatin1String("exit")) {
@@ -472,7 +472,7 @@ void IosDeviceToolHandlerPrivate::processXml()
             } else if (elName == QLatin1String("app_started")) {
                 stack.append(ParserState(ParserState::AppStarted));
                 QXmlStreamAttributes attributes = outputParser.attributes();
-                QStringRef statusStr = attributes.value(QLatin1String("status"));
+                const auto statusStr = attributes.value(QLatin1String("status"));
                 Ios::IosToolHandler::OpStatus status = Ios::IosToolHandler::Unknown;
                 if (statusStr.compare(QLatin1String("success"), Qt::CaseInsensitive) == 0)
                     status = Ios::IosToolHandler::Success;
@@ -482,7 +482,7 @@ void IosDeviceToolHandlerPrivate::processXml()
             } else if (elName == QLatin1String("app_transfer")) {
                 stack.append(ParserState(ParserState::AppTransfer));
                 QXmlStreamAttributes attributes = outputParser.attributes();
-                QStringRef statusStr = attributes.value(QLatin1String("status"));
+                const auto statusStr = attributes.value(QLatin1String("status"));
                 Ios::IosToolHandler::OpStatus status = Ios::IosToolHandler::Unknown;
                 if (statusStr.compare(QLatin1String("success"), Qt::CaseInsensitive) == 0)
                     status = Ios::IosToolHandler::Success;
@@ -839,7 +839,7 @@ void IosSimulatorToolHandlerPrivate::requestTransferApp(const QString &appBundle
     if (SimulatorControl::isSimulatorRunning(m_deviceId))
         installAppOnSimulator();
     else
-        futureList << Utils::onResultReady(simCtl->startSimulator(m_deviceId), onSimulatorStart);
+        futureList << QFuture<void>(Utils::onResultReady(simCtl->startSimulator(m_deviceId), onSimulatorStart));
 }
 
 void IosSimulatorToolHandlerPrivate::requestRunApp(const QString &appBundlePath,
@@ -875,7 +875,7 @@ void IosSimulatorToolHandlerPrivate::requestRunApp(const QString &appBundlePath,
     if (SimulatorControl::isSimulatorRunning(m_deviceId))
         launchAppOnSimulator(extraArgs);
     else
-        futureList << Utils::onResultReady(simCtl->startSimulator(m_deviceId), onSimulatorStart);
+        futureList << QFuture<void>(Utils::onResultReady(simCtl->startSimulator(m_deviceId), onSimulatorStart));
 }
 
 void IosSimulatorToolHandlerPrivate::requestDeviceInfo(const QString &deviceId, int timeout)
@@ -928,7 +928,7 @@ void IosSimulatorToolHandlerPrivate::installAppOnSimulator()
 
     isTransferringApp(m_bundlePath, m_deviceId, 20, 100, "");
     auto installFuture = simCtl->installApp(m_deviceId, Utils::FilePath::fromString(m_bundlePath));
-    futureList << Utils::onResultReady(installFuture, onResponseAppInstall);
+    futureList << QFuture<void>(Utils::onResultReady(installFuture, onResponseAppInstall));
 }
 
 void IosSimulatorToolHandlerPrivate::launchAppOnSimulator(const QStringList &extraArgs)
@@ -991,11 +991,11 @@ void IosSimulatorToolHandlerPrivate::launchAppOnSimulator(const QStringList &ext
         }
     };
 
-    futureList << Utils::onResultReady(
+    futureList << QFuture<void>(Utils::onResultReady(
                       simCtl->launchApp(m_deviceId, bundleId, debugRun, extraArgs,
                                         captureConsole ? stdoutFile->fileName() : QString(),
                                         captureConsole ? stderrFile->fileName() : QString()),
-                      onResponseAppLaunch);
+                      onResponseAppLaunch));
 }
 
 bool IosSimulatorToolHandlerPrivate::isResponseValid(const SimulatorControl::ResponseData &responseData)

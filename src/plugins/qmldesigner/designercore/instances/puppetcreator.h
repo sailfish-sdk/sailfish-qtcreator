@@ -25,12 +25,14 @@
 
 #pragma once
 
+#include "qprocessuniqueptr.h"
+
+#include <utils/id.h>
+
 #include <QString>
 #include <QProcessEnvironment>
 
 #include <designersettings.h>
-
-#include <coreplugin/id.h>
 
 namespace ProjectExplorer {
 class Target;
@@ -53,12 +55,12 @@ public:
 
     void createQml2PuppetExecutableIfMissing();
 
-    QProcess *createPuppetProcess(const QString &puppetMode,
-                                  const QString &socketToken,
-                                  QObject *handlerObject,
-                                  const char *outputSlot,
-                                  const char *finishSlot,
-                                  const QStringList &customOptions = {}) const;
+    QProcessUniquePointer createPuppetProcess(
+        const QString &puppetMode,
+        const QString &socketToken,
+        std::function<void()> processOutputCallback,
+        std::function<void(int, QProcess::ExitStatus)> processFinishCallback,
+        const QStringList &customOptions = {}) const;
 
     void setQrcMappingString(const QString qrcMapping);
 
@@ -82,14 +84,13 @@ protected:
 
     bool checkPuppetIsReady(const QString &puppetPath) const;
     bool qtIsSupported() const;
-    QProcess *puppetProcess(const QString &puppetPath,
-                            const QString &workingDirectory,
-                            const QString &puppetMode,
-                            const QString &socketToken,
-                            QObject *handlerObject,
-                            const char *outputSlot,
-                            const char *finishSlot,
-                            const QStringList &customOptions) const;
+    QProcessUniquePointer puppetProcess(const QString &puppetPath,
+                                        const QString &workingDirectory,
+                                        const QString &puppetMode,
+                                        const QString &socketToken,
+                                        std::function<void()> processOutputCallback,
+                                        std::function<void(int, QProcess::ExitStatus)> processFinishCallback,
+                                        const QStringList &customOptions) const;
 
     QProcessEnvironment processEnvironment() const;
 
@@ -107,7 +108,7 @@ private:
     mutable QString m_compileLog;
     ProjectExplorer::Target *m_target = nullptr;
     PuppetType m_availablePuppetType;
-    static QHash<Core::Id, PuppetType> m_qml2PuppetForKitPuppetHash;
+    static QHash<Utils::Id, PuppetType> m_qml2PuppetForKitPuppetHash;
     const Model *m_model = nullptr;
 #ifndef QMLDESIGNER_TEST
     const DesignerSettings m_designerSettings;

@@ -168,7 +168,7 @@ DesignerSettings SettingsPageWidget::settings() const
         settings.insert(DesignerSettingsKey::PUPPET_TOPLEVEL_BUILD_DIRECTORY,
             m_ui.puppetBuildPathLineEdit->path());
     }
-    settings.insert(DesignerSettingsKey::ALWAYS_SAFE_IN_CRUMBLEBAR,
+    settings.insert(DesignerSettingsKey::ALWAYS_SAVE_IN_CRUMBLEBAR,
         m_ui.alwaysSaveSubcomponentsCheckBox->isChecked());
     settings.insert(DesignerSettingsKey::SHOW_PROPERTYEDITOR_WARNINGS,
         m_ui.showPropertyEditorWarningsCheckBox->isChecked());
@@ -235,7 +235,7 @@ void SettingsPageWidget::setSettings(const DesignerSettings &settings)
         DesignerSettingsKey::DEBUG_PUPPET).toString());
 
     m_ui.alwaysSaveSubcomponentsCheckBox->setChecked(settings.value(
-        DesignerSettingsKey::ALWAYS_SAFE_IN_CRUMBLEBAR).toBool());
+        DesignerSettingsKey::ALWAYS_SAVE_IN_CRUMBLEBAR).toBool());
     m_ui.showPropertyEditorWarningsCheckBox->setChecked(settings.value(
         DesignerSettingsKey::SHOW_PROPERTYEDITOR_WARNINGS).toBool());
     m_ui.showWarnExceptionsCheckBox->setChecked(settings.value(
@@ -249,7 +249,6 @@ void SettingsPageWidget::setSettings(const DesignerSettings &settings)
         DesignerSettingsKey::ENABLE_TIMELINEVIEW).toBool());
 
     if (settings.value(DesignerSettingsKey::STANDALONE_MODE).toBool()) {
-        m_ui.emulationGroupBox->hide();
         m_ui.debugGroupBox->hide();
         m_ui.featureTimelineEditorCheckBox->hide();
     }
@@ -273,7 +272,7 @@ void SettingsPageWidget::apply()
 
     for (const QByteArray &key : restartNecessaryKeys) {
         if (currentSettings.value(key) != newSettings.value(key)) {
-            QMessageBox::information(Core::ICore::mainWindow(), tr("Restart Required"),
+            QMessageBox::information(Core::ICore::dialogParent(), tr("Restart Required"),
                 tr("The made changes will take effect after a "
                    "restart of the QML Emulation layer or %1.")
                 .arg(Core::Constants::IDE_DISPLAY_NAME));

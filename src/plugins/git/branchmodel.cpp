@@ -32,6 +32,7 @@
 
 #include <utils/filesystemwatcher.h>
 #include <utils/qtcassert.h>
+#include <utils/stringutils.h>
 
 #include <QDateTime>
 #include <QFont>
@@ -647,7 +648,7 @@ bool BranchModel::branchIsMerged(const QModelIndex &idx)
         VcsOutputWindow::appendError(errorMessage);
     }
 
-    const QStringList lines = output.split('\n', QString::SkipEmptyParts);
+    const QStringList lines = output.split('\n', Qt::SkipEmptyParts);
     for (const QString &l : lines) {
         QString currentBranch = l.mid(2); // remove first letters (those are either
                                           // "  " or "* " depending on whether it is
@@ -783,7 +784,7 @@ void BranchModel::Private::parseOutputLine(const QString &line, bool force)
     if (strDateTime.isEmpty())
         strDateTime = lineParts.at(4);
     if (!strDateTime.isEmpty()) {
-        const qint64 timeT = strDateTime.leftRef(strDateTime.indexOf(' ')).toLongLong();
+        const qint64 timeT = strDateTime.left(strDateTime.indexOf(' ')).toLongLong();
         dateTime = QDateTime::fromSecsSinceEpoch(timeT);
     }
 

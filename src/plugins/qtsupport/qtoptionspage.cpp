@@ -39,7 +39,6 @@
 #include <coreplugin/dialogs/restartdialog.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/progressmanager/progressmanager.h>
-#include <coreplugin/variablechooser.h>
 
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/projectexplorericons.h>
@@ -55,6 +54,7 @@
 #include <utils/runextensions.h>
 #include <utils/treemodel.h>
 #include <utils/utilsicons.h>
+#include <utils/variablechooser.h>
 
 #include <QDesktopServices>
 #include <QDir>
@@ -128,7 +128,7 @@ public:
             const QString row = "<tr><td>%1:</td><td>%2</td></tr>";
             return QString("<table>"
                          + row.arg(tr("Qt Version"), m_version->qtVersionString())
-                         + row.arg(tr("Location of qmake)"), m_version->qmakeCommand().toUserOutput())
+                         + row.arg(tr("Location of qmake"), m_version->qmakeCommand().toUserOutput())
                          + "</table>");
         }
 
@@ -326,7 +326,7 @@ QtOptionsPageWidget::QtOptionsPageWidget()
     connect(ProjectExplorer::ToolChainManager::instance(), &ToolChainManager::toolChainsChanged,
             this, &QtOptionsPageWidget::toolChainsUpdated);
 
-    auto chooser = new Core::VariableChooser(this);
+    auto chooser = new VariableChooser(this);
     chooser->addSupportedWidget(m_versionUi.nameEdit, "Qt:Name");
     chooser->addMacroExpanderProvider([this] {
         BaseQtVersion *version = currentVersion();
@@ -847,7 +847,7 @@ static bool canLinkWithQt(QString *toolTip)
     const QString link = installSettingsValue ? *installSettingsValue : QString();
     if (!link.isEmpty())
         tip << QtOptionsPageWidget::tr("%1 is currently linked to \"%2\".")
-                   .arg(Core::Constants::IDE_DISPLAY_NAME, link);
+                   .arg(QString(Core::Constants::IDE_DISPLAY_NAME), link);
     if (toolTip)
         *toolTip = tip.join("\n\n");
     return canLink;
@@ -934,10 +934,10 @@ static bool validateQtInstallDir(FancyLineEdit *input, QString *errorString)
     if (!settingsDirForQtDir(qtDir)) {
         if (errorString) {
             const QStringList filesToCheck = settingsFilesToCheck() + qtversionFilesToCheck();
-            *errorString = QtOptionsPageWidget::tr(
-                               "<html><body>Qt installation information was not found in \"%1\". "
-                               "Choose a directory that contains one of the files <pre>%2</pre>")
-                               .arg(qtDir, filesToCheck.join('\n'));
+            *errorString = "<html><body>" + QtOptionsPageWidget::tr(
+                               "Qt installation information was not found in \"%1\". "
+                               "Choose a directory that contains one of the files %2")
+                               .arg(qtDir, "<pre>" + filesToCheck.join('\n') + "</pre>");
         }
         return false;
     }

@@ -16,6 +16,8 @@ QtcPlugin {
     files: [
         "client.cpp",
         "client.h",
+        "diagnosticmanager.cpp",
+        "diagnosticmanager.h",
         "documentsymbolcache.cpp",
         "documentsymbolcache.h",
         "dynamiccapabilities.cpp",
@@ -42,6 +44,8 @@ QtcPlugin {
         "languageclientquickfix.h",
         "languageclientsettings.cpp",
         "languageclientsettings.h",
+        "languageclientsymbolsupport.cpp",
+        "languageclientsymbolsupport.h",
         "languageclientutils.cpp",
         "languageclientutils.h",
         "locatorfilter.cpp",

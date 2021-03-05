@@ -25,8 +25,9 @@
 
 #pragma once
 
-#include <coreplugin/id.h>
 #include <projectexplorer/projectexplorerconstants.h>
+
+#include <utils/id.h>
 
 #include <QString>
 #include <QUrl>
@@ -47,13 +48,13 @@ inline QString qmlDebugServices(QmlDebugServicesPreset preset)
     case NoQmlDebugServices:
         return QString();
     case QmlDebuggerServices:
-        return QStringLiteral("DebugMessages,QmlDebugger,V8Debugger,QmlInspector");
+        return QStringLiteral("DebugMessages,QmlDebugger,V8Debugger,QmlInspector,DebugTranslation");
     case QmlProfilerServices:
-        return QStringLiteral("CanvasFrameRate,EngineControl,DebugMessages");
+        return QStringLiteral("CanvasFrameRate,EngineControl,DebugMessages,DebugTranslation");
     case QmlNativeDebuggerServices:
-        return QStringLiteral("NativeQmlDebugger");
+        return QStringLiteral("NativeQmlDebugger,DebugTranslation");
     case QmlPreviewServices:
-        return QStringLiteral("QmlPreview");
+        return QStringLiteral("QmlPreview,DebugTranslation");
     default:
         Q_ASSERT(false);
         return QString();
@@ -88,7 +89,7 @@ inline QString qmlDebugLocalArguments(QmlDebugServicesPreset services, const QSt
     return qmlDebugCommandLineArguments(services, QLatin1String("file:") + socket, block);
 }
 
-inline Core::Id runnerIdForRunMode(Core::Id runMode)
+inline Utils::Id runnerIdForRunMode(Utils::Id runMode)
 {
     if (runMode == ProjectExplorer::Constants::QML_PROFILER_RUN_MODE)
         return ProjectExplorer::Constants::QML_PROFILER_RUNNER;
@@ -97,7 +98,7 @@ inline Core::Id runnerIdForRunMode(Core::Id runMode)
     return {};
 }
 
-inline QmlDebugServicesPreset servicesForRunMode(Core::Id runMode)
+inline QmlDebugServicesPreset servicesForRunMode(Utils::Id runMode)
 {
     if (runMode == ProjectExplorer::Constants::QML_PROFILER_RUN_MODE)
         return QmlDebug::QmlProfilerServices;

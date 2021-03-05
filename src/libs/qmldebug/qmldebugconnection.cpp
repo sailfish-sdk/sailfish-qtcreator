@@ -27,6 +27,7 @@
 #include "qmldebugclient.h"
 #include "qpacketprotocol.h"
 
+#include <utils/porting.h>
 #include <utils/temporaryfile.h>
 
 #include <QLocalServer>
@@ -346,8 +347,12 @@ void QmlDebugConnection::connectToHost(const QString &hostName, quint16 port)
         emit logStateChange(socketStateToString(state));
     });
 
-    connect(socket, QOverload<QAbstractSocket::SocketError>::of(&QAbstractSocket::error),
-            this, [this](QAbstractSocket::SocketError error) {
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
+    const auto errorOccurred = QOverload<QAbstractSocket::SocketError>::of(&QAbstractSocket::error);
+#else
+    const auto errorOccurred = &QAbstractSocket::errorOccurred;
+#endif
+    connect(socket, errorOccurred, this, [this](QAbstractSocket::SocketError error) {
         emit logError(socketErrorToString(error));
         socketDisconnected();
     }, Qt::QueuedConnection);
@@ -387,7 +392,7 @@ void QmlDebugConnection::newConnection()
     connect(socket, &QLocalSocket::disconnected, this, &QmlDebugConnection::socketDisconnected,
             Qt::QueuedConnection);
 
-    constexpr void (QLocalSocket::*LocalSocketErrorFunction)(QLocalSocket::LocalSocketError)
+    void (QLocalSocket::*LocalSocketErrorFunction)(QLocalSocket::LocalSocketError)
 #if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
                 = &QLocalSocket::error;
 #else

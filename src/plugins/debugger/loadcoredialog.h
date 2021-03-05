@@ -25,9 +25,10 @@
 
 #pragma once
 
+#include <utils/id.h>
+
 #include <QDialog>
 
-namespace Core { class Id; }
 namespace ProjectExplorer { class Kit; }
 namespace Utils { class FilePath; }
 
@@ -50,6 +51,7 @@ public:
     QString localCoreFile() const;
     QString remoteCoreFile() const;
     QString overrideStartScript() const;
+    Utils::FilePath sysRoot() const;
     bool useLocalCoreFile() const;
     bool forcesLocalCoreFile() const;
     bool isLocalKit() const;
@@ -60,7 +62,8 @@ public:
     void setLocalCoreFile(const QString &core);
     void setRemoteCoreFile(const QString &core);
     void setOverrideStartScript(const QString &scriptName);
-    void setKitId(Core::Id id);
+    void setSysRoot(const QString &sysRoot);
+    void setKitId(Utils::Id id);
     void setForceLocalCoreFile(bool on);
 
 private:

@@ -211,11 +211,6 @@ BookmarkView::BookmarkView(BookmarkManager *manager)  :
     connect(this, &QAbstractItemView::activated, this, &BookmarkView::gotoBookmark);
 }
 
-BookmarkView::~BookmarkView()
-{
-    ICore::removeContextObject(m_bookmarkContext);
-}
-
 QList<QToolButton *> BookmarkView::createToolBarWidgets()
 {
     Command *prevCmd = ActionManager::command(Constants::BOOKMARKS_PREV_ACTION);
@@ -274,7 +269,7 @@ void BookmarkView::removeBookmark(const QModelIndex& index)
 
 void BookmarkView::keyPressEvent(QKeyEvent *event)
 {
-    if (event->key() == Qt::Key_Delete) {
+    if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
         removeBookmark(currentIndex());
         event->accept();
         return;
@@ -748,7 +743,7 @@ void BookmarkManager::addBookmark(const QString &s)
     if (index3 != -1 || index2 != -1 || index1 != -1) {
         const QString &filePath = s.mid(index1+1, index2-index1-1);
         const QString &note = s.mid(index3 + 1);
-        const int lineNumber = s.midRef(index2 + 1, index3 - index2 - 1).toInt();
+        const int lineNumber = s.mid(index2 + 1, index3 - index2 - 1).toInt();
         if (!filePath.isEmpty() && !findBookmark(FilePath::fromString(filePath), lineNumber)) {
             auto b = new Bookmark(lineNumber, this);
             b->updateFileName(FilePath::fromString(filePath));

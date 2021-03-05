@@ -42,6 +42,8 @@
 #include <utils/qtcassert.h>
 #include <utils/qtcprocess.h>
 
+#include <QRegularExpression>
+
 using namespace Utils;
 using namespace ProjectExplorer;
 using namespace ProjectExplorer::Internal;
@@ -195,7 +197,7 @@ namespace {
 static QString generateSuffix(const QString &suffix)
 {
     QString result = suffix;
-    result.replace(QRegExp("[^a-zA-Z0-9_.-]"), QString('_')); // replace fishy character
+    result.replace(QRegularExpression("[^a-zA-Z0-9_.-]"), QString('_')); // replace fishy character
     if (!result.startsWith('.'))
         result.prepend('.');
     return result;
@@ -587,7 +589,7 @@ QVariantMap UserFileVersion16Upgrader::insertSteps(QVariantMap buildConfiguratio
         QString defaultDisplayName = oldStepMap.androidPackageInstall.value(defaultDisplayNameKey).toString();
         bool enabled = oldStepMap.androidPackageInstall.value(enabledKey).toBool();
 
-        androidPackageInstallStep.insert(idKey, Core::Id("Qt4ProjectManager.AndroidPackageInstallationStep").toSetting());
+        androidPackageInstallStep.insert(idKey, Utils::Id("Qt4ProjectManager.AndroidPackageInstallationStep").toSetting());
         androidPackageInstallStep.insert(displayNameKey, displayName);
         androidPackageInstallStep.insert(defaultDisplayNameKey, defaultDisplayName);
         androidPackageInstallStep.insert(enabledKey, enabled);
@@ -596,7 +598,7 @@ QVariantMap UserFileVersion16Upgrader::insertSteps(QVariantMap buildConfiguratio
         defaultDisplayName = oldStepMap.androidDeployQt.value(defaultDisplayNameKey).toString();
         enabled = oldStepMap.androidDeployQt.value(enabledKey).toBool();
 
-        androidBuildApkStep.insert(idKey, Core::Id("QmakeProjectManager.AndroidBuildApkStep").toSetting());
+        androidBuildApkStep.insert(idKey, Utils::Id("QmakeProjectManager.AndroidBuildApkStep").toSetting());
         androidBuildApkStep.insert(displayNameKey, displayName);
         androidBuildApkStep.insert(defaultDisplayNameKey, defaultDisplayName);
         androidBuildApkStep.insert(enabledKey, enabled);

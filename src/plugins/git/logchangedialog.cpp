@@ -31,15 +31,16 @@
 
 #include <utils/qtcassert.h>
 
-#include <QTreeView>
-#include <QLabel>
-#include <QPushButton>
-#include <QStandardItemModel>
+#include <QComboBox>
 #include <QDialogButtonBox>
 #include <QItemSelectionModel>
-#include <QVBoxLayout>
-#include <QComboBox>
+#include <QLabel>
+#include <QModelIndex>
 #include <QPainter>
+#include <QPushButton>
+#include <QStandardItemModel>
+#include <QTreeView>
+#include <QVBoxLayout>
 
 using namespace VcsBase;
 
@@ -53,9 +54,36 @@ enum Columns
     ColumnCount
 };
 
+class LogChangeModel : public QStandardItemModel
+{
+public:
+    explicit LogChangeModel(LogChangeWidget *parent) : QStandardItemModel(0, ColumnCount, parent) {}
+
+    QVariant data(const QModelIndex &index, int role) const override
+    {
+        if (role == Qt::ToolTipRole) {
+            const QString revision = index.sibling(index.row(), Sha1Column).data(Qt::EditRole).toString();
+            const auto it = m_descriptions.constFind(revision);
+            if (it != m_descriptions.constEnd())
+                return *it;
+            const QString desc = QString::fromUtf8(
+                        GitClient::instance()->synchronousShow(
+                            m_workingDirectory, revision, VcsCommand::NoOutput));
+            m_descriptions[revision] = desc;
+            return desc;
+        }
+        return QStandardItemModel::data(index, role);
+    }
+
+    void setWorkingDirectory(const QString &workingDir) { m_workingDirectory = workingDir; }
+private:
+    QString m_workingDirectory;
+    mutable QHash<QString, QString> m_descriptions;
+};
+
 LogChangeWidget::LogChangeWidget(QWidget *parent)
     : Utils::TreeView(parent)
-    , m_model(new QStandardItemModel(0, ColumnCount, this))
+    , m_model(new LogChangeModel(this))
     , m_hasCustomDelegate(false)
 {
     QStringList headers;
@@ -68,10 +96,12 @@ LogChangeWidget::LogChangeWidget(QWidget *parent)
     setSelectionBehavior(QAbstractItemView::SelectRows);
     setActivationMode(Utils::DoubleClickActivation);
     connect(this, &LogChangeWidget::activated, this, &LogChangeWidget::emitCommitActivated);
+    setFocus();
 }
 
 bool LogChangeWidget::init(const QString &repository, const QString &commit, LogFlags flags)
 {
+    m_model->setWorkingDirectory(repository);
     if (!populateLog(repository, commit, flags))
         return false;
     if (m_model->rowCount() > 0)
@@ -154,8 +184,12 @@ bool LogChangeWidget::populateLog(const QString &repository, const QString &comm
     QStringList arguments;
     arguments << "--max-count=1000" << "--format=%h:%s %d";
     arguments << (commit.isEmpty() ? "HEAD" : commit);
-    if (!(flags & IncludeRemotes))
-        arguments << "--not" << "--remotes";
+    if (!(flags & IncludeRemotes)) {
+        QString remotesFlag("--remotes");
+        if (!m_excludedRemote.isEmpty())
+            remotesFlag += '=' + m_excludedRemote;
+        arguments << "--not" << remotesFlag;
+    }
     arguments << "--";
     QString output;
     if (!GitClient::instance()->synchronousLog(

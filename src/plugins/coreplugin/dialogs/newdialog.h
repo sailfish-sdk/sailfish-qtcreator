@@ -57,7 +57,7 @@ public:
     void setWizardFactories(QList<IWizardFactory*> factories, const QString &defaultLocation, const QVariantMap &extraVariables);
 
     void showDialog();
-    Id selectedPlatform() const;
+    Utils::Id selectedPlatform() const;
 
     static QWidget *currentDialog();
 
@@ -70,7 +70,7 @@ private:
     void accept() override;
     void reject() override;
     void updateOkButton();
-    void setSelectedPlatform(const QString &platform);
+    void setSelectedPlatform(int index);
 
     Core::IWizardFactory *currentWizardFactory() const;
     void addItem(QStandardItem *topLevelCategoryItem, IWizardFactory *factory);

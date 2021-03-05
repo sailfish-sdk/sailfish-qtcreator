@@ -34,20 +34,16 @@
 #include <QPair>
 
 QT_BEGIN_NAMESPACE
-class QPlainTextEdit;
-class QTextCharFormat;
 class QToolButton;
 QT_END_NAMESPACE
 
+namespace Core { class OutputWindow; }
 namespace Utils { class OutputFormatter; }
 
 namespace ProjectExplorer {
-
-class BuildManager;
 class Task;
 
 namespace Internal {
-
 class ShowOutputTaskHandler;
 class CompileOutputTextEdit;
 
@@ -64,7 +60,6 @@ public:
     QString displayName() const override { return tr("Compile Output"); }
     int priorityInStatusBar() const override;
     void clearContents() override;
-    void visibilityChanged(bool visible) override;
     bool canFocus() const override;
     bool hasFocus() const override;
     void setFocus() override;
@@ -77,14 +72,17 @@ public:
 
     void appendText(const QString &text, BuildStep::OutputFormat format);
 
-    void registerPositionOf(const Task &task, int linkedOutputLines, int skipLines);
+    void registerPositionOf(const Task &task, int linkedOutputLines, int skipLines, int offset = 0);
     bool knowsPositionOf(const Task &task);
     void showPositionOf(const Task &task);
 
     void flush();
+    void reset();
 
     const CompileOutputSettings &settings() const { return m_settings; }
     void setSettings(const CompileOutputSettings &settings);
+
+    Utils::OutputFormatter *outputFormatter() const;
 
 private:
     void updateFilter() override;
@@ -93,12 +91,11 @@ private:
     void storeSettings() const;
     void updateFromSettings();
 
-    CompileOutputTextEdit *m_outputWindow;
+    Core::OutputWindow *m_outputWindow;
     QHash<unsigned int, QPair<int, int>> m_taskPositions;
     ShowOutputTaskHandler *m_handler;
     QToolButton *m_cancelBuildButton;
     QToolButton * const m_settingsButton;
-    Utils::OutputFormatter *m_formatter;
     CompileOutputSettings m_settings;
 };
 

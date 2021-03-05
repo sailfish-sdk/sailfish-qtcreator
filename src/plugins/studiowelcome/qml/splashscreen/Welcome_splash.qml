@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of Qt Creator.
@@ -28,6 +28,7 @@ import QtQuick.Controls 2.3
 import StudioFonts 1.0
 import QtQuick.Layouts 1.0
 import projectmodel 1.0
+import usagestatistics 1.0
 
 Image {
     id: welcome_splash
@@ -83,7 +84,7 @@ Image {
         width: 270
         height: 24
         color: "#ffffff"
-        text: qsTr("Copyright 2008 - 2019 The Qt Company")
+        text: qsTr("Copyright 2008 - 2020 The Qt Company")
         font.pixelSize: 16
         font.family: StudioFonts.titilliumWeb_light
     }
@@ -249,5 +250,21 @@ Image {
         ProjectModel {
             id: projectModel
         }
+
+        UsageStatisticModel {
+            id: usageStatisticModel
+        }
+    }
+
+    NoShowCheckbox {
+        id: usageStatisticCheckBox
+        x: -47
+        y: 391
+        text: "Enable Usage Statistics"
+        padding: 0
+        scale: 0.5
+        checked: usageStatisticModel.usageStatisticEnabled
+
+        onCheckedChanged: usageStatisticModel.setPluginEnabled(usageStatisticCheckBox.checked)
     }
 }

@@ -32,7 +32,9 @@
 #include "projectexplorerconstants.h"
 #include "task.h"
 
+#include <utils/aspects.h>
 #include <utils/environment.h>
+#include <utils/macroexpander.h>
 #include <utils/port.h>
 
 #include <QWidget>
@@ -89,7 +91,7 @@ protected:
  *
  */
 
-class PROJECTEXPLORER_EXPORT GlobalOrProjectAspect : public ProjectConfigurationAspect
+class PROJECTEXPLORER_EXPORT GlobalOrProjectAspect : public Utils::BaseAspect
 {
     Q_OBJECT
 
@@ -132,10 +134,8 @@ public:
 
     QWidget *createConfigurationWidget();
 
-    bool isConfigured() const { return checkForIssues().isEmpty(); }
+    bool isConfigured() const;
     virtual Tasks checkForIssues() const { return {}; }
-
-    Utils::OutputFormatter *createOutputFormatter() const;
 
     using CommandLineGetter = std::function<Utils::CommandLine()>;
     void setCommandLineGetter(const CommandLineGetter &cmdGetter);
@@ -151,28 +151,30 @@ public:
 
     ProjectExplorer::ProjectNode *productNode() const;
 
-    template <class T = ISettingsAspect> T *currentSettings(Core::Id id) const
+    template <class T = ISettingsAspect> T *currentSettings(Utils::Id id) const
     {
         if (auto a = qobject_cast<GlobalOrProjectAspect *>(aspect(id)))
             return qobject_cast<T *>(a->currentSettings());
         return nullptr;
     }
 
-    using AspectFactory = std::function<ProjectConfigurationAspect *(Target *)>;
+    using AspectFactory = std::function<Utils::BaseAspect *(Target *)>;
     template <class T> static void registerAspect()
     {
         addAspectFactory([](Target *target) { return new T(target); });
     }
 
-    QMap<Core::Id, QVariantMap> aspectData() const;
+    QMap<Utils::Id, QVariantMap> aspectData() const;
 
     void update();
+
+    const Utils::MacroExpander *macroExpander() const { return &m_expander; }
 
 signals:
     void enabledChanged();
 
 protected:
-    RunConfiguration(Target *target, Core::Id id);
+    RunConfiguration(Target *target, Utils::Id id);
 
     /// convenience function to get current build system. Try to avoid.
     BuildSystem *activeBuildSystem() const;
@@ -196,6 +198,7 @@ private:
     QString m_buildKey;
     CommandLineGetter m_commandLineGetter;
     Updater m_updater;
+    Utils::MacroExpander m_expander;
 };
 
 class RunConfigurationCreationInfo
@@ -205,7 +208,6 @@ public:
     RunConfiguration *create(Target *target) const;
 
     const RunConfigurationFactory *factory = nullptr;
-    Core::Id id;
     QString buildKey;
     QString displayName;
     QString displayNameUniquifier;
@@ -226,27 +228,26 @@ public:
     static RunConfiguration *clone(Target *parent, RunConfiguration *source);
     static const QList<RunConfigurationCreationInfo> creatorsForTarget(Target *parent);
 
-    Core::Id id() const { return m_runConfigBaseId; }
-    Core::Id runConfigurationBaseId() const { return m_runConfigBaseId; }
+    Utils::Id runConfigurationId() const { return m_runConfigurationId; }
 
     static QString decoratedTargetName(const QString &targetName, Target *kit);
 
 protected:
-    virtual QList<RunConfigurationCreationInfo> availableCreators(Target *parent) const;
+    virtual QList<RunConfigurationCreationInfo> availableCreators(Target *target) const;
 
     using RunConfigurationCreator = std::function<RunConfiguration *(Target *)>;
 
     template <class RunConfig>
-    void registerRunConfiguration(Core::Id runConfigBaseId)
+    void registerRunConfiguration(Utils::Id runConfigurationId)
     {
-        m_creator = [runConfigBaseId](Target *t) -> RunConfiguration * {
-            return new RunConfig(t, runConfigBaseId);
+        m_creator = [runConfigurationId](Target *t) -> RunConfiguration * {
+            return new RunConfig(t, runConfigurationId);
         };
-        m_runConfigBaseId = runConfigBaseId;
+        m_runConfigurationId = runConfigurationId;
     }
 
-    void addSupportedProjectType(Core::Id id);
-    void addSupportedTargetDeviceType(Core::Id id);
+    void addSupportedProjectType(Utils::Id projectTypeId);
+    void addSupportedTargetDeviceType(Utils::Id deviceTypeId);
     void setDecorateDisplayNames(bool on);
 
     virtual bool canHandle(Target *target) const;
@@ -256,9 +257,9 @@ private:
 
     friend class RunConfigurationCreationInfo;
     RunConfigurationCreator m_creator;
-    Core::Id m_runConfigBaseId;
-    QList<Core::Id> m_supportedProjectTypes;
-    QList<Core::Id> m_supportedTargetDeviceTypes;
+    Utils::Id m_runConfigurationId;
+    QList<Utils::Id> m_supportedProjectTypes;
+    QList<Utils::Id> m_supportedTargetDeviceTypes;
     bool m_decorateDisplayNames = false;
 };
 

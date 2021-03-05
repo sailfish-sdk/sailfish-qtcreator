@@ -32,7 +32,6 @@
 #include <texteditor/syntaxhighlighter.h>
 #include <vcsbase/submiteditorwidget.h>
 
-#include <QRegExp>
 #include <QSyntaxHighlighter>
 
 QT_BEGIN_NAMESPACE
@@ -77,7 +76,7 @@ protected:
     QString commitName() const override;
 
 signals:
-    void show(const QString &commit);
+    void showRequested(const QString &commit);
 
 private:
     void authorInformationChanged();

@@ -154,12 +154,13 @@ void dummyStatement(...) {}
 #include <QDir>
 #include <QHash>
 #include <QLibrary>
-#include <QLinkedList>
 #include <QList>
 #include <QMap>
 #include <QPointer>
 #include <QProcess>
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 #include <QRegExp>
+#endif
 #include <QString>
 #include <QStringList>
 #include <QSettings>
@@ -306,6 +307,8 @@ uint qHash(const QPointer<QObject> &p) { return (ulong)p.data(); }
 #endif
 QT_END_NAMESPACE
 
+// used to prevent some optimizations.
+volatile int global_volatile = 0;
 
 namespace nsA {
 namespace nsB {
@@ -1163,111 +1166,6 @@ namespace painting {
 } // namespace painting
 
 
-namespace qlinkedlist {
-
-    void testQLinkedListInt()
-    {
-        QLinkedList<int> list;
-        list.append(101);
-        list.append(102);
-        BREAK_HERE;
-        // Expand list.
-        // Check list <2 items> QLinkedList<int>.
-        // Check list.0 101 int.
-        // Check list.1 102 int.
-        // Continue.
-        dummyStatement(&list);
-    }
-
-    void testQLinkedListUInt()
-    {
-        QLinkedList<uint> list;
-        list.append(103);
-        list.append(104);
-        BREAK_HERE;
-        // Expand list.
-        // Check list <2 items> QLinkedList<unsigned int>.
-        // Check list.0 103 unsigned int.
-        // Check list.1 104 unsigned int.
-        // Continue.
-        dummyStatement(&list);
-    }
-
-    void testQLinkedListFooStar()
-    {
-        QLinkedList<Foo *> list;
-        list.append(new Foo(1));
-        list.append(0);
-        list.append(new Foo(3));
-        BREAK_HERE;
-        // Expand list list.0 list.2.
-        // Check list <3 items> QLinkedList<Foo*>.
-        // CheckType list.0 Foo.
-        // Check list.0.a 1 int.
-        // Check list.1 0x0 Foo *.
-        // CheckType list.2 Foo.
-        // Check list.2.a 3 int.
-        // Continue.
-        dummyStatement(&list);
-    }
-
-    void testQLinkedListULongLong()
-    {
-        QLinkedList<qulonglong> list;
-        list.append(42);
-        list.append(43);
-        BREAK_HERE;
-        // Expand list.
-        // Check list <2 items> QLinkedList<unsigned long long>.
-        // Check list.0 42 unsigned long long.
-        // Check list.1 43 unsigned long long.
-        // Continue.
-        dummyStatement(&list);
-    }
-
-    void testQLinkedListFoo()
-    {
-        QLinkedList<Foo> list;
-        list.append(Foo(1));
-        list.append(Foo(2));
-        BREAK_HERE;
-        // Expand list list.0 list.1.
-        // Check list <2 items> QLinkedList<Foo>.
-        // CheckType list.0 Foo.
-        // Check list.0.a 1 int.
-        // CheckType list.1 Foo.
-        // Check list.1.a 2 int.
-        // Continue.
-        dummyStatement(&list);
-    }
-
-    void testQLinkedListStdString()
-    {
-        QLinkedList<std::string> list;
-        list.push_back("aa");
-        list.push_back("bb");
-        BREAK_HERE;
-        // Expand list.
-        // Check list <2 items> QLinkedList<std::string>.
-        // Check list.0 "aa" std::string.
-        // Check list.1 "bb" std::string.
-        // Continue.
-        dummyStatement(&list);
-    }
-
-    void testQLinkedList()
-    {
-        testQLinkedListInt();
-        testQLinkedListUInt();
-        testQLinkedListFooStar();
-        testQLinkedListULongLong();
-        testQLinkedListFoo();
-        testQLinkedListStdString();
-    }
-
-} // namespace qlinkedlist
-
-
 namespace qlist {
 
     void testQListInt()
@@ -2097,7 +1995,7 @@ namespace qobject {
 } // namespace qobject
 
 
-
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 namespace qregexp {
 
     void testQRegExp()
@@ -2123,6 +2021,7 @@ namespace qregexp {
     }
 
 } // namespace qregexp
+#endif
 
 namespace qrect {
 
@@ -2378,8 +2277,10 @@ namespace final {
         BREAK_HERE;
         // Continue.
 
-        // Jump over next line.
-        return;
+        // Jump over next two lines using the context menu in the gutter.
+        if (global_volatile == 0)
+            return;
+
         while (a > 0)
             ++a;
         dummyStatement(&a);
@@ -2390,8 +2291,10 @@ namespace final {
         BREAK_HERE;
         // Continue.
 
-        // Jump over next line.
-        return;
+        // Jump over next two lines using the context menu in the gutter.
+        if (global_volatile == 0)
+            return;
+
         throw 42;
     }
 
@@ -4114,12 +4017,14 @@ namespace qstring  {
 
     void testQStringRef()
     {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
         QString str = "Hello";
         QStringRef ref(&str, 1, 2);
         BREAK_HERE;
         // Check ref "el" QStringRef.
         // Continue.
         dummyStatement(&str, &ref);
+#endif
     }
 
     void testQString()
@@ -4164,10 +4069,7 @@ namespace formats {
     {
         const wchar_t *w = L"aöa";
         QString u;
-        if (sizeof(wchar_t) == 4)
-            u = QString::fromUcs4((uint *)w);
-        else
-            u = QString::fromUtf16((ushort *)w);
+        u = QString::fromWCharArray(w);
         BREAK_HERE;
         // Check u "aöa" QString.
         // CheckType w wchar_t *.
@@ -4279,7 +4181,7 @@ namespace qprocess {
         const int N = 14;
         QProcess proc[N];
         for (int i = 0; i != N; ++i) {
-            proc[i].start("sleep 10");
+            proc[i].start("sleep", {"10"});
             proc[i].waitForStarted();
         }
         BREAK_HERE;
@@ -4367,12 +4269,9 @@ namespace qvariant {
     void testQVariant1()
     {
         QVariant value;
-        QVariant::Type t = QVariant::String;
-        value = QVariant(t, (void*)0);
-        *(QString*)value.data() = QString("Some string");
+        value = QVariant(QString("Some string"));
         int i = 1;
         BREAK_HERE;
-        // Check t QVariant::String (10) QVariant::Type.
         // Check value "Some string" QVariant (QString).
         // Continue.
 
@@ -5304,7 +5203,7 @@ namespace basic {
         // Continue.
 
         // Manual: Toogle "Sort Member Alphabetically" in context menu
-        // Manual: of "Locals and Expressions" view.
+        // Manual: of "Locals" and "Expressions" views.
         // Manual: Check that order of displayed members changes.
         dummyStatement(&c);
     }
@@ -5436,7 +5335,7 @@ namespace basic {
     void testTypeFormats()
     {
         // These tests should result in properly displayed umlauts in the
-        // Locals and Expressions view. It is only support on gdb with Python.
+        // Locals and Expressions views. It is only support on gdb with Python.
 
         const char *s = "aöa";
         const char cs[] = "aöa";
@@ -5457,10 +5356,7 @@ namespace basic {
         // Windows: Select UTF-16 in "Change Format for Type" in L&W context menu.
         // Other: Select UCS-6 in "Change Format for Type" in L&W context menu.
 
-        if (sizeof(wchar_t) == 4)
-            u = QString::fromUcs4((uint *)w);
-        else
-            u = QString::fromUtf16((ushort *)w);
+        u = QString::fromWCharArray(w);
 
         // Make sure to undo "Change Format".
         dummyStatement(s, w, &ww, &cw, &cc, &cs);
@@ -5660,7 +5556,7 @@ namespace basic {
     void testFork()
     {
         QProcess proc;
-        proc.start("/bin/ls");
+        proc.start("/bin/ls", QStringList());
         proc.waitForFinished();
         QByteArray ba = proc.readAllStandardError();
         ba.append('x');
@@ -7290,13 +7186,14 @@ int main(int argc, char *argv[])
     qdir::testQDir();
     qfileinfo::testQFileInfo();
     qhash::testQHash();
-    qlinkedlist::testQLinkedList();
     qlist::testQList();
     qlocale::testQLocale();
     qmap::testQMap();
     qobject::testQObject();
     qrect::testGeometry();
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     qregexp::testQRegExp();
+#endif
     qregion::testQRegion();
     qscript::testQScript();
     qjson::testQJson();

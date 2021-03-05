@@ -38,6 +38,7 @@
 #include <utils/algorithm.h>
 #include <utils/macroexpander.h>
 #include <utils/qtcassert.h>
+#include <utils/stringutils.h>
 
 #include <QThread>
 
@@ -45,7 +46,7 @@ namespace Cppcheck {
 namespace Internal {
 
 CppcheckTool::CppcheckTool(CppcheckDiagnosticManager &manager,
-                           const Core::Id &progressId) :
+                           const Utils::Id &progressId) :
     m_manager(manager),
     m_progressRegexp("^.* checked (\\d+)% done$"),
     m_messageRegexp("^(.+),(\\d+),(\\w+),(\\w+),(.*)$"),
@@ -67,7 +68,7 @@ void CppcheckTool::updateOptions(const CppcheckOptions &options)
         if (trimmedPattern.isEmpty())
             continue;
 
-        const QRegExp re(trimmedPattern, Qt::CaseSensitive, QRegExp::Wildcard);
+        const QRegularExpression re(Utils::wildcardToRegularExpression(trimmedPattern));
         if (re.isValid())
             m_filters.push_back(re);
     }
@@ -192,7 +193,9 @@ void CppcheckTool::check(const Utils::FilePaths &files)
         std::copy_if(files.cbegin(), files.cend(), std::back_inserter(filtered),
                      [this](const Utils::FilePath &file) {
             const QString stringed = file.toString();
-            const auto filter = [stringed](const QRegExp &re) {return re.exactMatch(stringed);};
+            const auto filter = [stringed](const QRegularExpression &re) {
+                return re.match(stringed).hasMatch();
+            };
             return !Utils::contains(m_filters, filter);
         });
     }

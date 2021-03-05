@@ -27,6 +27,8 @@
 
 #include "sqliteglobal.h"
 
+#include <utils/smallstringview.h>
+
 #include <exception>
 #include <mutex>
 
@@ -49,6 +51,9 @@ public:
     virtual void rollback() = 0;
     virtual void lock() = 0;
     virtual void unlock() = 0;
+    virtual void immediateSessionBegin() = 0;
+    virtual void sessionCommit() = 0;
+    virtual void sessionRollback() = 0;
 
 protected:
     ~TransactionInterface() = default;
@@ -69,11 +74,47 @@ public:
 
 protected:
     ~AbstractTransaction() = default;
-    AbstractTransaction(TransactionInterface &interface)
-        : m_interface(interface)
+    AbstractTransaction(TransactionInterface &transactionInterface)
+        : m_interface(transactionInterface)
     {
     }
 
+
+protected:
+    TransactionInterface &m_interface;
+    std::unique_lock<TransactionInterface> m_locker{m_interface};
+    bool m_isAlreadyCommited = false;
+    bool m_rollback = false;
+};
+
+class AbstractThrowingSessionTransaction
+{
+public:
+    AbstractThrowingSessionTransaction(const AbstractTransaction &) = delete;
+    AbstractThrowingSessionTransaction &operator=(const AbstractTransaction &) = delete;
+
+    void commit()
+    {
+        m_interface.sessionCommit();
+        m_isAlreadyCommited = true;
+        m_locker.unlock();
+    }
+
+    ~AbstractThrowingSessionTransaction() noexcept(false)
+    {
+        try {
+            if (m_rollback)
+                m_interface.sessionRollback();
+        } catch (...) {
+            if (!std::uncaught_exceptions())
+                throw;
+        }
+    }
+
+protected:
+    AbstractThrowingSessionTransaction(TransactionInterface &transactionInterface)
+        : m_interface(transactionInterface)
+    {}
 
 protected:
     TransactionInterface &m_interface;
@@ -93,14 +134,14 @@ public:
             if (m_rollback)
                 m_interface.rollback();
         } catch (...) {
-            if (!std::uncaught_exception())
+            if (!std::uncaught_exceptions())
                 throw;
         }
     }
 
 protected:
-    AbstractThrowingTransaction(TransactionInterface &interface)
-        : AbstractTransaction(interface)
+    AbstractThrowingTransaction(TransactionInterface &transactionInterface)
+        : AbstractTransaction(transactionInterface)
     {
     }
 };
@@ -120,8 +161,8 @@ public:
     }
 
 protected:
-    AbstractNonThrowingDestructorTransaction(TransactionInterface &interface)
-        : AbstractTransaction(interface)
+    AbstractNonThrowingDestructorTransaction(TransactionInterface &transactionInterface)
+        : AbstractTransaction(transactionInterface)
     {
     }
 };
@@ -130,10 +171,10 @@ template <typename BaseTransaction>
 class BasicDeferredTransaction final : public BaseTransaction
 {
 public:
-    BasicDeferredTransaction(TransactionInterface &interface)
-        : BaseTransaction(interface)
+    BasicDeferredTransaction(TransactionInterface &transactionInterface)
+        : BaseTransaction(transactionInterface)
     {
-        interface.deferredBegin();
+        transactionInterface.deferredBegin();
     }
 
     ~BasicDeferredTransaction()
@@ -149,10 +190,10 @@ template <typename BaseTransaction>
 class BasicImmediateTransaction final : public BaseTransaction
 {
 public:
-    BasicImmediateTransaction(TransactionInterface &interface)
-        : BaseTransaction(interface)
+    BasicImmediateTransaction(TransactionInterface &transactionInterface)
+        : BaseTransaction(transactionInterface)
     {
-        interface.immediateBegin();
+        transactionInterface.immediateBegin();
     }
 
     ~BasicImmediateTransaction()
@@ -168,10 +209,10 @@ template <typename BaseTransaction>
 class BasicExclusiveTransaction final : public BaseTransaction
 {
 public:
-    BasicExclusiveTransaction(TransactionInterface &interface)
-        : BaseTransaction(interface)
+    BasicExclusiveTransaction(TransactionInterface &transactionInterface)
+        : BaseTransaction(transactionInterface)
     {
-        interface.exclusiveBegin();
+        transactionInterface.exclusiveBegin();
     }
 
     ~BasicExclusiveTransaction()
@@ -181,6 +222,23 @@ public:
 };
 
 using ExclusiveTransaction = BasicExclusiveTransaction<AbstractThrowingTransaction>;
-using ExclusiveNonThrowingDestructorTransaction = BasicExclusiveTransaction<AbstractNonThrowingDestructorTransaction>;
+using ExclusiveNonThrowingDestructorTransaction
+    = BasicExclusiveTransaction<AbstractNonThrowingDestructorTransaction>;
+
+class ImmediateSessionTransaction final : public AbstractThrowingSessionTransaction
+{
+public:
+    ImmediateSessionTransaction(TransactionInterface &transactionInterface)
+        : AbstractThrowingSessionTransaction(transactionInterface)
+    {
+        transactionInterface.immediateSessionBegin();
+    }
+
+    ~ImmediateSessionTransaction()
+    {
+        AbstractThrowingSessionTransaction::m_rollback
+            = !AbstractThrowingSessionTransaction::m_isAlreadyCommited;
+    }
+};
 
 } // namespace Sqlite

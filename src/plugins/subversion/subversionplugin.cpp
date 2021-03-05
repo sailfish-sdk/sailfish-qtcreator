@@ -50,7 +50,6 @@
 #include <coreplugin/documentmanager.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/icore.h>
-#include <coreplugin/id.h>
 #include <coreplugin/locator/commandlocator.h>
 #include <coreplugin/messagemanager.h>
 
@@ -59,6 +58,7 @@
 #include <utils/hostosinfo.h>
 #include <utils/parameteraction.h>
 #include <utils/qtcassert.h>
+#include <utils/stringutils.h>
 #include <utils/synchronousprocess.h>
 
 #include <QDebug>
@@ -151,7 +151,7 @@ StatusList parseStatusOutput(const QString &output)
 {
     StatusList changeSet;
     const QString newLine = QString(QLatin1Char('\n'));
-    const QStringList list = output.split(newLine, QString::SkipEmptyParts);
+    const QStringList list = output.split(newLine, Qt::SkipEmptyParts);
     foreach (const QString &l, list) {
         const QString line =l.trimmed();
         if (line.size() > 8) {
@@ -206,7 +206,7 @@ public:
 
     // IVersionControl
     QString displayName() const final;
-    Core::Id id() const final;
+    Utils::Id id() const final;
     bool isVcsFileOrDirectory(const Utils::FilePath &fileName) const final;
 
     bool managesDirectory(const QString &directory, QString *topLevel) const final;
@@ -220,7 +220,8 @@ public:
     bool vcsMove(const QString &from, const QString &to) final;
     bool vcsCreateRepository(const QString &directory) final;
 
-    bool vcsAnnotate(const QString &file, int line) final;
+    void vcsAnnotate(const QString &file, int line) final;
+    void vcsDescribe(const QString &source, const QString &changeNr) final;
 
     Core::ShellCommand *createInitialCheckoutCommand(const QString &url,
                                                      const Utils::FilePath &baseDirectory,
@@ -247,7 +248,6 @@ public:
     SubversionResponse runSvn(const QString &workingDir,
                               const QStringList &arguments, int timeOutS,
                               unsigned flags, QTextCodec *outputCodec = nullptr) const;
-    void describe(const QString &source, const QString &changeNr);
     void vcsAnnotateHelper(const QString &workingDir, const QString &file,
                      const QString &revision = QString(), int lineNumber = -1);
 
@@ -280,7 +280,7 @@ private:
 
     inline bool isCommitEditorOpen() const;
     Core::IEditor *showOutputInEditor(const QString &title, const QString &output,
-                                      Core::Id id, const QString &source,
+                                      Utils::Id id, const QString &source,
                                       QTextCodec *codec);
 
     void filelog(const QString &workingDir,
@@ -334,13 +334,13 @@ public:
     VcsEditorFactory logEditorFactory {
         &logEditorParameters,
         [] { return new SubversionEditorWidget; },
-        std::bind(&SubversionPluginPrivate::describe, this, _1, _2)
+        std::bind(&SubversionPluginPrivate::vcsDescribe, this, _1, _2)
     };
 
     VcsEditorFactory blameEditorFactory {
         &blameEditorParameters,
         [] { return new SubversionEditorWidget; },
-        std::bind(&SubversionPluginPrivate::describe, this, _1, _2)
+        std::bind(&SubversionPluginPrivate::vcsDescribe, this, _1, _2)
     };
 };
 
@@ -966,7 +966,7 @@ void SubversionPluginPrivate::projectStatus()
     svnStatus(state.currentProjectTopLevel(), state.relativeCurrentProject());
 }
 
-void SubversionPluginPrivate::describe(const QString &source, const QString &changeNr)
+void SubversionPluginPrivate::vcsDescribe(const QString &source, const QString &changeNr)
 {
     // To describe a complete change, find the top level and then do
     //svn diff -r 472958:472959 <top level>
@@ -1003,14 +1003,14 @@ void SubversionPluginPrivate::slotDescribe()
         return;
 
     const int revision = inputDialog.intValue();
-    describe(state.topLevel(), QString::number(revision));
+    vcsDescribe(state.topLevel(), QString::number(revision));
 }
 
 void SubversionPluginPrivate::commitFromEditor()
 {
     m_submitActionTriggered = true;
     QTC_ASSERT(submitEditor(), return);
-    EditorManager::closeDocument(submitEditor()->document());
+    EditorManager::closeDocuments({submitEditor()->document()});
 }
 
 SubversionResponse SubversionPluginPrivate::runSvn(const QString &workingDir,
@@ -1208,9 +1208,9 @@ QString SubversionPluginPrivate::displayName() const
     return QLatin1String("subversion");
 }
 
-Core::Id SubversionPluginPrivate::id() const
+Utils::Id SubversionPluginPrivate::id() const
 {
-    return Core::Id(VcsBase::Constants::VCS_ID_SUBVERSION);
+    return Utils::Id(VcsBase::Constants::VCS_ID_SUBVERSION);
 }
 
 bool SubversionPluginPrivate::isVcsFileOrDirectory(const Utils::FilePath &fileName) const
@@ -1275,11 +1275,10 @@ bool SubversionPluginPrivate::vcsCreateRepository(const QString &)
     return false;
 }
 
-bool SubversionPluginPrivate::vcsAnnotate(const QString &file, int line)
+void SubversionPluginPrivate::vcsAnnotate(const QString &file, int line)
 {
     const QFileInfo fi(file);
     vcsAnnotateHelper(fi.absolutePath(), fi.fileName(), QString(), line);
-    return true;
 }
 
 Core::ShellCommand *SubversionPluginPrivate::createInitialCheckoutCommand(const QString &url,

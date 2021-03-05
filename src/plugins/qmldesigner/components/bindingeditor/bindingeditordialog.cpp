@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of Qt Creator.
@@ -37,84 +37,36 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QComboBox>
+#include <QCheckBox>
 #include <QPlainTextEdit>
 
 namespace QmlDesigner {
 
-BindingEditorDialog::BindingEditorDialog(QWidget *parent, DialogType type)
-    : QDialog(parent)
-    , m_dialogType(type)
+BindingEditorDialog::BindingEditorDialog(QWidget *parent)
+    : AbstractEditorDialog(parent, tr("Binding Editor"))
 {
-    setWindowFlag(Qt::Tool, true);
-    setWindowTitle(defaultTitle());
-    setModal(false);
-
-    setupJSEditor();
     setupUIComponents();
 
-    QObject::connect(m_buttonBox, &QDialogButtonBox::accepted,
-                     this, &BindingEditorDialog::accepted);
-    QObject::connect(m_buttonBox, &QDialogButtonBox::rejected,
-                     this, &BindingEditorDialog::rejected);
-    QObject::connect(m_editorWidget, &BindingEditorWidget::returnKeyClicked,
-                     this, &BindingEditorDialog::accepted);
-
-    if (m_dialogType == DialogType::BindingDialog) {
-        QObject::connect(m_comboBoxItem, QOverload<int>::of(&QComboBox::currentIndexChanged),
-                         this, &BindingEditorDialog::itemIDChanged);
-        QObject::connect(m_comboBoxProperty, QOverload<int>::of(&QComboBox::currentIndexChanged),
-                         this, &BindingEditorDialog::propertyIDChanged);
-        QObject::connect(m_editorWidget, &QPlainTextEdit::textChanged,
-                         this, &BindingEditorDialog::textChanged);
-    }
+    QObject::connect(m_comboBoxItem, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                     this, &BindingEditorDialog::itemIDChanged);
+    QObject::connect(m_comboBoxProperty, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                     this, &BindingEditorDialog::propertyIDChanged);
+    QObject::connect(m_checkBoxNot, QOverload<int>::of(&QCheckBox::stateChanged),
+                     this, &BindingEditorDialog::checkBoxChanged);
 }
 
 BindingEditorDialog::~BindingEditorDialog()
 {
-    delete m_editor; //m_editorWidget is handled by basetexteditor destructor
-    delete m_buttonBox;
-    delete m_comboBoxItem;
-    delete m_comboBoxProperty;
-    delete m_comboBoxLayout;
-    delete m_verticalLayout;
-}
-
-void BindingEditorDialog::showWidget(int x, int y)
-{
-    this->show();
-    this->raise();
-    move(QPoint(x, y));
-    m_editorWidget->setFocus();
-}
-
-QString BindingEditorDialog::editorValue() const
-{
-    if (!m_editorWidget)
-        return {};
-
-    return m_editorWidget->document()->toPlainText();
-}
-
-void BindingEditorDialog::setEditorValue(const QString &text)
-{
-    if (m_editorWidget)
-        m_editorWidget->document()->setPlainText(text);
-}
-
-void BindingEditorDialog::setAllBindings(QList<BindingEditorDialog::BindingOption> bindings)
-{
-    m_lock = true;
-
-    m_bindings = bindings;
-    setupComboBoxes();
-    adjustProperties();
-
-    m_lock = false;
 }
 
 void BindingEditorDialog::adjustProperties()
 {
-    const QString expression = editorValue();
+    QString expression = editorValue().trimmed();
+
+    m_checkBoxNot->setChecked(expression.startsWith("!"));
+    if (m_checkBoxNot->isChecked())
+        expression.remove(0, 1);
+
     QString item;
     QString property;
     QStringList expressionElements = expression.split(".");
@@ -150,69 +102,32 @@ void BindingEditorDialog::adjustProperties()
     m_comboBoxProperty->setCurrentText(property);
 }
 
-void BindingEditorDialog::unregisterAutoCompletion()
+void BindingEditorDialog::setAllBindings(const QList<BindingOption> &bindings, const TypeName &type)
 {
-    if (m_editorWidget)
-        m_editorWidget->unregisterAutoCompletion();
-}
+    m_lock = true;
 
-QString BindingEditorDialog::defaultTitle() const
-{
-    return titleString;
-}
+    m_bindings = bindings;
+    m_type = type;
+    setupComboBoxes();
+    setupCheckBox();
+    adjustProperties();
 
-void BindingEditorDialog::setupJSEditor()
-{
-    static BindingEditorFactory f;
-    m_editor = qobject_cast<TextEditor::BaseTextEditor*>(f.createEditor());
-    m_editorWidget = qobject_cast<BindingEditorWidget*>(m_editor->editorWidget());
-
-    Core::Context context = m_editor->context();
-    context.prepend(BINDINGEDITOR_CONTEXT_ID);
-    m_editorWidget->m_context->setContext(context);
-
-    auto qmlDesignerEditor = QmlDesignerPlugin::instance()->currentDesignDocument()->textEditor();
-
-    m_editorWidget->qmljsdocument = qobject_cast<QmlJSEditor::QmlJSEditorWidget *>(
-                qmlDesignerEditor->widget())->qmlJsEditorDocument();
-
-
-    m_editorWidget->setLineNumbersVisible(false);
-    m_editorWidget->setMarksVisible(false);
-    m_editorWidget->setCodeFoldingSupported(false);
-    m_editorWidget->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    m_editorWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    m_editorWidget->setTabChangesFocus(true);
+    m_lock = false;
 }
 
 void BindingEditorDialog::setupUIComponents()
 {
-    m_verticalLayout = new QVBoxLayout(this);
+    m_comboBoxItem = new QComboBox(this);
+    m_comboBoxProperty = new QComboBox(this);
+    m_checkBoxNot = new QCheckBox(this);
+    m_checkBoxNot->setText(tr("NOT"));
+    m_checkBoxNot->setVisible(false);
+    m_checkBoxNot->setSizePolicy(QSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed));
+    m_checkBoxNot->setToolTip(tr("Invert the boolean expression."));
 
-    if (m_dialogType == DialogType::BindingDialog) {
-        m_comboBoxLayout = new QHBoxLayout;
-        m_comboBoxItem = new QComboBox(this);
-        m_comboBoxProperty = new QComboBox(this);
-    }
-
-    m_editorWidget->setParent(this);
-    m_editorWidget->setFrameStyle(QFrame::StyledPanel | QFrame::Raised);
-    m_editorWidget->show();
-
-    m_buttonBox = new QDialogButtonBox(this);
-    m_buttonBox->setOrientation(Qt::Horizontal);
-    m_buttonBox->setStandardButtons(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-    m_buttonBox->button(QDialogButtonBox::Ok)->setDefault(true);
-
-    if (m_dialogType == DialogType::BindingDialog) {
-        m_comboBoxLayout->addWidget(m_comboBoxItem);
-        m_comboBoxLayout->addWidget(m_comboBoxProperty);
-        m_verticalLayout->addLayout(m_comboBoxLayout);
-    }
-    m_verticalLayout->addWidget(m_editorWidget);
-    m_verticalLayout->addWidget(m_buttonBox);
-
-    this->resize(660, 240);
+    m_comboBoxLayout->addWidget(m_comboBoxItem);
+    m_comboBoxLayout->addWidget(m_comboBoxProperty);
+    m_comboBoxLayout->addWidget(m_checkBoxNot);
 }
 
 void BindingEditorDialog::setupComboBoxes()
@@ -220,8 +135,14 @@ void BindingEditorDialog::setupComboBoxes()
     m_comboBoxItem->clear();
     m_comboBoxProperty->clear();
 
-    for (auto bind : m_bindings)
+    for (const auto &bind : m_bindings)
         m_comboBoxItem->addItem(bind.item);
+}
+
+void BindingEditorDialog::setupCheckBox()
+{
+    const bool visible = (m_type == "bool");
+    m_checkBoxNot->setVisible(visible);
 }
 
 void BindingEditorDialog::itemIDChanged(int itemID)
@@ -247,22 +168,31 @@ void BindingEditorDialog::propertyIDChanged(int propertyID)
     const int itemID = m_comboBoxItem->currentIndex();
 
     if (!m_lock)
-        if (!m_comboBoxProperty->currentText().isEmpty() && (m_comboBoxProperty->currentText() != undefinedString))
-            setEditorValue(m_comboBoxItem->itemText(itemID) + "." + m_comboBoxProperty->itemText(propertyID));
+        if (!m_comboBoxProperty->currentText().isEmpty() && (m_comboBoxProperty->currentText() != undefinedString)) {
+            QString expression = m_comboBoxItem->itemText(itemID) + "." + m_comboBoxProperty->itemText(propertyID);
+            if (m_checkBoxNot->isChecked())
+                expression.prepend("!");
+
+            setEditorValue(expression);
+        }
 
     const int undefinedProperty = m_comboBoxProperty->findText(undefinedString);
     if ((undefinedProperty != -1) && (m_comboBoxProperty->itemText(propertyID) != undefinedString))
         m_comboBoxProperty->removeItem(undefinedProperty);
 }
 
-void BindingEditorDialog::textChanged()
+void BindingEditorDialog::checkBoxChanged(int state)
 {
     if (m_lock)
         return;
 
-    m_lock = true;
-    adjustProperties();
-    m_lock = false;
+    QString expression = editorValue().trimmed();
+    if (state == Qt::Checked)
+        expression.prepend("!");
+    else
+        expression.remove(0, 1);
+
+    setEditorValue(expression);
 }
 
 } // QmlDesigner namespace

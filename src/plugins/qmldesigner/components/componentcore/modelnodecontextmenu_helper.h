@@ -29,6 +29,8 @@
 #include "abstractaction.h"
 #include "abstractactiongroup.h"
 #include "qmlitemnode.h"
+#include <qmldesignerplugin.h>
+#include <nodemetainfo.h>
 
 #include <coreplugin/actionmanager/command.h>
 
@@ -79,9 +81,21 @@ inline bool singleSelectionNotRoot(const SelectionContext &selectionState)
 
 inline bool selectionHasProperty(const SelectionContext &selectionState, const char *property)
 {
-    foreach (const ModelNode &modelNode, selectionState.selectedModelNodes())
+    for (const ModelNode &modelNode : selectionState.selectedModelNodes())
         if (modelNode.hasProperty(PropertyName(property)))
             return true;
+    return false;
+}
+
+inline bool selectionHasSlot(const SelectionContext &selectionState, const char *property)
+{
+    for (const ModelNode &modelNode : selectionState.selectedModelNodes()) {
+        for (const PropertyName &slotName : modelNode.metaInfo().slotNames()) {
+            if (slotName == property)
+                return true;
+        }
+    }
+
     return false;
 }
 
@@ -93,7 +107,6 @@ inline bool singleSelectedItem(const SelectionContext &selectionState)
 
 bool selectionHasSameParent(const SelectionContext &selectionState);
 bool selectionIsComponent(const SelectionContext &selectionState);
-bool selectionIsComponent(const SelectionContext &selectionState);
 bool singleSelectionItemIsAnchored(const SelectionContext &selectionState);
 bool singleSelectionItemIsNotAnchored(const SelectionContext &selectionState);
 
@@ -103,17 +116,19 @@ class ActionTemplate : public DefaultAction
 {
 
 public:
-    ActionTemplate(const QString &description, SelectionContextOperation action)
-        : DefaultAction(description), m_action(action)
+    ActionTemplate(const QByteArray &id, const QString &description, SelectionContextOperation action)
+        : DefaultAction(description), m_action(action), m_id(id)
     { }
 
     void actionTriggered(bool b) override
     {
+        QmlDesignerPlugin::emitUsageStatisticsContextAction(QString::fromUtf8(m_id));
         m_selectionContext.setToggled(b);
         m_action(m_selectionContext);
     }
 
     SelectionContextOperation m_action;
+    QByteArray m_id;
 };
 
 class ActionGroup : public AbstractActionGroup
@@ -132,16 +147,22 @@ public:
 
     bool isVisible(const SelectionContext &m_selectionState) const override { return m_visibility(m_selectionState); }
     bool isEnabled(const SelectionContext &m_selectionState) const override { return m_enabled(m_selectionState); }
-    QByteArray category() const override { return QByteArray(); }
+    QByteArray category() const override { return m_category; }
     QByteArray menuId() const override { return m_menuId; }
     int priority() const override { return m_priority; }
     Type type() const override { return ContextMenu; }
+
+    void setCategory(const QByteArray &catageoryId)
+    {
+        m_category = catageoryId;
+    }
 
 private:
     const QByteArray m_menuId;
     const int m_priority;
     SelectionContextPredicate m_enabled;
     SelectionContextPredicate m_visibility;
+    QByteArray m_category;
 };
 
 class SeperatorDesignerAction : public AbstractAction
@@ -196,7 +217,7 @@ public:
             SelectionContextOperation selectionAction,
             SelectionContextPredicate enabled = &SelectionContextFunctors::always,
             SelectionContextPredicate visibility = &SelectionContextFunctors::always) :
-        AbstractAction(new ActionTemplate(description, selectionAction)),
+        AbstractAction(new ActionTemplate(id, description, selectionAction)),
         m_id(id),
         m_category(category),
         m_priority(priority),

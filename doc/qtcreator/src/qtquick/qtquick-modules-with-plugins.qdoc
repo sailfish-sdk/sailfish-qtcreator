@@ -1,0 +1,217 @@
+/****************************************************************************
+**
+** Copyright (C) 2020 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the Qt Creator documentation.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU Free Documentation License Usage
+** Alternatively, this file may be used under the terms of the GNU Free
+** Documentation License version 1.3 as published by the Free Software
+** Foundation and appearing in the file included in the packaging of
+** this file. Please review the following information to ensure
+** the GNU Free Documentation License version 1.3 requirements
+** will be met: https://www.gnu.org/licenses/fdl-1.3.html.
+**
+****************************************************************************/
+
+// **********************************************************************
+// NOTE: the sections are not ordered by their logical order to avoid
+// reshuffling the file each time the index order changes (i.e., often).
+// Run the fixnavi.pl script to adjust the links to the index order.
+// **********************************************************************
+
+/*!
+    \page creator-qml-modules-with-plugins.html
+    \if defined(qtdesignstudio)
+    \previouspage studio-simulink.html
+    \nextpage studio-debugging.html
+    \else
+    \previouspage qtquick-iso-icon-browser.html
+    \nextpage quick-converting-ui-projects.html
+    \endif
+
+    \title Using QML Modules with Plugins
+
+    QML modules may use plugins to expose components defined in C++ to QML
+    applications. \QC cannot load the plugins to determine the details of
+    the contained components, and therefore, the modules must provide extra type
+    information for code completion and the semantic checks to work correctly.
+
+    To create a QML module and make it appear in the \uicontrol Library view in
+    the Design mode:
+
+    \list 1
+
+        \li Create custom QML controls and place all the \c .qml files in a
+           directory dedicated to your module. For example:
+           \c {imports\asset_imports}.
+
+        \li For Qt Quick UI projects (.qmlproject), specify the path to
+            the directory that contains the module in the .qmlproject file
+            of the application where you want to use the module
+            as a value of the \c importPaths variable. For example
+            \c{importPaths: [ "imports", "asset_imports" ]}.
+
+        \li Create a \c qmldir file for your module and place it
+            in the module directory. For more information, see
+            \l {Module Definition qmldir Files}.
+
+        \li Create a \c qmltypes file, preferably using \c qmlplugindump.
+            For more information see, \l {Generating qmltypes Files}.
+
+        \li Create a directory named \c designer in your module directory.
+
+        \li Create a \c .metainfo file for your module and place it in the
+            \c designer directory. Meta information is needed to display the
+            components in the \uicontrol {QML Types} tab in \uicontrol
+            Library. Use a metainfo file delivered with Qt, such as
+            \c qtquickcontrols2.metainfo, as an example.
+
+        \if defined(qtcreator)
+        \li Import the module into the project, as instructed in
+            \l {Importing QML Modules}.
+
+        \li Make sure that the QML emulation layer used in the Design mode is built with
+            the same Qt version as your QML modules. For more information, see
+            \l {Running QML Modules in Design Mode}. You can also try
+            skipping this step and take it later, if necessary.
+        \else
+        \li Build your module using the same Qt version and compiler as \QDS.
+            For more information, see \l {Running QML Modules in Design Mode}.
+        \endif
+
+    \endlist
+
+    Your module should now appear in the \uicontrol {QML Imports} tab in
+    \uicontrol Library in the Design mode. Your components should appear in the
+    \uicontrol {QML Types} tab if a valid \c .metainfo file is in place.
+
+    \if defined(qtcreator)
+    \section1 Registering QML Types
+
+    When you write a QML module or use QML from a C++ application, and the C++
+    is a part of your qmake project, you typically register new types with the
+    \c qmlRegisterType() function or expose some class instances with
+    \l{QQmlContext::setContextProperty()}. The \QC C++ code model now scans for
+    these calls and tells the QML code model about them. This means that properties
+    are displayed during code completion and the JavaScript code checker does not
+    complain about unknown types. However, this works only when the source code
+    is available, and therefore, you must explicitly generate type information
+    for QML modules with plugins before distributing them.
+
+    Classes registered with \c qmlRegisterType() can be used as backend objects
+    in the Design mode. For more information, see \l {Adding Connections}.
+    \endif
+
+    \section1 Generating qmltypes Files
+
+    Ideally, QML modules have a \c{plugins.qmltypes} file in the same directory
+    as the \c qmldir file. The \c qmltypes file contains a description of the
+    types exported by the module's plugins and is loaded by \QC when the
+    module is imported.
+
+    For Qt 4.8 and later, one or more \c qmltypes files can be listed in the
+    \c qmldir file under the \c typeinfo header. These files will be read in
+    addition to \c{plugins.qmltypes}. For more information, see
+    \l{Writing a qmltypes File}.
+
+    You can create and edit \c qmltypes files manually, but you are recommended
+    to use the \c qmlplugindump tool shipped with Qt 4.8 and later to generate
+    them automatically.
+
+    Once you have obtained \c qmlplugindump for the Qt version the QML module's
+    plugins were compiled with, run the following command to load My.Module
+    version 1.0 from \c{/import/path/my/module} including all its plugins and
+    output a description of the plugins' types to
+    \c{/import/path/my/module/plugins.qmltypes}:
+
+    \code
+    qmlplugindump -nonrelocatable My.Module 1.0 /import/path > /import/path/my/module/plugins.qmltypes
+    \endcode
+
+    You can safely ignore the debug output.
+
+    \if defined(qtcreator)
+    For Qt 4.7.x, you can compile a version of the tool called \c qmldump from
+    the sources in \c{<QtCreator>/share/qtcreator/qml/qmldump} if the Qt version
+    contains private headers.
+    \endif
+
+    \section2 Dumping Plugins Automatically
+
+    If a module with plugins lacks the \c qmltypes file, \QC tries to generate
+    a temporary file itself by running the \c qmldump program in the background.
+    However, this automatic dumping is a fallback mechanism with many points of
+    failure and you cannot rely upon it.
+
+    \if defined(qtcreator)
+    \section1 Importing QML Modules
+
+    By default, \QC will look in the QML import path of Qt for QML modules.
+
+    If you use qmake and your application adds additional import paths that
+    \QC should use, specify them using \c{QML_IMPORT_PATH} in the \c{.pro}
+    file of your application: \c {QML_IMPORT_PATH += path/to/module}.
+
+    If you use CMake, add the following command to the CMakeLists.txt file to
+    set the QML import path:
+
+    \code
+    set(QML_IMPORT_PATH ${CMAKE_SOURCE_DIR}/qml ${CMAKE_BINARY_DIR}/imports CACHE STRING "" FORCE)
+    \endcode
+
+    The import path affects all the targets built by the CMake project.
+    \endif
+
+    \section1 Running QML Modules in Design Mode
+
+    A QML emulation layer (also called QML Puppet) is used in the Design mode to
+    render and preview images and to collect data. To be able to render custom types
+    correctly from QML modules, the emulation layer must be built with the same
+    Qt version and compiler as the QML modules.
+
+    \if defined(qtcreator)
+    By default, a fallback emulation layer is provided by \QC and built with the same
+    Qt version as \QC. Therefore, your QML modules will mostly not work out of
+    the box.
+
+    To use an emulation layer that is built with the Qt
+    configured in the build and run kit for the project, select \uicontrol Tools >
+    \uicontrol Options > \uicontrol {Qt Quick} > \uicontrol {Qt Quick Designer} >
+    \uicontrol {Use QML emulation layer which is built by the selected Qt} radio button.
+    \QC builds the emulation layer when you select the Design mode.
+    \else
+    On Windows, select \uicontrol Help > \uicontrol {About Qt Design Studio} to
+    check the Qt version and compiler that you need to use to build your plugin.
+    For example: \c {Based on Qt 5.15.2 (MSVC 2019, 64 bit)}.
+
+    On macOS, select \uicontrol {Qt Design Studio} >
+    \uicontrol {About Qt Design Studio} to see something like:
+    \c {Based on Qt 5.15.2 (Clang 10.0 (Apple), 64 bit)}.
+    \endif
+
+
+    A plugin should behave differently depending on whether it is run by the
+    emulation layer or an application. For example, animations should not be run
+    in the Design mode. You can use the value of the \c QML_PUPPET_MODE
+    environment variable to check whether the plugin is currently being run
+    by an application or edited in the Design mode.
+
+    If you want to use a different module in the Design mode than in your actual
+    application for example to mockup C++ items, then you can use \c{QML_DESIGNER_IMPORT_PATH}
+    in the \c{.pro} file (for qmake projects), or declare and set the property
+    \c qmlDesignerImportPaths in your product (for Qbs projects).
+    Modules in the import paths defined in \c{QML_DESIGNER_IMPORT_PATH} will be
+    used only in the Design mode.
+    For an example, see \l {Qt Quick Controls - Contact List}.
+
+*/

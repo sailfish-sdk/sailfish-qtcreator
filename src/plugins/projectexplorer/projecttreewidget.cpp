@@ -152,11 +152,11 @@ public:
         setDragDropMode(QAbstractItemView::DragDrop);
         viewport()->setAcceptDrops(true);
         setDropIndicatorShown(true);
-        m_context = new IContext(this);
-        m_context->setContext(Context(ProjectExplorer::Constants::C_PROJECT_TREE));
-        m_context->setWidget(this);
+        auto context = new IContext(this);
+        context->setContext(Context(ProjectExplorer::Constants::C_PROJECT_TREE));
+        context->setWidget(this);
 
-        ICore::addContextObject(m_context);
+        ICore::addContextObject(context);
 
         connect(this, &ProjectTreeView::expanded,
                 this, &ProjectTreeView::invalidateSize);
@@ -204,12 +204,6 @@ public:
         NavigationTreeView::setModel(newModel);
     }
 
-    ~ProjectTreeView() override
-    {
-        ICore::removeContextObject(m_context);
-        delete m_context;
-    }
-
     int sizeHintForColumn(int column) const override
     {
         if (m_cachedSize < 0)
@@ -220,7 +214,6 @@ public:
 
 private:
     mutable int m_cachedSize = -1;
-    IContext *m_context;
 };
 
 /*!
@@ -432,6 +425,20 @@ void ProjectTreeWidget::setAutoSynchronization(bool sync)
         syncFromDocumentManager();
 }
 
+void ProjectTreeWidget::expandNodeRecursively(const QModelIndex &index)
+{
+    const int rc = index.model()->rowCount(index);
+    for (int i = 0; i < rc; ++i)
+        expandNodeRecursively(index.model()->index(i, index.column(), index));
+    if (rc > 0)
+        m_view->expand(index);
+}
+
+void ProjectTreeWidget::expandCurrentNodeRecursively()
+{
+    expandNodeRecursively(m_view->currentIndex());
+}
+
 void ProjectTreeWidget::collapseAll()
 {
     m_view->collapseAll();
@@ -505,6 +512,7 @@ void ProjectTreeWidget::setCurrentItem(Node *node)
         }
     } else {
         m_view->clearSelection();
+        m_view->setCurrentIndex({});
     }
 }
 

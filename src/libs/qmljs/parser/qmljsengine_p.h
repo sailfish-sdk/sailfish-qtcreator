@@ -37,14 +37,16 @@
 //
 
 #include "qmljsglobal_p.h"
-#include "qmljs/parser/qmljssourcelocation_p.h"
 
 #include "qmljs/parser/qmljsmemorypool_p.h"
+#include "qmljs/parser/qmljssourcelocation_p.h"
+#include <qmljs/qmljsconstants.h>
+
+#include <utils/porting.h>
 
 #include <QString>
 #include <QSet>
 
-#include <qmljs/qmljsconstants.h>
 QT_QML_BEGIN_NAMESPACE
 
 namespace QmlJS {
@@ -84,7 +86,7 @@ class QML_PARSER_EXPORT Engine
     Directives *_directives;
     MemoryPool _pool;
     QList<SourceLocation> _comments;
-    QString _extraCode;
+    QStringList _extraCode;
     QString _code;
 
 public:
@@ -105,10 +107,13 @@ public:
 
     MemoryPool *pool();
 
-    inline QStringRef midRef(int position, int size) { return _code.midRef(position, size); }
+    inline QStringView midRef(int position, int size)
+    {
+        return Utils::midView(_code, position, size);
+    }
 
-    QStringRef newStringRef(const QString &s);
-    QStringRef newStringRef(const QChar *chars, int size);
+    QStringView newStringRef(const QString &s);
+    QStringView newStringRef(const QChar *chars, int size);
 };
 
 double integerFromString(const char *buf, int size, int radix);

@@ -56,6 +56,7 @@
 #include <QStyle>
 #include <QTextBlock>
 #include <QTextCodec>
+#include <QTimer>
 #include <QToolBar>
 #include <QToolButton>
 
@@ -77,16 +78,16 @@ class DescriptionEditorWidget : public TextEditorWidget
     Q_OBJECT
 public:
     DescriptionEditorWidget(QWidget *parent = nullptr);
-    ~DescriptionEditorWidget() override;
 
     QSize sizeHint() const override;
+
+signals:
+    void requestResize();
 
 protected:
     void setDisplaySettings(const DisplaySettings &ds) override;
     void setMarginSettings(const MarginSettings &ms) override;
-
-private:
-    Core::IContext *m_context;
+    void applyFontSettings() override;
 };
 
 DescriptionEditorWidget::DescriptionEditorWidget(QWidget *parent)
@@ -107,17 +108,12 @@ DescriptionEditorWidget::DescriptionEditorWidget(QWidget *parent)
 
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
-    m_context = new Core::IContext(this);
-    m_context->setWidget(this);
-    m_context->setContext(Core::Context(Constants::C_DIFF_EDITOR_DESCRIPTION));
-    Core::ICore::addContextObject(m_context);
+    auto context = new Core::IContext(this);
+    context->setWidget(this);
+    context->setContext(Core::Context(Constants::C_DIFF_EDITOR_DESCRIPTION));
+    Core::ICore::addContextObject(context);
 
     textDocument()->setSyntaxHighlighter(new SyntaxHighlighter);
-}
-
-DescriptionEditorWidget::~DescriptionEditorWidget()
-{
-    Core::ICore::removeContextObject(m_context);
 }
 
 QSize DescriptionEditorWidget::sizeHint() const
@@ -142,6 +138,12 @@ void DescriptionEditorWidget::setMarginSettings(const MarginSettings &ms)
     TextEditorWidget::setMarginSettings(MarginSettings());
 }
 
+void DescriptionEditorWidget::applyFontSettings()
+{
+    TextEditorWidget::applyFontSettings();
+    emit requestResize();
+}
+
 ///////////////////////////////// DiffEditor //////////////////////////////////
 
 DiffEditor::DiffEditor()
@@ -154,6 +156,18 @@ DiffEditor::DiffEditor()
 
     m_descriptionWidget = new DescriptionEditorWidget(splitter);
     m_descriptionWidget->setReadOnly(true);
+    connect(m_descriptionWidget, &DescriptionEditorWidget::requestResize, this, [splitter](){
+        if (splitter->count() == 0)
+            return;
+        QList<int> sizes = splitter->sizes();
+        const int descHeight = splitter->widget(0)->fontMetrics().lineSpacing() * 8;
+        const int diff = descHeight - sizes[0];
+        if (diff > 0) {
+            sizes[0] += diff;
+            sizes[1] -= diff;
+            splitter->setSizes(sizes);
+        }
+    });
     splitter->addWidget(m_descriptionWidget);
 
     m_stackedWidget = new QStackedWidget(splitter);
@@ -254,6 +268,7 @@ DiffEditor::~DiffEditor()
 {
     delete m_toolBar;
     delete m_widget;
+    qDeleteAll(m_views);
 }
 
 Core::IEditor *DiffEditor::duplicate()
@@ -265,7 +280,7 @@ Core::IEditor *DiffEditor::duplicate()
     editor->m_sync = m_sync;
     editor->m_showDescription = m_showDescription;
 
-    Core::Id id = currentView()->id();
+    Utils::Id id = currentView()->id();
     IDiffView *view = Utils::findOr(editor->m_views, editor->m_views.at(0),
                                     Utils::equal(&IDiffView::id, id));
     QTC_ASSERT(view, view = editor->currentView());
@@ -531,7 +546,7 @@ IDiffView *DiffEditor::loadSettings()
     m_sync = s->value(horizontalScrollBarSynchronizationKeyC, true).toBool();
     m_document->setIgnoreWhitespace(s->value(ignoreWhitespaceKeyC, false).toBool());
     m_document->setContextLineCount(s->value(contextLineCountKeyC, 3).toInt());
-    Core::Id id = Core::Id::fromSetting(s->value(diffViewKeyC));
+    Utils::Id id = Utils::Id::fromSetting(s->value(diffViewKeyC));
     s->endGroup();
 
     IDiffView *view = Utils::findOr(m_views, m_views.at(0),

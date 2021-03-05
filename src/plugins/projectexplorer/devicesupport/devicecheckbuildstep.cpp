@@ -35,18 +35,17 @@
 
 using namespace ProjectExplorer;
 
-DeviceCheckBuildStep::DeviceCheckBuildStep(BuildStepList *bsl, Core::Id id)
+DeviceCheckBuildStep::DeviceCheckBuildStep(BuildStepList *bsl, Utils::Id id)
     : BuildStep(bsl, id)
 {
-    setDefaultDisplayName(displayName());
     setWidgetExpandedByDefault(false);
 }
 
 bool DeviceCheckBuildStep::init()
 {
-    IDevice::ConstPtr device = DeviceKitAspect::device(target()->kit());
+    IDevice::ConstPtr device = DeviceKitAspect::device(kit());
     if (!device) {
-        Core::Id deviceTypeId = DeviceTypeKitAspect::deviceTypeId(target()->kit());
+        Utils::Id deviceTypeId = DeviceTypeKitAspect::deviceTypeId(kit());
         IDeviceFactory *factory = IDeviceFactory::find(deviceTypeId);
         if (!factory || !factory->canCreate()) {
             emit addOutput(tr("No device configured."), BuildStep::OutputFormat::ErrorMessage);
@@ -71,7 +70,7 @@ bool DeviceCheckBuildStep::init()
         DeviceManager *dm = DeviceManager::instance();
         dm->addDevice(newDevice);
 
-        DeviceKitAspect::setDevice(target()->kit(), newDevice);
+        DeviceKitAspect::setDevice(kit(), newDevice);
     }
 
     return true;
@@ -82,7 +81,7 @@ void DeviceCheckBuildStep::doRun()
     emit finished(true);
 }
 
-Core::Id DeviceCheckBuildStep::stepId()
+Utils::Id DeviceCheckBuildStep::stepId()
 {
     return "ProjectExplorer.DeviceCheckBuildStep";
 }

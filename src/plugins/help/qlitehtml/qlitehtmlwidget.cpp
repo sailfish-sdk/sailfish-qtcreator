@@ -34,8 +34,6 @@
 #include <QStyle>
 #include <QTimer>
 
-#include <litehtml.h>
-
 const int kScrollBarStep = 40;
 
 // TODO copied from litehtml/include/master.css
@@ -370,7 +368,8 @@ display: block;
 class QLiteHtmlWidgetPrivate
 {
 public:
-    litehtml::context context;
+    QString html;
+    DocumentContainerContext context;
     QUrl url;
     DocumentContainer documentContainer;
     qreal zoomFactor = 1;
@@ -397,7 +396,7 @@ QLiteHtmlWidget::QLiteHtmlWidget(QWidget *parent)
     });
 
     // TODO adapt mastercss to palette (default text & background color)
-    d->context.load_master_stylesheet(mastercss);
+    d->context.setMasterStyleSheet(mastercss);
 }
 
 QLiteHtmlWidget::~QLiteHtmlWidget()
@@ -413,7 +412,7 @@ void QLiteHtmlWidget::setUrl(const QUrl &url)
     const QString urlString = urlWithoutAnchor.toString(QUrl::None);
     const int lastSlash = urlString.lastIndexOf('/');
     const QString baseUrl = lastSlash >= 0 ? urlString.left(lastSlash) : urlString;
-    d->documentContainer.set_base_url(baseUrl.toUtf8().constData());
+    d->documentContainer.setBaseUrl(baseUrl);
 }
 
 QUrl QLiteHtmlWidget::url() const
@@ -423,11 +422,17 @@ QUrl QLiteHtmlWidget::url() const
 
 void QLiteHtmlWidget::setHtml(const QString &content)
 {
+    d->html = content;
     d->documentContainer.setPaintDevice(viewport());
     d->documentContainer.setDocument(content.toUtf8(), &d->context);
     verticalScrollBar()->setValue(0);
     horizontalScrollBar()->setValue(0);
     render();
+}
+
+QString QLiteHtmlWidget::html() const
+{
+    return d->html;
 }
 
 QString QLiteHtmlWidget::title() const
@@ -489,23 +494,16 @@ QFont QLiteHtmlWidget::defaultFont() const
 
 void QLiteHtmlWidget::scrollToAnchor(const QString &name)
 {
-    if (!d->documentContainer.document())
+    if (!d->documentContainer.hasDocument())
         return;
     horizontalScrollBar()->setValue(0);
     if (name.isEmpty()) {
         verticalScrollBar()->setValue(0);
         return;
     }
-    litehtml::element::ptr element = d->documentContainer.document()->root()->select_one(
-        QString("#%1").arg(name).toStdString());
-    if (!element) {
-        element = d->documentContainer.document()->root()->select_one(
-            QString("[name=%1]").arg(name).toStdString());
-    }
-    if (element) {
-        const int y = element->get_placement().y;
+    const int y = d->documentContainer.anchorY(name);
+    if (y >= 0)
         verticalScrollBar()->setValue(std::min(y, verticalScrollBar()->maximum()));
-    }
 }
 
 void QLiteHtmlWidget::setResourceHandler(const QLiteHtmlWidget::ResourceHandler &handler)
@@ -520,7 +518,7 @@ QString QLiteHtmlWidget::selectedText() const
 
 void QLiteHtmlWidget::paintEvent(QPaintEvent *event)
 {
-    if (!d->documentContainer.document())
+    if (!d->documentContainer.hasDocument())
         return;
     d->documentContainer.setScrollPosition(scrollPosition());
     QPainter p(viewport());
@@ -528,29 +526,6 @@ void QLiteHtmlWidget::paintEvent(QPaintEvent *event)
     p.setRenderHint(QPainter::SmoothPixmapTransform, true);
     p.setRenderHint(QPainter::Antialiasing, true);
     d->documentContainer.draw(&p, toVirtual(event->rect()));
-}
-
-static litehtml::element::ptr elementForY(int y, const litehtml::document::ptr &document)
-{
-    if (!document)
-        return {};
-
-    const std::function<litehtml::element::ptr(int, litehtml::element::ptr)> recursion =
-        [&recursion](int y, const litehtml::element::ptr &element) {
-            litehtml::element::ptr result;
-            const int subY = y - element->get_position().y;
-            if (subY <= 0)
-                return element;
-            for (int i = 0; i < int(element->get_children_count()); ++i) {
-                const litehtml::element::ptr child = element->get_child(i);
-                result = recursion(subY, child);
-                if (result)
-                    return result;
-            }
-            return result;
-        };
-
-    return recursion(y, document->root());
 }
 
 void QLiteHtmlWidget::resizeEvent(QResizeEvent *event)
@@ -620,17 +595,14 @@ void QLiteHtmlWidget::withFixedTextPosition(const std::function<void()> &action)
     QPoint viewportPos;
     QPoint pos;
     htmlPos({}, &viewportPos, &pos); // top-left
-    const litehtml::element::ptr element = elementForY(pos.y(), d->documentContainer.document());
-    action();
-    if (element) {
-        verticalScrollBar()->setValue(
-            std::min(element->get_placement().y, verticalScrollBar()->maximum()));
-    }
+    const int y = d->documentContainer.withFixedElementPosition(pos.y(), action);
+    if (y >= 0)
+        verticalScrollBar()->setValue(std::min(y, verticalScrollBar()->maximum()));
 }
 
 void QLiteHtmlWidget::render()
 {
-    if (!d->documentContainer.document())
+    if (!d->documentContainer.hasDocument())
         return;
     const int fullWidth = width() / d->zoomFactor;
     const QSize vViewportSize = toVirtual(viewport()->size());
@@ -639,12 +611,10 @@ void QLiteHtmlWidget::render()
     d->documentContainer.render(w, vViewportSize.height());
     // scroll bars reflect virtual/scaled size of html document
     horizontalScrollBar()->setPageStep(vViewportSize.width());
-    horizontalScrollBar()->setRange(0, std::max(0, d->documentContainer.document()->width() - w));
+    horizontalScrollBar()->setRange(0, std::max(0, d->documentContainer.documentWidth() - w));
     verticalScrollBar()->setPageStep(vViewportSize.height());
-    verticalScrollBar()->setRange(0,
-                                  std::max(0,
-                                           d->documentContainer.document()->height()
-                                               - vViewportSize.height()));
+    verticalScrollBar()
+        ->setRange(0, std::max(0, d->documentContainer.documentHeight() - vViewportSize.height()));
     viewport()->update();
 }
 

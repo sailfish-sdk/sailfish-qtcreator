@@ -27,17 +27,20 @@
 
 #include "debuggerconstants.h"
 
+#include <coreplugin/helpmanager.h>
 #include <coreplugin/icontext.h>
 #include <coreplugin/icore.h>
-#include <coreplugin/helpmanager.h>
+#include <projectexplorer/buildconfiguration.h>
+#include <projectexplorer/buildstep.h>
+#include <projectexplorer/buildsteplist.h>
 #include <projectexplorer/kitinformation.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/runconfiguration.h>
 #include <projectexplorer/target.h>
-#include <projectexplorer/buildconfiguration.h>
-#include <projectexplorer/buildstep.h>
-#include <projectexplorer/buildsteplist.h>
+#include <qtsupport/qtbuildaspects.h>
+
+#include <utils/layoutbuilder.h>
 
 #include <QCheckBox>
 #include <QDebug>
@@ -45,8 +48,9 @@
 #include <QLabel>
 #include <QTextEdit>
 
-using namespace ProjectExplorer;
 using namespace Debugger::Internal;
+using namespace ProjectExplorer;
+using namespace Utils;
 
 namespace Debugger {
 namespace Internal {
@@ -57,7 +61,7 @@ enum DebuggerLanguageStatus {
     AutoEnabledLanguage
 };
 
-class DebuggerLanguageAspect : public ProjectConfigurationAspect
+class DebuggerLanguageAspect : public BaseAspect
 {
 public:
     DebuggerLanguageAspect() = default;
@@ -168,13 +172,13 @@ DebuggerRunConfigurationAspect::DebuggerRunConfigurationAspect(Target *target)
     setConfigWidgetCreator([this] {
         QWidget *w = new QWidget;
         LayoutBuilder builder(w);
-        m_cppAspect->addToLayout(builder);
-        m_qmlAspect->addToLayout(builder.startNewRow());
-        m_overrideStartupAspect->addToLayout(builder.startNewRow());
+        builder.addRow(m_cppAspect);
+        builder.addRow(m_qmlAspect);
+        builder.addRow(m_overrideStartupAspect);
 
         static const QByteArray env = qgetenv("QTC_DEBUGGER_MULTIPROCESS");
         if (env.toInt())
-            m_multiProcessAspect->addToLayout(builder.startNewRow());
+            builder.addRow(m_multiProcessAspect);
 
         return w;
     });
@@ -202,14 +206,14 @@ DebuggerRunConfigurationAspect::DebuggerRunConfigurationAspect(Target *target)
             m_cppAspect->setValue(true);
     });
 
-    m_multiProcessAspect = new BaseBoolAspect;
+    m_multiProcessAspect = new BoolAspect;
     m_multiProcessAspect->setSettingsKey("RunConfiguration.UseMultiProcess");
     m_multiProcessAspect->setLabel(tr("Enable Debugging of Subprocesses"),
-                                   BaseBoolAspect::LabelPlacement::AtCheckBox);
+                                   BoolAspect::LabelPlacement::AtCheckBox);
 
-    m_overrideStartupAspect = new BaseStringAspect;
+    m_overrideStartupAspect = new StringAspect;
     m_overrideStartupAspect->setSettingsKey("RunConfiguration.OverrideDebuggerStartup");
-    m_overrideStartupAspect->setDisplayStyle(BaseStringAspect::TextEditDisplay);
+    m_overrideStartupAspect->setDisplayStyle(StringAspect::TextEditDisplay);
     m_overrideStartupAspect->setLabelText(tr("Additional startup commands:"));
 }
 
@@ -243,12 +247,9 @@ bool DebuggerRunConfigurationAspect::useQmlDebugger() const
 
         //
         // Try to find a build configuration to check whether qml debugging is enabled there
-        // (Using the Qt metatype system to avoid a hard build system dependency)
-        //
         if (BuildConfiguration *bc = m_target->activeBuildConfiguration()) {
-            const QVariant linkProperty = bc->property("linkQmlDebuggingLibrary");
-            if (linkProperty.isValid() && linkProperty.canConvert(QVariant::Bool))
-                return linkProperty.toBool();
+            const auto aspect = bc->aspect<QtSupport::QmlDebuggingAspect>();
+            return aspect && aspect->setting() == TriState::Enabled;
         }
 
         return !languages.contains(ProjectExplorer::Constants::CXX_LANGUAGE_ID);

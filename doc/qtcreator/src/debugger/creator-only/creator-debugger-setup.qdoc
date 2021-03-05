@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 The Qt Company Ltd.
+** Copyright (C) 2021 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the Qt Creator documentation.
@@ -100,7 +100,7 @@
             \li GCC, Clang
             \li LLDB, FSF GDB (experimental)
         \row
-            \li Windows/MinGW
+            \li Windows/\MinGW
             \li GCC
             \li GDB
         \row
@@ -173,7 +173,7 @@
     \section2 GDB
 
     On Windows, use the Python-enabled GDB version that is bundled
-    with the Qt package or comes with recent versions of MinGW. On
+    with the Qt package or comes with recent versions of \MinGW. On
     most Linux distributions, the GDB builds shipped with the system
     are sufficient.
 
@@ -229,56 +229,6 @@
     \section2 LLDB
 
     We recommend using the LLDB version that is delivered with the latest Xcode.
-
-    \section1 Mapping Source Paths
-
-    To enable the debugger to step into the code and display the source code
-    when using a copy of the source tree at a location different from the one
-    at which the libraries were built, map the source paths to target paths:
-
-    \list 1
-
-        \li Select \uicontrol Tools > \uicontrol Options > \uicontrol Debugger >
-            \uicontrol General > \uicontrol Add.
-
-        \li In the \uicontrol {Source path} field, specify the source path in
-            the debug information of the executable as reported by the debugger.
-
-        \li In the \uicontrol {Target path} field, specify the actual location
-            of the source tree on the local machine.
-
-    \endlist
-
-    \section1 Setting CDB Paths on Windows
-
-    To obtain debugging information for the operating system libraries for
-    debugging Windows applications, add the Symbol Server provided by Microsoft
-    to the symbol search path of the debugger:
-
-    \list 1
-
-        \li Select \uicontrol Tools > \uicontrol Options > \uicontrol Debugger >
-            \uicontrol {CDB Paths}.
-
-            \image qtcreator-debugger-cdb-paths.png
-
-        \li In the \uicontrol {Symbol Paths} group, select \uicontrol Insert.
-
-        \li Select the directory where you want to store the cached information.
-
-            Use a subfolder in a temporary directory, such as
-            \c {C:\temp\symbolcache}.
-
-        \li Select \uicontrol OK.
-
-    \endlist
-
-    \note Populating the cache might take a long time on a slow network
-    connection.
-
-    To use the Source Server infrastructure for fetching missing source files
-    directly from version control or the web, enter the following string in
-    the \uicontrol {Source Paths} field: \c srv*.
 
     \section1 Setting up FSF GDB for \macos
 

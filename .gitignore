@@ -29,6 +29,7 @@
 .DS_Store
 .qmake.cache
 .qmake.stash
+.vscode
 Makefile*
 Thumbs.db
 core
@@ -114,8 +115,10 @@ compile_commands.json
 .pch/
 .rcc/
 .uic/
+.clangd/
 /*-debug/
 /*-release/
+/build*/
 /dist/gdb/*.gz
 /dist/gdb/python/
 /dist/gdb/qtcreator-*/

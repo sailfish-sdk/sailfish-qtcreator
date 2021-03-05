@@ -77,16 +77,11 @@ UnifiedDiffEditorWidget::UnifiedDiffEditorWidget(QWidget *parent)
     connect(this, &QPlainTextEdit::cursorPositionChanged,
             this, &UnifiedDiffEditorWidget::slotCursorPositionChangedInEditor);
 
-    m_context = new Core::IContext(this);
-    m_context->setWidget(this);
-    m_context->setContext(Core::Context(Constants::UNIFIED_VIEW_ID));
-    Core::ICore::addContextObject(m_context);
+    auto context = new Core::IContext(this);
+    context->setWidget(this);
+    context->setContext(Core::Context(Constants::UNIFIED_VIEW_ID));
+    Core::ICore::addContextObject(context);
     setCodeFoldingSupported(true);
-}
-
-UnifiedDiffEditorWidget::~UnifiedDiffEditorWidget()
-{
-    Core::ICore::removeContextObject(m_context);
 }
 
 void UnifiedDiffEditorWidget::setDocument(DiffEditorDocument *document)
@@ -592,7 +587,7 @@ int UnifiedDiffEditorWidget::blockNumberForFileIndex(int fileIndex) const
     if (fileIndex < 0 || fileIndex >= m_fileInfo.count())
         return -1;
 
-    return (m_fileInfo.constBegin() + fileIndex).key();
+    return std::next(m_fileInfo.constBegin(), fileIndex).key();
 }
 
 int UnifiedDiffEditorWidget::fileIndexForBlockNumber(int blockNumber) const

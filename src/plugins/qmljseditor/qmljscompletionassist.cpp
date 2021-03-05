@@ -187,7 +187,7 @@ class ProcessProperties: private MemberProcessor
     QSet<const ObjectValue *> _processed;
     bool _globalCompletion = false;
     bool _enumerateGeneratedSlots = false;
-    bool _enumerateSlots = true;
+    bool _enumerateMethods = true;
     const ScopeChain *_scopeChain;
     const ObjectValue *_currentObject = nullptr;
     PropertyProcessor *_propertyProcessor = nullptr;
@@ -208,9 +208,9 @@ public:
         _enumerateGeneratedSlots = enumerate;
     }
 
-    void setEnumerateSlots(bool enumerate)
+    void setEnumerateMethods(bool enumerate)
     {
-        _enumerateSlots = enumerate;
+        _enumerateMethods = enumerate;
     }
 
     void operator ()(const Value *value, PropertyProcessor *processor)
@@ -251,14 +251,14 @@ private:
 
     bool processSignal(const QString &name, const Value *value) override
     {
-        if (_globalCompletion)
+        if (_globalCompletion || _enumerateMethods)
             process(name, value);
         return true;
     }
 
     bool processSlot(const QString &name, const Value *value) override
     {
-        if (_enumerateSlots)
+        if (_enumerateMethods)
             process(name, value);
         return true;
     }
@@ -328,7 +328,7 @@ bool isLiteral(AST::Node *ast)
 
 QStringList qmlJSAutoComplete(QTextDocument *textDocument,
                               int position,
-                              const QString &fileName,
+                              const Utils::FilePath &fileName,
                               TextEditor::AssistReason reason,
                               const SemanticInfo &info)
 {
@@ -355,7 +355,7 @@ QStringList qmlJSAutoComplete(QTextDocument *textDocument,
         }
 
         for (int i = 0; i < model->size(); ++i)
-            list.append(proposal->model()->text(i));
+            list.append(proposal->model()->text(i).trimmed());
         list.append(prefix);
     }
 
@@ -552,8 +552,6 @@ IAssistProposal *QmlJSCompletionAssistProcessor::perform(const AssistInterface *
     if (assistInterface->reason() == IdleEditor && !acceptsIdleEditor())
         return nullptr;
 
-    const QString &fileName = m_interface->fileName();
-
     m_startPosition = assistInterface->position();
     while (isIdentifierChar(m_interface->textDocument()->characterAt(m_startPosition - 1), false, false))
         --m_startPosition;
@@ -567,10 +565,9 @@ IAssistProposal *QmlJSCompletionAssistProcessor::perform(const AssistInterface *
         return nullptr;
 
     const Document::Ptr document = semanticInfo.document;
-    const QFileInfo currentFileInfo(fileName);
 
     bool isQmlFile = false;
-    if (currentFileInfo.suffix() == QLatin1String("qml"))
+    if (m_interface->filePath().endsWith(".qml"))
         isQmlFile = true;
 
     const QList<AST::Node *> path = semanticInfo.rangePath(m_interface->position());
@@ -771,7 +768,7 @@ IAssistProposal *QmlJSCompletionAssistProcessor::perform(const AssistInterface *
             ProcessProperties processProperties(&scopeChain);
             processProperties.setGlobalCompletion(true);
             processProperties.setEnumerateGeneratedSlots(true);
-            processProperties.setEnumerateSlots(false);
+            processProperties.setEnumerateMethods(false);
 
             // id: is special
             AssistProposalItem *idProposalItem = new QmlJSAssistProposalItem;
@@ -891,7 +888,8 @@ bool QmlJSCompletionAssistProcessor::acceptsIdleEditor() const
             ++startPos;
 
             const QString &word = m_interface->textAt(startPos, cursorPos - startPos);
-            if (word.length() > 2 && isIdentifierChar(word.at(0), true)) {
+            if (word.length() >= TextEditorSettings::completionSettings().m_characterThreshold
+                    && isIdentifierChar(word.at(0), true)) {
                 for (int i = 1; i < word.length(); ++i) {
                     if (!isIdentifierChar(word.at(i)))
                         return false;
@@ -982,7 +980,7 @@ bool QmlJSCompletionAssistProcessor::completeUrl(const QString &relativeBasePath
 // ------------------------------
 QmlJSCompletionAssistInterface::QmlJSCompletionAssistInterface(QTextDocument *textDocument,
                                                                int position,
-                                                               const QString &fileName,
+                                                               const Utils::FilePath &fileName,
                                                                AssistReason reason,
                                                                const SemanticInfo &info)
     : AssistInterface(textDocument, position, fileName, reason)

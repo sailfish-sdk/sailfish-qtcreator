@@ -297,7 +297,8 @@ int ReadOnlyFilesDialog::exec()
 
     ReadOnlyResult result = RO_Cancel;
     FilePaths failedToMakeWritable;
-    for (ReadOnlyFilesDialogPrivate::ButtonGroupForFile buttongroup : qAsConst(d->buttonGroups)) {
+    for (const ReadOnlyFilesDialogPrivate::ButtonGroupForFile &buttongroup
+         : qAsConst(d->buttonGroups)) {
         result = static_cast<ReadOnlyResult>(buttongroup.group->checkedId());
         switch (result) {
         case RO_MakeWritable:
@@ -421,7 +422,7 @@ void ReadOnlyFilesDialogPrivate::initDialog(const FilePaths &filePaths)
         auto item = new QTreeWidgetItem(ui.treeWidget);
         item->setText(FileName, visibleName);
         item->setIcon(FileName, FileIconProvider::icon(info));
-        item->setText(Folder, Utils::FilePath::fromFileInfo(directory).shortNativePath());
+        item->setText(Folder, Utils::FilePath::fromString(directory).shortNativePath());
         auto radioButtonGroup = new QButtonGroup;
 
         // Add a button for opening the file with a version control system
@@ -464,7 +465,7 @@ void ReadOnlyFilesDialogPrivate::initDialog(const FilePaths &filePaths)
 
         // Also save the buttongroup for every file to get the result for each entry.
         buttonGroups.append({filePath, radioButtonGroup});
-        QObject::connect(radioButtonGroup, QOverload<int>::of(&QButtonGroup::buttonClicked),
+        QObject::connect(radioButtonGroup, QOverload<QAbstractButton *>::of(&QButtonGroup::buttonClicked),
                          [this] { updateSelectAll(); });
     }
 

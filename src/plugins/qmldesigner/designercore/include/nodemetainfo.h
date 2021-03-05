@@ -66,6 +66,7 @@ public:
     bool hasProperty(const PropertyName &propertyName) const;
     PropertyNameList propertyNames() const;
     PropertyNameList signalNames() const;
+    PropertyNameList slotNames() const;
     PropertyNameList directPropertyNames() const;
     PropertyName defaultPropertyName() const;
     bool hasDefaultProperty() const;
@@ -74,6 +75,7 @@ public:
     bool propertyIsListProperty(const PropertyName &propertyName) const;
     bool propertyIsEnumType(const PropertyName &propertyName) const;
     bool propertyIsPrivate(const PropertyName &propertyName) const;
+    bool propertyIsPointer(const PropertyName &propertyName) const;
     QString propertyEnumScope(const PropertyName &propertyName) const;
     QStringList propertyKeysForEnum(const PropertyName &propertyName) const;
     QVariant propertyCastedValue(const PropertyName &propertyName, const QVariant &value) const;
@@ -98,13 +100,12 @@ public:
     bool isSubclassOf(const TypeName &type, int majorVersion = -1, int minorVersion = -1) const;
 
     bool isGraphicalItem() const;
+    bool isQmlItem() const;
     bool isLayoutable() const;
     bool isView() const;
     bool isTabView() const;
 
     QString importDirectoryPath() const;
-
-    static void clearCache();
 
 private:
     QSharedPointer<Internal::NodeMetaInfoPrivate> m_privateData;

@@ -51,7 +51,7 @@ public:
         ExpandVariables
     };
 
-    QbsBuildStep(ProjectExplorer::BuildStepList *bsl, Core::Id id);
+    QbsBuildStep(ProjectExplorer::BuildStepList *bsl, Utils::Id id);
     ~QbsBuildStep() override;
 
     QVariantMap qbsConfiguration(VariableHandling variableHandling) const;
@@ -80,9 +80,10 @@ signals:
 
 private:
     bool init() override;
+    void setupOutputFormatter(Utils::OutputFormatter *formatter) override;
     void doRun() override;
     void doCancel() override;
-    ProjectExplorer::BuildStepConfigWidget *createConfigWidget() override;
+    QWidget *createConfigWidget() override;
     bool fromMap(const QVariantMap &map) override;
     QVariantMap toMap() const override;
 
@@ -133,7 +134,6 @@ private:
     QString m_currentTask;
     int m_maxProgress;
     bool m_lastWasSuccess;
-    ProjectExplorer::IOutputParser *m_parser = nullptr;
     bool m_parsingProject = false;
     bool m_parsingAfterBuild = false;
 

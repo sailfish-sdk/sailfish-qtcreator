@@ -1,9 +1,9 @@
 include(qtcreator.pri)
 
 #version check qt
-!minQtVersion(5, 11, 0) {
+!minQtVersion(5, 14, 0) {
     message("Cannot build $$IDE_DISPLAY_NAME with Qt version $${QT_VERSION}.")
-    error("Use at least Qt 5.11.0.")
+    error("Use at least Qt 5.14.0.")
 }
 
 include(doc/doc.pri)
@@ -20,6 +20,7 @@ DISTFILES += dist/copyright_template.txt \
     $$files(dist/changes-*) \
     qtcreator.qbs \
     $$files(qbs/*, true) \
+    $$files(cmake/*) \
     $$files(scripts/*.py) \
     $$files(scripts/*.sh) \
     $$files(scripts/*.pl)
@@ -112,7 +113,7 @@ macx {
     BINDIST_SOURCE.release = "$$OUT_PWD/bin"
     BINDIST_SOURCE.debug = "$$OUT_PWD/bin"
     BINDIST_EXCLUDE_ARG.debug = "--exclude-toplevel"
-    deployqt.commands = $$PWD/scripts/deployqtHelper_mac.sh \"$${APPBUNDLE}\" \"$$[QT_INSTALL_BINS]\" \"$$[QT_INSTALL_TRANSLATIONS]\" \"$$[QT_INSTALL_PLUGINS]\" \"$$[QT_INSTALL_IMPORTS]\" \"$$[QT_INSTALL_QML]\"
+    deployqt.commands = $$PWD/scripts/deployqtHelper_mac.sh \"$${APPBUNDLE}\" \"$$[QT_INSTALL_BINS]\" \"$$[QT_INSTALL_TRANSLATIONS]\" \"$$[QT_INSTALL_PLUGINS]\" \"$$[QT_INSTALL_QML]\"
     codesign.commands = codesign --deep -o runtime -s \"$(SIGNING_IDENTITY)\" $(SIGNING_FLAGS) \"$${APPBUNDLE}\"
     dmg.commands = python -u \"$$PWD/scripts/makedmg.py\" \"$${BASENAME}.dmg\" \"Qt Creator\" \"$$IDE_SOURCE_TREE\" \"$$OUT_PWD/bin\"
     #dmg.depends = deployqt
@@ -124,14 +125,8 @@ macx {
     BINDIST_EXCLUDE_ARG.debug = $${BINDIST_EXCLUDE_ARG.release}
     deployqt.commands = python -u $$PWD/scripts/deployqt.py -i \"$(INSTALL_ROOT)$$QTC_PREFIX/bin/$${IDE_APP_TARGET}\" \"$(QMAKE)\"
     deployqt.depends = install
-    win32:!isEmpty(BINARY_ARTIFACTS_BRANCH) {
-        deployartifacts.depends = install
-        deployartifacts.commands = git clone --depth 1 -b $$BINARY_ARTIFACTS_BRANCH \
-                "http://code.qt.io/qt-creator/binary-artifacts.git" \
-            && xcopy /s /q /y /i "binary-artifacts\\win32" \"$(INSTALL_ROOT)$$QTC_PREFIX\" \
-            && rmdir /s /q binary-artifacts
-        QMAKE_EXTRA_TARGETS += deployartifacts
-    }
+    # legacy dummy target
+    win32: QMAKE_EXTRA_TARGETS += deployartifacts
 }
 
 INSTALLER_ARCHIVE_FROM_ENV = $$(INSTALLER_ARCHIVE)

@@ -36,8 +36,8 @@
             \li \l{User Interface}
                 \list
                     \li \l{Selecting Modes}
-                    \li \l{Browsing Project Contents}
                     \li \l{Working with Sidebars}
+                    \li \l{Browsing Project Contents}
                     \li \l{Managing Workspaces}
                     \li \l{Viewing Output}
                  \endlist
@@ -81,6 +81,7 @@
                 \li \l{Specifying Code Style Settings}
                 \li \l{Specifying Dependencies}
                 \li \l{Specifying Environment Settings}
+                \li \l{Using Custom Output Parsers}
                 \li \l{Sharing Project Settings}
             \endlist
             \li \l{Managing Sessions}
@@ -97,13 +98,20 @@
                         \li \l {Creating Components}
                         \list
                             \li \l{Editing 2D Content}
+                            \li \l{Shapes}
+                            \li \l{Text}
+                            \li \l{Images}
+                            \li \l{User Interaction Methods}
+                            \li \l{Lists and Other Data Models}
                             \li \l{Creating Buttons}
                             \li \l{Creating Scalable Buttons and Borders}
                         \endlist
                         \li \l{Managing Item Hierarchy}
                         \li \l{Specifying Item Properties}
+                        \li \l{Positioning Items}
                         \li \l{Using Custom Fonts}
                         \li \l{Annotating Designs}
+                        \li \l{Loading Placeholder Data}
                         \li \l{Qt Quick UI Forms}
                    \endlist
                 \li \l {Adding Dynamics}
@@ -117,7 +125,6 @@
                             \li \l{Managing C++ Backend Objects}
                         \endlist
                         \li \l {Adding States}
-                        \li \l {Editing PathView Properties}
                     \endlist
                 \li \l{Editing 3D Scenes}
                         \list
@@ -132,10 +139,14 @@
                             \li \l{Adding 3D Views}
                             \li \l{Using 3D Components}
                             \list
-                                \li \l{Setting Node Properties}
+                                \li \l{Setting Group Properties}
                                 \li \l{Adding Models}
                                 \li \l{Using Materials and Shaders}
                                 \li \l{Attaching Textures to Materials}
+                                \li \l{Using 3D Materials}
+                                \li \l{Applying 3D Effects}
+                                \li \l{Using Custom Shaders}
+                                \li \l{Creating Custom Effects and Materials}
                                 \li \l{Using Lights}
                                 \li \l{Using Scene Camera}
                                 \li \l{Setting Scene Environment}
@@ -145,12 +156,20 @@
                 \li \l {Using QML Modules with Plugins}
                 \li \l {Converting UI Projects to Applications}
                 \li \l {Using QmlLive with Sailfish OS Devices}
+                \li \l {Exporting QML}
             \endlist
             \li \l{Developing Widget Based Applications}
             \list
                 \li  \l{Adding Qt Designer Plugins}
             \endlist
-            \li \l{Optimizing Applications for Mobile Devices}
+            \li \l {Best Practices}
+            \list
+                \li \l{Optimizing Applications for Mobile Devices}
+                \li \l{Qt Quick Best Practices}
+                    \list
+                        \li \l{Creating Optimized 3D Scenes}
+                    \endlist
+            \endlist
         \endlist
         \li \l{Coding}
         \list
@@ -248,6 +267,11 @@
         \li \l{Advanced Use}
         \list
             \li \l{Supported Platforms}
+                \list
+                    \li \l {Desktop Platforms}
+                    \li \l {Embedded Platforms}
+                    \li \l {Mobile Platforms}
+                \endlist
             \li \l{Using Other Build Systems}
             \list
                 \li \l{Setting Up CMake}
@@ -255,6 +279,9 @@
                 \li \l{Setting Up an Autotools Project}
                 \li \l{Setting Up a Generic Project}
                 \li \l{Setting Up Nimble}
+                \li \l{Setting Up Meson}
+                \li \l{Setting Up IncrediBuild}
+                \li \l{Setting Up Conan}
             \endlist
             \li \l{Using Command Line Options}
             \li \l{Keyboard Shortcuts}

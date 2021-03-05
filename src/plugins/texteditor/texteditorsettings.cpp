@@ -72,11 +72,11 @@ public:
     SnippetsSettingsPage m_snippetsSettingsPage;
     CompletionSettingsPage m_completionSettingsPage;
 
-    QMap<Core::Id, ICodeStylePreferencesFactory *> m_languageToFactory;
+    QMap<Utils::Id, ICodeStylePreferencesFactory *> m_languageToFactory;
 
-    QMap<Core::Id, ICodeStylePreferences *> m_languageToCodeStyle;
-    QMap<Core::Id, CodeStylePool *> m_languageToCodeStylePool;
-    QMap<QString, Core::Id> m_mimeTypeToLanguage;
+    QMap<Utils::Id, ICodeStylePreferences *> m_languageToCodeStyle;
+    QMap<Utils::Id, CodeStylePool *> m_languageToCodeStylePool;
+    QMap<QString, Utils::Id> m_mimeTypeToLanguage;
 
 private:
     static std::vector<FormatDescription> initialFormats();
@@ -90,7 +90,7 @@ FormatDescriptions TextEditorSettingsPrivate::initialFormats()
     formatDescr.emplace_back(C_TEXT, tr("Text"),
                              tr("Generic text and punctuation tokens.\n"
                                                     "Applied to text that matched no other rule."),
-                             Format{QColor{}, Qt::white});
+                             Format{Qt::black, Qt::white});
 
     // Special categories
     const QPalette p = QApplication::palette();
@@ -103,6 +103,14 @@ FormatDescriptions TextEditorSettingsPrivate::initialFormats()
                              FormatDescription::ShowAllAbsoluteControlsExceptUnderline);
     formatDescr.emplace_back(C_SEARCH_RESULT, tr("Search Result"),
                              tr("Highlighted search results inside the editor."),
+                             FormatDescription::ShowBackgroundControl);
+    formatDescr.emplace_back(C_SEARCH_RESULT_ALT1, tr("Search Result (alternative 1)"),
+                             tr("Highlighted search results inside the editor.\n"
+                                "Used to mark read accesses to C++ symbols."),
+                             FormatDescription::ShowBackgroundControl);
+    formatDescr.emplace_back(C_SEARCH_RESULT_ALT2, tr("Search Result (alternative 2)"),
+                             tr("Highlighted search results inside the editor.\n"
+                                "Used to mark write accesses to C++ symbols."),
                              FormatDescription::ShowBackgroundControl);
     formatDescr.emplace_back(C_SEARCH_SCOPE, tr("Search Scope"),
                              tr("Section where the pattern is searched in."),
@@ -303,7 +311,21 @@ FormatDescriptions TextEditorSettingsPrivate::initialFormats()
     formatDescr.emplace_back(C_LOG_CHANGE_LINE, tr("Log Change Line"),
                              tr("Applied to lines describing changes in VCS log."),
                              Format(QColor(192, 0, 0), QColor()));
-
+    formatDescr.emplace_back(C_LOG_AUTHOR_NAME, tr("Log Author Name"),
+                             tr("Applied to author names in VCS log."),
+                             Format(QColor(0x007af4), QColor()));
+    formatDescr.emplace_back(C_LOG_COMMIT_DATE, tr("Log Commit Date"),
+                             tr("Applied to commit dates in VCS log."),
+                             Format(QColor(0x006600), QColor()));
+    formatDescr.emplace_back(C_LOG_COMMIT_HASH, tr("Log Commit Hash"),
+                             tr("Applied to commit hashes in VCS log."),
+                             Format(QColor(0xff0000), QColor()));
+    formatDescr.emplace_back(C_LOG_DECORATION, tr("Log Decoration"),
+                             tr("Applied to commit decorations in VCS log."),
+                             Format(QColor(0xff00ff), QColor()));
+    formatDescr.emplace_back(C_LOG_COMMIT_SUBJECT, tr("Log Commit Subject"),
+                             tr("Applied to commit subjects in VCS log."),
+                             Format{QColor{}, QColor{}});
 
     // Mixin categories
     formatDescr.emplace_back(C_ERROR,
@@ -444,17 +466,17 @@ void TextEditorSettings::registerCodeStyleFactory(ICodeStylePreferencesFactory *
     d->m_languageToFactory.insert(factory->languageId(), factory);
 }
 
-void TextEditorSettings::unregisterCodeStyleFactory(Core::Id languageId)
+void TextEditorSettings::unregisterCodeStyleFactory(Utils::Id languageId)
 {
     d->m_languageToFactory.remove(languageId);
 }
 
-const QMap<Core::Id, ICodeStylePreferencesFactory *> &TextEditorSettings::codeStyleFactories()
+const QMap<Utils::Id, ICodeStylePreferencesFactory *> &TextEditorSettings::codeStyleFactories()
 {
     return d->m_languageToFactory;
 }
 
-ICodeStylePreferencesFactory *TextEditorSettings::codeStyleFactory(Core::Id languageId)
+ICodeStylePreferencesFactory *TextEditorSettings::codeStyleFactory(Utils::Id languageId)
 {
     return d->m_languageToFactory.value(languageId);
 }
@@ -464,22 +486,22 @@ ICodeStylePreferences *TextEditorSettings::codeStyle()
     return d->m_behaviorSettingsPage.codeStyle();
 }
 
-ICodeStylePreferences *TextEditorSettings::codeStyle(Core::Id languageId)
+ICodeStylePreferences *TextEditorSettings::codeStyle(Utils::Id languageId)
 {
     return d->m_languageToCodeStyle.value(languageId, codeStyle());
 }
 
-QMap<Core::Id, ICodeStylePreferences *> TextEditorSettings::codeStyles()
+QMap<Utils::Id, ICodeStylePreferences *> TextEditorSettings::codeStyles()
 {
     return d->m_languageToCodeStyle;
 }
 
-void TextEditorSettings::registerCodeStyle(Core::Id languageId, ICodeStylePreferences *prefs)
+void TextEditorSettings::registerCodeStyle(Utils::Id languageId, ICodeStylePreferences *prefs)
 {
     d->m_languageToCodeStyle.insert(languageId, prefs);
 }
 
-void TextEditorSettings::unregisterCodeStyle(Core::Id languageId)
+void TextEditorSettings::unregisterCodeStyle(Utils::Id languageId)
 {
     d->m_languageToCodeStyle.remove(languageId);
 }
@@ -489,27 +511,27 @@ CodeStylePool *TextEditorSettings::codeStylePool()
     return d->m_behaviorSettingsPage.codeStylePool();
 }
 
-CodeStylePool *TextEditorSettings::codeStylePool(Core::Id languageId)
+CodeStylePool *TextEditorSettings::codeStylePool(Utils::Id languageId)
 {
     return d->m_languageToCodeStylePool.value(languageId);
 }
 
-void TextEditorSettings::registerCodeStylePool(Core::Id languageId, CodeStylePool *pool)
+void TextEditorSettings::registerCodeStylePool(Utils::Id languageId, CodeStylePool *pool)
 {
     d->m_languageToCodeStylePool.insert(languageId, pool);
 }
 
-void TextEditorSettings::unregisterCodeStylePool(Core::Id languageId)
+void TextEditorSettings::unregisterCodeStylePool(Utils::Id languageId)
 {
     d->m_languageToCodeStylePool.remove(languageId);
 }
 
-void TextEditorSettings::registerMimeTypeForLanguageId(const char *mimeType, Core::Id languageId)
+void TextEditorSettings::registerMimeTypeForLanguageId(const char *mimeType, Utils::Id languageId)
 {
     d->m_mimeTypeToLanguage.insert(QString::fromLatin1(mimeType), languageId);
 }
 
-Core::Id TextEditorSettings::languageId(const QString &mimeType)
+Utils::Id TextEditorSettings::languageId(const QString &mimeType)
 {
     return d->m_mimeTypeToLanguage.value(mimeType);
 }

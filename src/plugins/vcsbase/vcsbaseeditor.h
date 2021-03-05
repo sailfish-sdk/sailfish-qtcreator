@@ -30,9 +30,9 @@
 #include <texteditor/texteditor.h>
 
 #include <QSet>
+#include <QTextCodec>
 
 QT_BEGIN_NAMESPACE
-class QTextCodec;
 class QTextCursor;
 QT_END_NAMESPACE
 
@@ -191,6 +191,8 @@ public:
     // (set to true if the source is a single file and the VCS implements it)
     bool isFileLogAnnotateEnabled() const;
     void setFileLogAnnotateEnabled(bool e);
+
+    void setHighlightingEnabled(bool e);
 
     QTextCodec *codec() const;
     void setCodec(QTextCodec *);

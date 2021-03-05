@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.9)
+cmake_minimum_required(VERSION 3.10)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake")
 
@@ -7,7 +7,7 @@ project(sdktool)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -40,9 +40,11 @@ endif()
 
 set(UtilsSourcesDir "../../libs/utils")
 
+file(RELATIVE_PATH DATA_PATH "/${IDE_LIBEXEC_PATH}" "/${IDE_DATA_PATH}")
+
 add_qtc_executable(sdktool
   ${DESTINATION}
-  DEFINES DATA_PATH=\"${IDE_DATA_PATH}\"
+  DEFINES DATA_PATH=\"${DATA_PATH}\"
   DEPENDS Qt5::Core
   INCLUDES
     "${UtilsSourcesDir}/../"
@@ -82,6 +84,7 @@ extend_qtc_executable(sdktool
     namevaluedictionary.cpp namevaluedictionary.h
     namevalueitem.cpp namevalueitem.h
     persistentsettings.cpp persistentsettings.h
+    porting.h
     qtcassert.cpp qtcassert.h
     qtcprocess.cpp qtcprocess.h
     savefile.cpp savefile.h

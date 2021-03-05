@@ -229,10 +229,11 @@ class Dumper(DumperBase):
     def fromFrameValue(self, nativeValue):
         #DumperBase.warn('FROM FRAME VALUE: %s' % nativeValue.address)
         val = nativeValue
-        try:
-            val = nativeValue.cast(nativeValue.dynamic_type)
-        except:
-            pass
+        if self.useDynamicType:
+            try:
+                val = nativeValue.cast(nativeValue.dynamic_type)
+            except:
+                pass
         return self.fromNativeValue(val)
 
     def fromNativeValue(self, nativeValue):
@@ -306,6 +307,13 @@ class Dumper(DumperBase):
                 val.ldisplay += ' (%s)' % intval
         elif code == gdb.TYPE_CODE_COMPLEX:
             val.ldisplay = str(nativeValue)
+        elif code in [gdb.TYPE_CODE_BOOL, gdb.TYPE_CODE_INT]:
+            try:
+                # extract int presentation from native value and remember it
+                val.lvalue = int(nativeValue)
+            except:
+                # GDB only support converting integers of max. 64 bits to Python int as of now
+                pass
         #elif code == gdb.TYPE_CODE_ARRAY:
         #    val.type.ltarget = nativeValue[0].type.unqualified()
         return val
@@ -1039,9 +1047,9 @@ class Dumper(DumperBase):
     def handleNewObjectFile(self, objfile):
         name = objfile.filename
         if self.isWindowsTarget():
-            qtCoreMatch = re.match(r'.*Qt5?Core[^/.]*d?\.dll', name)
+            qtCoreMatch = re.match(r'.*Qt[56]?Core[^/.]*d?\.dll', name)
         else:
-            qtCoreMatch = re.match(r'.*/libQt5?Core[^/.]*\.so', name)
+            qtCoreMatch = re.match(r'.*/libQt[56]?Core[^/.]*\.so', name)
 
         if qtCoreMatch is not None:
             self.addDebugLibs(objfile)
@@ -1109,7 +1117,8 @@ class Dumper(DumperBase):
         self.qtCustomEventPltFunc = self.findSymbol(sym)
 
         sym = '_ZNK%s7QObject8propertyEPKc' % strns
-        self.qtPropertyFunc = self.findSymbol(sym)
+        if not self.isWindowsTarget(): # prevent calling the property function on windows
+            self.qtPropertyFunc = self.findSymbol(sym)
 
     def assignValue(self, args):
         typeName = self.hexdecode(args['type'])
@@ -1151,7 +1160,9 @@ class Dumper(DumperBase):
     def nativeValueDereferencePointer(self, value):
         # This is actually pretty expensive, up to 100ms.
         deref = value.nativeValue.dereference()
-        return self.fromNativeValue(deref.cast(deref.dynamic_type))
+        if self.useDynamicType:
+            deref = deref.cast(deref.dynamic_type)
+        return self.fromNativeValue(deref)
 
     def nativeValueDereferenceReference(self, value):
         nativeValue = value.nativeValue
@@ -1300,6 +1311,7 @@ class Dumper(DumperBase):
         gdb.execute('continue')
 
     def fetchStack(self, args):
+
         def fromNativePath(string):
             return string.replace('\\', '/')
 
@@ -1316,7 +1328,11 @@ class Dumper(DumperBase):
             frame = gdb.newest_frame()
             ns = self.qtNamespace()
             needle = self.qtNamespace() + 'QV4::ExecutionEngine'
-            pat = '%sqt_v4StackTraceForEngine((void*)0x%x)'
+            pats = [
+                    '{0}qt_v4StackTraceForEngine((void*)0x{1:x})',
+                    '{0}qt_v4StackTrace((({0}QV4::ExecutionEngine *)0x{1:x})->currentContext())',
+                    '{0}qt_v4StackTrace((({0}QV4::ExecutionEngine *)0x{1:x})->currentContext)',
+                   ]
             done = False
             while i < limit and frame and not done:
                 block = None
@@ -1333,8 +1349,19 @@ class Dumper(DumperBase):
                                 dereftype = typeobj.target().unqualified()
                                 if dereftype.name == needle:
                                     addr = toInteger(value)
-                                    expr = pat % (ns, addr)
-                                    res = str(gdb.parse_and_eval(expr))
+                                    res = None
+                                    for pat in pats:
+                                        try:
+                                            expr = pat.format(ns, addr)
+                                            res = str(gdb.parse_and_eval(expr))
+                                            break
+                                        except:
+                                            continue
+
+                                    if res is None:
+                                        done = True
+                                        break
+
                                     pos = res.find('"stack=[')
                                     if pos != -1:
                                         res = res[pos + 8:-2]
@@ -1457,19 +1484,46 @@ class CliDumper(Dumper):
     def putOriginalAddress(self, address):
         pass
 
-    def fetchVariable(self, name):
+    def fetchVariable(self, line):
+        # HACK: Currently, the response to the QtCore loading is completely
+        # eaten by theDumper, so copy the results here. Better would be
+        # some shared component.
+        self.qtCustomEventFunc = theDumper.qtCustomEventFunc
+        self.qtCustomEventPltFunc = theDumper.qtCustomEventPltFunc
+        self.qtPropertyFunc = theDumper.qtPropertyFunc
+
+        names = line.split(' ')
+        name = names[0]
+
+        toExpand = set()
+        for n in names:
+            while n:
+                toExpand.add(n)
+                n = n[0:n.rfind('.')]
+
         args = {}
         args['fancy'] = 1
-        args['passexception'] = 1
+        args['passexceptions'] = 1
         args['autoderef'] = 1
         args['qobjectnames'] = 1
         args['varlist'] = name
+        args['expanded'] = toExpand
+        self.expandableINames = set()
         self.prepare(args)
+
         self.output = name + ' = '
         value = self.parseAndEvaluate(name)
         with TopLevelItem(self, name):
             self.putItem(value)
-        return self.output
+
+        if not self.expandableINames:
+            return self.output + '\n\nNo drill down available.\n'
+
+        pattern = ' pp ' + name + ' ' + '%s'
+        return (self.output
+                + '\n\nDrill down:\n   '
+                + '\n   '.join(pattern % x for x in self.expandableINames)
+                + '\n')
 
 
 # Global instances.

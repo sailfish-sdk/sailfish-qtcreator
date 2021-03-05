@@ -3,6 +3,7 @@ add_qtc_plugin(LanguageClient
   PLUGIN_DEPENDS ProjectExplorer Core TextEditor
   SOURCES
     client.cpp client.h
+    diagnosticmanager.cpp diagnosticmanager.h
     documentsymbolcache.cpp documentsymbolcache.h
     dynamiccapabilities.cpp dynamiccapabilities.h
     languageclient.qrc
@@ -16,6 +17,7 @@ add_qtc_plugin(LanguageClient
     languageclientplugin.cpp languageclientplugin.h
     languageclientquickfix.cpp languageclientquickfix.h
     languageclientsettings.cpp languageclientsettings.h
+    languageclientsymbolsupport.cpp languageclientsymbolsupport.h
     languageclientutils.cpp languageclientutils.h
     languageclient_global.h
     locatorfilter.cpp locatorfilter.h

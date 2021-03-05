@@ -54,43 +54,51 @@ LdParser::LdParser()
     QTC_CHECK(m_regExpGccNames.isValid());
 }
 
-void LdParser::stdError(const QString &line)
+Utils::OutputLineParser::Result LdParser::handleLine(const QString &line, Utils::OutputFormat type)
 {
+    if (type != Utils::StdErrFormat)
+        return Status::NotHandled;
+
     QString lne = rightTrimmed(line);
-    if (!lne.isEmpty() && !lne.at(0).isSpace() && !m_incompleteTask.isNull())
+    if (!lne.isEmpty() && !lne.at(0).isSpace() && !m_incompleteTask.isNull()) {
         flush();
+        return Status::NotHandled;
+    }
 
     if (lne.startsWith(QLatin1String("TeamBuilder "))
             || lne.startsWith(QLatin1String("distcc["))
             || lne.contains(QLatin1String("ar: creating "))) {
-        IOutputParser::stdError(line);
-        return;
+        return Status::NotHandled;
     }
 
     // ld on macOS
     if (lne.startsWith("Undefined symbols for architecture") && lne.endsWith(":")) {
         m_incompleteTask = CompileTask(Task::Error, lne);
-        return;
+        return Status::InProgress;
     }
     if (!m_incompleteTask.isNull() && lne.startsWith("  ")) {
-        m_incompleteTask.description.append('\n').append(lne);
+        m_incompleteTask.details.append(lne);
         static const QRegularExpression locRegExp("    (?<symbol>\\S+) in (?<file>\\S+)");
         const QRegularExpressionMatch match = locRegExp.match(lne);
-        if (match.hasMatch())
-            m_incompleteTask.setFile(Utils::FilePath::fromString(match.captured("file")));
-        return;
+        LinkSpecs linkSpecs;
+        if (match.hasMatch()) {
+            m_incompleteTask.setFile(absoluteFilePath(Utils::FilePath::fromString(
+                                                          match.captured("file"))));
+            addLinkSpecForAbsoluteFilePath(linkSpecs, m_incompleteTask.file, 0, match, "file");
+        }
+        return {Status::InProgress, linkSpecs};
     }
 
     if (lne.startsWith("collect2:") || lne.startsWith("collect2.exe:")) {
-        emit addTask(CompileTask(Task::Error, lne /* description */), 1);
-        return;
+        scheduleTask(CompileTask(Task::Error, lne /* description */), 1);
+        return Status::Done;
     }
 
     QRegularExpressionMatch match = m_ranlib.match(lne);
     if (match.hasMatch()) {
         QString description = match.captured(2);
-        emit addTask(CompileTask(Task::Warning, description), 1);
-        return;
+        scheduleTask(CompileTask(Task::Warning, description), 1);
+        return Status::Done;
     }
 
     match = m_regExpGccNames.match(lne);
@@ -103,8 +111,8 @@ void LdParser::stdError(const QString &line)
         } else if (description.startsWith(QLatin1String("fatal: ")))  {
             description = description.mid(7);
         }
-        emit addTask(CompileTask(type, description), 1);
-        return;
+        scheduleTask(CompileTask(type, description), 1);
+        return Status::Done;
     }
 
     match = m_regExpLinker.match(lne);
@@ -113,12 +121,15 @@ void LdParser::stdError(const QString &line)
         int lineno = match.captured(7).toInt(&ok);
         if (!ok)
             lineno = -1;
-        Utils::FilePath filename = Utils::FilePath::fromUserInput(match.captured(1));
+        Utils::FilePath filename
+                = absoluteFilePath(Utils::FilePath::fromUserInput(match.captured(1)));
+        int capIndex = 1;
         const QString sourceFileName = match.captured(4);
         if (!sourceFileName.isEmpty()
             && !sourceFileName.startsWith(QLatin1String("(.text"))
             && !sourceFileName.startsWith(QLatin1String("(.data"))) {
-            filename = Utils::FilePath::fromUserInput(sourceFileName);
+            filename = absoluteFilePath(Utils::FilePath::fromUserInput(sourceFileName));
+            capIndex = 4;
         }
         QString description = match.captured(8).trimmed();
         Task::TaskType type = Task::Error;
@@ -133,18 +144,20 @@ void LdParser::stdError(const QString &line)
             type = Task::Warning;
             description = description.mid(9);
         }
-        emit addTask(CompileTask(type, description, filename, lineno), 1);
-        return;
+        LinkSpecs linkSpecs;
+        addLinkSpecForAbsoluteFilePath(linkSpecs, filename, lineno, match, capIndex);
+        scheduleTask(CompileTask(type, description, filename, lineno), 1);
+        return {Status::Done, linkSpecs};
     }
 
-    IOutputParser::stdError(line);
+    return Status::NotHandled;
 }
 
-void LdParser::doFlush()
+void LdParser::flush()
 {
     if (m_incompleteTask.isNull())
         return;
     const Task t = m_incompleteTask;
     m_incompleteTask.clear();
-    emit addTask(t);
+    scheduleTask(t, 1);
 }

@@ -43,13 +43,14 @@
 #include <utils/algorithm.h>
 #include <utils/checkablemessagebox.h>
 #include <utils/detailswidget.h>
+#include <utils/layoutbuilder.h>
 #include <utils/outputformatter.h>
 #include <utils/qtcassert.h>
 #include <utils/utilsicons.h>
+#include <utils/variablechooser.h>
 
 #include <coreplugin/icontext.h>
 #include <coreplugin/icore.h>
-#include <coreplugin/variablechooser.h>
 
 #include <QDir>
 #include <QFormLayout>
@@ -145,12 +146,15 @@ void GlobalOrProjectAspect::resetProjectToGlobalSettings()
 
 /*!
     \class ProjectExplorer::RunConfiguration
+    \inmodule QtCreator
+    \inheaderfile projectexplorer/runconfiguration.h
+
     \brief The RunConfiguration class is the base class for a run configuration.
 
     A run configuration specifies how a target should be run, while a runner
     does the actual running.
 
-    The target owns the RunConfiguraitons and a RunControl will need to copy all
+    The target owns the RunConfigurations and a RunControl will need to copy all
     necessary data as the RunControl may continue to exist after the RunConfiguration
     has been destroyed.
 
@@ -161,36 +165,18 @@ void GlobalOrProjectAspect::resetProjectToGlobalSettings()
 
 static std::vector<RunConfiguration::AspectFactory> theAspectFactories;
 
-RunConfiguration::RunConfiguration(Target *target, Core::Id id)
+RunConfiguration::RunConfiguration(Target *target, Utils::Id id)
     : ProjectConfiguration(target, id)
 {
     QTC_CHECK(target && target == this->target());
     connect(target, &Target::parsingFinished, this, &RunConfiguration::update);
 
-    Utils::MacroExpander *expander = macroExpander();
-    expander->setDisplayName(tr("Run Settings"));
-    expander->setAccumulating(true);
-    expander->registerSubProvider([target] {
+    m_expander.setDisplayName(tr("Run Settings"));
+    m_expander.setAccumulating(true);
+    m_expander.registerSubProvider([target] {
         BuildConfiguration *bc = target->activeBuildConfiguration();
         return bc ? bc->macroExpander() : target->macroExpander();
     });
-    expander->registerPrefix("CurrentRun:Env", tr("Variables in the current run environment"),
-                             [this](const QString &var) {
-        const auto envAspect = aspect<EnvironmentAspect>();
-        return envAspect ? envAspect->environment().expandedValueForKey(var) : QString();
-    });
-
-    expander->registerVariable(Constants::VAR_CURRENTRUN_WORKINGDIR,
-                               tr("The currently active run configuration's working directory"),
-                               [this, expander] {
-        const auto wdAspect = aspect<WorkingDirectoryAspect>();
-        return wdAspect ? wdAspect->workingDirectory(expander).toString() : QString();
-    });
-
-    expander->registerVariable(Constants::VAR_CURRENTRUN_NAME,
-            QCoreApplication::translate("ProjectExplorer", "The currently active run configuration's name."),
-            [this] { return displayName(); }, false);
-
     m_commandLineGetter = [this] {
         FilePath executable;
         if (const auto executableAspect = aspect<ExecutableAspect>())
@@ -221,13 +207,13 @@ QWidget *RunConfiguration::createConfigurationWidget()
     auto widget = new QWidget;
     {
         LayoutBuilder builder(widget);
-        for (ProjectConfigurationAspect *aspect : m_aspects) {
+        for (BaseAspect *aspect : qAsConst(m_aspects)) {
             if (aspect->isVisible())
-                aspect->addToLayout(builder.startNewRow());
+                aspect->addToLayout(builder.finishRow());
         }
     }
 
-    Core::VariableChooser::addSupportForChildWidgets(widget, macroExpander());
+    VariableChooser::addSupportForChildWidgets(widget, &m_expander);
 
     auto detailsWidget = new Utils::DetailsWidget;
     detailsWidget->setState(DetailsWidget::NoSummary);
@@ -235,15 +221,20 @@ QWidget *RunConfiguration::createConfigurationWidget()
     return detailsWidget;
 }
 
+bool RunConfiguration::isConfigured() const
+{
+    return !Utils::anyOf(checkForIssues(), [](const Task &t) { return t.type == Task::Error; });
+}
+
 void RunConfiguration::addAspectFactory(const AspectFactory &aspectFactory)
 {
     theAspectFactories.push_back(aspectFactory);
 }
 
-QMap<Core::Id, QVariantMap> RunConfiguration::aspectData() const
+QMap<Utils::Id, QVariantMap> RunConfiguration::aspectData() const
 {
-    QMap<Core::Id, QVariantMap> data;
-    for (ProjectConfigurationAspect *aspect : m_aspects)
+    QMap<Utils::Id, QVariantMap> data;
+    for (BaseAspect *aspect : qAsConst(m_aspects))
         aspect->toMap(data[aspect->id()]);
     return data;
 }
@@ -271,7 +262,7 @@ QVariantMap RunConfiguration::toMap() const
 
     // FIXME: Remove this id mangling, e.g. by using a separate entry for the build key.
     if (!m_buildKey.isEmpty()) {
-        const Core::Id mangled = id().withSuffix(m_buildKey);
+        const Utils::Id mangled = id().withSuffix(m_buildKey);
         map.insert(settingsIdKey(), mangled.toSetting());
     }
 
@@ -323,7 +314,7 @@ bool RunConfiguration::fromMap(const QVariantMap &map)
     m_buildKey = map.value(BUILD_KEY).toString();
 
     if (m_buildKey.isEmpty()) {
-        const Core::Id mangledId = Core::Id::fromSetting(map.value(settingsIdKey()));
+        const Utils::Id mangledId = Utils::Id::fromSetting(map.value(settingsIdKey()));
         m_buildKey = mangledId.suffixAfter(id());
 
         // Hack for cmake projects 4.10 -> 4.11.
@@ -383,42 +374,45 @@ Runnable RunConfiguration::runnable() const
 }
 
 /*!
-    \class ProjectExplorer::IRunConfigurationFactory
+    \class ProjectExplorer::RunConfigurationFactory
+    \inmodule QtCreator
+    \inheaderfile projectexplorer/runconfiguration.h
 
-    \brief The IRunConfigurationFactory class restores run configurations from
-    settings.
+    \brief The RunConfigurationFactory class is used to create and persist
+    run configurations.
 
     The run configuration factory is used for restoring run configurations from
     settings and for creating new run configurations in the \gui {Run Settings}
     dialog.
-    To restore run configurations, use the
-    \c {bool canRestore(Target *parent, const QString &id)}
-    and \c {RunConfiguration* create(Target *parent, const QString &id)}
-    functions.
 
-    To generate a list of creatable run configurations, use the
-    \c {QStringList availableCreationIds(Target *parent)} and
-    \c {QString displayNameForType(const QString&)} functions. To create a
-    run configuration, use \c create().
-*/
+    A RunConfigurationFactory instance is responsible for handling one type of
+    run configurations. This can be restricted to certain project and device
+    types.
 
-/*!
-    \fn QStringList ProjectExplorer::IRunConfigurationFactory::availableCreationIds(Target *parent) const
-
-    Shows the list of possible additions to a target. Returns a list of types.
-*/
-
-/*!
-    \fn QString ProjectExplorer::IRunConfigurationFactory::displayNameForId(Core::Id id) const
-    Translates the types to names to display to the user.
+    RunConfigurationFactory instances register themselves into a global list on
+    construction and deregister on destruction. It is recommended to make them
+    a plain data member of a structure that is allocated in your plugin's
+    ExtensionSystem::IPlugin::initialize() method.
 */
 
 static QList<RunConfigurationFactory *> g_runConfigurationFactories;
+
+/*!
+    Constructs a RunConfigurationFactory instance and registers it into a global
+    list.
+
+    Derived classes should set suitably properties to specify the type of
+    run configurations they can handle.
+*/
 
 RunConfigurationFactory::RunConfigurationFactory()
 {
     g_runConfigurationFactories.append(this);
 }
+
+/*!
+    De-registers the instance from the global list of factories and destructs it.
+*/
 
 RunConfigurationFactory::~RunConfigurationFactory()
 {
@@ -430,7 +424,7 @@ QString RunConfigurationFactory::decoratedTargetName(const QString &targetName, 
     QString displayName;
     if (!targetName.isEmpty())
         displayName = QFileInfo(targetName).completeBaseName();
-    Core::Id devType = DeviceTypeKitAspect::deviceTypeId(target->kit());
+    Utils::Id devType = DeviceTypeKitAspect::deviceTypeId(target->kit());
     if (devType != Constants::DESKTOP_DEVICE_TYPE) {
         if (IDevice::ConstPtr dev = DeviceKitAspect::device(target->kit())) {
             if (displayName.isEmpty()) {
@@ -446,20 +440,19 @@ QString RunConfigurationFactory::decoratedTargetName(const QString &targetName, 
 }
 
 QList<RunConfigurationCreationInfo>
-RunConfigurationFactory::availableCreators(Target *parent) const
+RunConfigurationFactory::availableCreators(Target *target) const
 {
-    const QList<BuildTargetInfo> buildTargets = parent->applicationTargets();
+    const QList<BuildTargetInfo> buildTargets = target->buildSystem()->applicationTargets();
     const bool hasAnyQtcRunnable = Utils::anyOf(buildTargets,
                                             Utils::equal(&BuildTargetInfo::isQtcRunnable, true));
     return Utils::transform(buildTargets, [&](const BuildTargetInfo &ti) {
         QString displayName = ti.displayName;
         if (displayName.isEmpty())
-            displayName = decoratedTargetName(ti.buildKey, parent);
+            displayName = decoratedTargetName(ti.buildKey, target);
         else if (m_decorateDisplayNames)
-            displayName = decoratedTargetName(displayName, parent);
+            displayName = decoratedTargetName(displayName, target);
         RunConfigurationCreationInfo rci;
         rci.factory = this;
-        rci.id = m_runConfigBaseId;
         rci.buildKey = ti.buildKey;
         rci.projectFilePath = ti.projectFilePath;
         rci.displayName = displayName;
@@ -474,14 +467,18 @@ RunConfigurationFactory::availableCreators(Target *parent) const
 }
 
 /*!
-    Adds a list of device types for which this RunConfigurationFactory
+    Adds a device type for which this RunConfigurationFactory
     can create RunConfigurations.
 
-    If this function is never called for a RunConfiguarionFactory,
-    the factory will create RunConfigurations for all device types.
+    If this function is never called for a RunConfigurationFactory,
+    the factory will create RunConfiguration objects for all device types.
+
+    This function should be used in the constructor of derived classes.
+
+    \sa addSupportedProjectType()
 */
 
-void RunConfigurationFactory::addSupportedTargetDeviceType(Core::Id id)
+void RunConfigurationFactory::addSupportedTargetDeviceType(Utils::Id id)
 {
     m_supportedTargetDeviceTypes.append(id);
 }
@@ -491,7 +488,19 @@ void RunConfigurationFactory::setDecorateDisplayNames(bool on)
     m_decorateDisplayNames = on;
 }
 
-void RunConfigurationFactory::addSupportedProjectType(Core::Id id)
+/*!
+    Adds a project type for which this RunConfigurationFactory
+    can create RunConfigurations.
+
+    If this function is never called for a RunConfigurationFactory,
+    the factory will create RunConfigurations for all project types.
+
+    This function should be used in the constructor of derived classes.
+
+    \sa addSupportedTargetDeviceType()
+*/
+
+void RunConfigurationFactory::addSupportedProjectType(Utils::Id id)
 {
     m_supportedProjectTypes.append(id);
 }
@@ -533,7 +542,6 @@ RunConfiguration *RunConfigurationFactory::create(Target *target) const
 RunConfiguration *RunConfigurationCreationInfo::create(Target *target) const
 {
     QTC_ASSERT(factory->canHandle(target), return nullptr);
-    QTC_ASSERT(id == factory->runConfigurationBaseId(), return nullptr);
 
     RunConfiguration *rc = factory->create(target);
     if (!rc)
@@ -550,8 +558,8 @@ RunConfiguration *RunConfigurationFactory::restore(Target *parent, const QVarian
 {
     for (RunConfigurationFactory *factory : g_runConfigurationFactories) {
         if (factory->canHandle(parent)) {
-            const Core::Id id = idFromMap(map);
-            if (id.name().startsWith(factory->m_runConfigBaseId.name())) {
+            const Utils::Id id = idFromMap(map);
+            if (id.name().startsWith(factory->m_runConfigurationId.name())) {
                 RunConfiguration *rc = factory->create(parent);
                 if (rc->fromMap(map)) {
                     rc->update();
@@ -602,7 +610,6 @@ FixedRunConfigurationFactory::availableCreators(Target *parent) const
                                                : m_fixedBuildTarget;
     RunConfigurationCreationInfo rci;
     rci.factory = this;
-    rci.id = runConfigurationBaseId();
     rci.displayName = displayName;
     return {rci};
 }

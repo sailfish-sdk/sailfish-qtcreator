@@ -89,7 +89,7 @@ LldbEngine::LldbEngine()
 
     connect(action(AutoDerefPointers), &SavedAction::valueChanged,
             this, &LldbEngine::updateLocals);
-    connect(action(CreateFullBacktrace), &QAction::triggered,
+    connect(action(CreateFullBacktrace)->action(), &QAction::triggered,
             this, &LldbEngine::fetchFullBacktrace);
     connect(action(UseDebuggingHelpers), &SavedAction::valueChanged,
             this, &LldbEngine::updateLocals);
@@ -151,7 +151,7 @@ void LldbEngine::runCommand(const DebuggerCommand &command)
     }
     showMessage(msg, LogInput);
     m_commandForToken[currentToken()] = cmd;
-    m_lldbProc.write("script theDumper." + function.toUtf8() + "\n");
+    executeCommand("script theDumper." + function.toUtf8());
 }
 
 void LldbEngine::debugLastCommand()
@@ -166,6 +166,13 @@ void LldbEngine::handleAttachedToCore()
     reloadFullStack();
     reloadModules();
     updateLocals();
+}
+
+void LldbEngine::executeCommand(const QByteArray &command)
+{
+    // For some reason, sometimes LLDB misses the first character of the next command on Windows
+    // if passing only 1 LF.
+    m_lldbProc.write(command + "\n\n");
 }
 
 void LldbEngine::shutdownInferior()
@@ -228,13 +235,13 @@ void LldbEngine::setupEngine()
     const QByteArray dumperSourcePath =
         ICore::resourcePath().toLocal8Bit() + "/debugger/";
 
-    m_lldbProc.write("script sys.path.insert(1, '" + dumperSourcePath + "')\n");
+    executeCommand("script sys.path.insert(1, '" + dumperSourcePath + "')");
     // This triggers reportState("enginesetupok") or "enginesetupfailed":
-    m_lldbProc.write("script from lldbbridge import *\n");
+    executeCommand("script from lldbbridge import *");
 
     QString commands = nativeStartupCommands();
     if (!commands.isEmpty())
-        m_lldbProc.write(commands.toLocal8Bit() + '\n');
+        executeCommand(commands.toLocal8Bit());
 
 
     const QString path = stringSetting(ExtraDumperFile);
@@ -314,6 +321,11 @@ void LldbEngine::setupEngine()
         const bool success = response.data["success"].toInt();
         if (success) {
             BreakpointManager::claimBreakpointsForEngine(this);
+            // Some extra roundtrip to make sure we end up behind all commands triggered
+            // from claimBreakpointsForEngine().
+            DebuggerCommand cmd3("executeRoundtrip");
+            cmd3.callback = [this](const DebuggerResponse &) { notifyEngineSetupOk(); };
+            runCommand(cmd3);
         } else {
             notifyEngineSetupFailed();
         }
@@ -402,6 +414,8 @@ void LldbEngine::handleResponse(const QString &response)
             notifyInferiorPid(item.toProcessHandle());
         else if (name == "breakpointmodified")
             handleInterpreterBreakpointModified(item);
+        else if (name == "bridgemessage")
+            showMessage(item["msg"].data(), item["channel"].toInt());
     }
 }
 
@@ -673,7 +687,7 @@ void LldbEngine::requestModuleSymbols(const QString &moduleName)
 {
     DebuggerCommand cmd("fetchSymbols");
     cmd.arg("module", moduleName);
-    cmd.callback = [this, moduleName](const DebuggerResponse &response) {
+    cmd.callback = [moduleName](const DebuggerResponse &response) {
         const GdbMi &symbols = response.data["symbols"];
         QString moduleName = response.data["module"].data();
         Symbols syms;
@@ -903,8 +917,6 @@ void LldbEngine::handleStateNotification(const GdbMi &item)
         notifyInferiorStopFailed();
     else if (newState == "inferiorill")
         notifyInferiorIll();
-    else if (newState == "enginesetupok")
-        notifyEngineSetupOk();
     else if (newState == "enginesetupfailed") {
         Core::AsynchronousMessageBox::critical(adapterStartFailed(),
                                                item["error"].data());

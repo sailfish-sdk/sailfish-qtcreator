@@ -67,8 +67,22 @@ public:
                                        const QString &include);
     void perform() override;
 
+    QString include() const { return m_include; }
+
 private:
     QString m_include;
+};
+
+class AddForwardDeclForUndefinedIdentifierOp: public CppQuickFixOperation
+{
+public:
+    AddForwardDeclForUndefinedIdentifierOp(const CppQuickFixInterface &interface, int priority,
+                                           const QString &fqClassName, int symbolPos);
+private:
+    void perform() override;
+
+    const QString m_className;
+    const int m_symbolPos;
 };
 
 /*!
@@ -207,7 +221,12 @@ public:
 class ConvertToCamelCase : public CppQuickFixFactory
 {
 public:
+    ConvertToCamelCase(bool test = false) : CppQuickFixFactory(), m_test(test) {}
+
     void match(const CppQuickFixInterface &interface, QuickFixOperations &result) override;
+
+private:
+    const bool m_test;
 };
 
 /*!
@@ -378,6 +397,42 @@ public:
 };
 
 /*!
+  Adds a class member from an initialization in the constructor.
+ */
+class InsertMemberFromInitialization : public CppQuickFixFactory
+{
+public:
+    void match(const CppQuickFixInterface &interface,
+               TextEditor::QuickFixOperations &result) override;
+
+private:
+    QString getType(
+            const CppQuickFixInterface &interface,
+            const CPlusPlus::MemInitializerAST *memInitializer,
+            const CPlusPlus::FunctionDefinitionAST *ctor) const;
+};
+
+/*!
+  Adds a definition for any number of member function declarations.
+ */
+class InsertDefsFromDecls : public CppQuickFixFactory
+{
+public:
+    void match(const CppQuickFixInterface &interface,
+               TextEditor::QuickFixOperations &result) override;
+
+    enum class Mode {
+            Off,         // Testing: simulates user canceling the dialog
+            Alternating, // Testing: simulates user choosing a different DefPos for every function
+            User         // Normal interactive mode
+    };
+    void setMode(Mode mode) { m_mode = mode; }
+
+private:
+    Mode m_mode = Mode::User;
+};
+
+/*!
   Extracts the selected code and puts it to a function
  */
 class ExtractFunction : public CppQuickFixFactory
@@ -421,6 +476,21 @@ class GenerateGetterSetter : public CppQuickFixFactory
 {
 public:
     void match(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
+};
+
+/*!
+  Adds getter and setter functions for several member variables
+ */
+class GenerateGettersSettersForClass : public CppQuickFixFactory
+{
+protected:
+    void setTest() { m_test = true; }
+
+private:
+    void match(const CppQuickFixInterface &interface,
+               TextEditor::QuickFixOperations &result) override;
+
+    bool m_test = false;
 };
 
 /*!
@@ -505,6 +575,16 @@ public:
   String literals are handled as UTF-8 even if file's encoding is not UTF-8.
  */
 class EscapeStringLiteral : public CppQuickFixFactory
+{
+public:
+    void match(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;
+};
+
+/*!
+  Removes a using directive (using namespace xyz).
+
+*/
+class RemoveUsingNamespace : public CppQuickFixFactory
 {
 public:
     void match(const CppQuickFixInterface &interface, TextEditor::QuickFixOperations &result) override;

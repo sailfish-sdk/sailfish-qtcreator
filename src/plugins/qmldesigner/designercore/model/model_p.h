@@ -38,6 +38,7 @@
 
 QT_BEGIN_NAMESPACE
 class QPlainTextEdit;
+class QPixmap;
 QT_END_NAMESPACE
 
 namespace QmlDesigner {
@@ -84,6 +85,7 @@ class ModelPrivate : public QObject {
 
     friend class QmlDesigner::Model;
     friend class QmlDesigner::Internal::WriteLocker;
+    friend class QmlDesigner::Internal::NodeMetaInfoPrivate;
 
 public:
      ModelPrivate(Model *model);
@@ -160,6 +162,7 @@ public:
 
     void notifyRenderImage3DChanged(const QImage &image);
     void notifyUpdateActiveScene3D(const QVariantMap &sceneState);
+    void notifyModelNodePreviewPixmapChanged(const ModelNode &node, const QPixmap &pixmap);
 
     void setDocumentMessages(const QList<DocumentMessage> &errors, const QList<DocumentMessage> &warnings);
 
@@ -233,6 +236,8 @@ public:
     InternalNodePointer currentStateNode() const;
     InternalNodePointer currentTimelineNode() const;
 
+    void updateEnabledViews();
+
 private: //functions
     void removePropertyWithoutNotification(const InternalPropertyPointer &property);
     void removeAllSubNodes(const InternalNodePointer &internalNodePointer);
@@ -242,13 +247,16 @@ private: //functions
     QVector<ModelNode> toModelNodeVector(const QVector<InternalNodePointer> &internalNodeVector, AbstractView *view) const;
     QVector<InternalNodePointer> toInternalNodeVector(const QVector<ModelNode> &internalNodeVector) const;
 
+    const QList<QPointer<AbstractView>> enabledViews() const;
+
 private:
     Model *m_q;
     MetaInfo m_metaInfo;
     QList<Import> m_imports;
     QList<Import> m_possibleImportList;
     QList<Import> m_usedImportList;
-    QList<QPointer<AbstractView> > m_viewList;
+    QList<QPointer<AbstractView>> m_viewList;
+    QList<QPointer<AbstractView>> m_enabledViewList;
     QList<InternalNodePointer> m_selectedInternalNodeList;
     QHash<QString,InternalNodePointer> m_idNodeHash;
     QHash<qint32, InternalNodePointer> m_internalIdNodeHash;
@@ -261,6 +269,7 @@ private:
     QPointer<NodeInstanceView> m_nodeInstanceView;
     QPointer<TextModifier> m_textModifier;
     QPointer<Model> m_metaInfoProxyModel;
+    QHash<TypeName, QSharedPointer<NodeMetaInfoPrivate>> m_nodeMetaInfoCache;
     bool m_writeLock;
     qint32 m_internalIdCounter;
 };

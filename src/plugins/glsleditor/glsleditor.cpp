@@ -42,7 +42,8 @@
 #include <coreplugin/actionmanager/command.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/icore.h>
-#include <coreplugin/id.h>
+
+#include <cplusplus/SimpleLexer.h>
 
 #include <extensionsystem/pluginmanager.h>
 #include <extensionsystem/pluginspec.h>
@@ -55,8 +56,10 @@
 #include <texteditor/texteditorconstants.h>
 #include <texteditor/texteditorsettings.h>
 
+#include <utils/algorithm.h>
 #include <utils/changeset.h>
 #include <utils/qtcassert.h>
+#include <utils/tooltip/tooltip.h>
 #include <utils/uncommentselection.h>
 
 #include <QCoreApplication>
@@ -73,6 +76,51 @@ using namespace GLSL;
 
 namespace GlslEditor {
 namespace Internal {
+
+static int versionFor(const QString &source)
+{
+    CPlusPlus::SimpleLexer lexer;
+    lexer.setPreprocessorMode(false);
+    const CPlusPlus::Tokens tokens = lexer(source);
+
+    int version = -1;
+//    QString profile;
+    const int end = tokens.size();
+    for (int it = 0; it + 2 < end; ++it) {
+        const CPlusPlus::Token &token = tokens.at(it);
+        if (token.isComment())
+            continue;
+        if (token.kind() == CPlusPlus::T_POUND) {
+            const int line = token.lineno;
+            const CPlusPlus::Token &successor = tokens.at(it + 1);
+            if (line != successor.lineno)
+                break;
+            if (successor.kind() != CPlusPlus::T_IDENTIFIER)
+                break;
+            if (source.mid(successor.bytesBegin(), successor.bytes()) != "version")
+                break;
+
+            const CPlusPlus::Token &versionToken = tokens.at(it + 2);
+            if (line != versionToken.lineno)
+                break;
+            if (versionToken.kind() != CPlusPlus::T_NUMERIC_LITERAL)
+                break;
+            version = source.mid(versionToken.bytesBegin(), versionToken.bytes()).toInt();
+
+//            if (version >= 150 && it + 3 < end) {
+//                const CPlusPlus::Token &profileToken = tokens.at(it + 3);
+//                if (line != profileToken.lineno)
+//                    break;
+//                if (profileToken.kind() != CPlusPlus::T_IDENTIFIER)
+//                    break;
+//                profile = source.mid(profileToken.bytesBegin(), profileToken.bytes());
+//            }
+            break;
+        }
+        break;
+    }
+    return version;
+}
 
 enum {
     UPDATE_DOCUMENT_DEFAULT_INTERVAL = 150
@@ -122,6 +170,7 @@ public:
 private:
     void updateDocumentNow();
     void setSelectedElements();
+    void onTooltipRequested(const QPoint &point, int pos);
     QString wordUnderCursor() const;
 
     QTimer m_updateDocumentTimer;
@@ -161,6 +210,8 @@ GlslEditorWidget::GlslEditorWidget()
     m_outlineCombo->setSizePolicy(policy);
 
     insertExtraToolBarWidget(TextEditorWidget::Left, m_outlineCombo);
+
+    connect(this, &TextEditorWidget::tooltipRequested, this, &GlslEditorWidget::onTooltipRequested);
 }
 
 int GlslEditorWidget::editorRevision() const
@@ -196,11 +247,16 @@ void GlslEditorWidget::updateDocumentNow()
 
     int variant = languageVariant(textDocument()->mimeType());
     const QString contents = toPlainText(); // get the code from the editor
+    int version = versionFor(contents);
+    if (version >= 330)
+        variant |= GLSL::Lexer::Variant_GLSL_400;
+
     const QByteArray preprocessedCode = contents.toLatin1(); // ### use the QtCreator C++ preprocessor.
 
     Document::Ptr doc(new Document());
     doc->_engine = new Engine();
     Parser parser(doc->_engine, preprocessedCode.constData(), preprocessedCode.size(), variant);
+
     TranslationUnitAST *ast = parser.parse();
     if (ast || extraSelections(CodeWarningsSelection).isEmpty()) {
         Semantic sem;
@@ -252,6 +308,26 @@ void GlslEditorWidget::updateDocumentNow()
     }
 }
 
+void GlslEditorWidget::onTooltipRequested(const QPoint &point, int pos)
+{
+    QTC_ASSERT(m_glslDocument && m_glslDocument->engine(), return);
+    const int lineno = document()->findBlock(pos).blockNumber() + 1;
+    const QStringList messages
+            = Utils::transform<QStringList>(
+                Utils::filtered(m_glslDocument->engine()->diagnosticMessages(),
+                                [lineno](const DiagnosticMessage &msg) {
+                    return msg.line() == lineno;
+                }),
+                [](const DiagnosticMessage &msg) {
+        return msg.message();
+    });
+
+    if (!messages.isEmpty())
+        Utils::ToolTip::show(point, messages.join("<hr/>"), this);
+    else
+        Utils::ToolTip::hide();
+}
+
 int languageVariant(const QString &type)
 {
     int variant = 0;
@@ -295,7 +371,7 @@ AssistInterface *GlslEditorWidget::createAssistInterface(
     if (kind == Completion)
         return new GlslCompletionAssistInterface(document(),
                                                  position(),
-                                                 textDocument()->filePath().toString(),
+                                                 textDocument()->filePath(),
                                                  reason,
                                                  textDocument()->mimeType(),
                                                  m_glslDocument);

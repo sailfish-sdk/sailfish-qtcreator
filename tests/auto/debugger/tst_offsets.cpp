@@ -226,11 +226,11 @@ void tst_offsets::offsets_data()
         OFFSET_TEST(QFilePrivate, fileName) << 140 << 232;
 #endif
 
-        OFFSET_TEST(QFileSystemEntry, m_filePath) << 0 << 0;
-        OFFSET_TEST(QFileInfoPrivate, fileEntry) << 4 << 8;
+    OFFSET_TEST(QFileSystemEntry, m_filePath) << 0 << 0;
+    OFFSET_TEST(QFileInfoPrivate, fileEntry) << 4 << 8;
 
-        QTest::newRow("sizeof(QObjectData)") << int(sizeof(QObjectData))
-            << 28 << 48; // vptr + 3 ptr + 2 int + ptr
+    QTest::newRow("sizeof(QObjectData)") << int(sizeof(QObjectData))
+        << 28 << 48; // vptr + 3 ptr + 2 int + ptr
 
     if (qtVersion >= 0x50000)
         OFFSET_TEST(QObjectPrivate, extraData) << 28 << 48; // sizeof(QObjectData)
@@ -272,10 +272,15 @@ void tst_offsets::offsets_data()
         OFFSET_TEST(QDateTimePrivate, m_timeZone) << 20 << 24;
         OFFSET_TEST(QDateTimePrivate, m_status) << 24 << 32;
 #   endif
-#else
+#elif QT_VERSION < 0x50e00
         OFFSET_TEST(QDateTimePrivate, m_msecs) << 0 << 0;
         OFFSET_TEST(QDateTimePrivate, m_status) << 8 << 8;
         OFFSET_TEST(QDateTimePrivate, m_offsetFromUtc) << 12 << 12;
+        OFFSET_TEST(QDateTimePrivate, m_timeZone) << 20 << 24;
+#else
+        OFFSET_TEST(QDateTimePrivate, m_msecs) << 8 << 8;
+        OFFSET_TEST(QDateTimePrivate, m_status) << 4 << 4;
+        OFFSET_TEST(QDateTimePrivate, m_offsetFromUtc) << 16 << 16;
         OFFSET_TEST(QDateTimePrivate, m_timeZone) << 20 << 24;
 #endif
 

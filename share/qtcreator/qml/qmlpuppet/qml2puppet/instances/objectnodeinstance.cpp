@@ -392,8 +392,24 @@ PropertyNameList ObjectNodeInstance::ignoredProperties() const
     return PropertyNameList();
 }
 
-void ObjectNodeInstance::setHideInEditor(bool)
+void ObjectNodeInstance::setHiddenInEditor(bool b)
 {
+    m_isHiddenInEditor = b;
+}
+
+bool ObjectNodeInstance::isHiddenInEditor() const
+{
+    return m_isHiddenInEditor;
+}
+
+void ObjectNodeInstance::setLockedInEditor(bool b)
+{
+    m_isLockedInEditor = b;
+}
+
+bool ObjectNodeInstance::isLockedInEditor() const
+{
+    return m_isLockedInEditor;
 }
 
 void ObjectNodeInstance::setModifiedFlag(bool b)
@@ -768,6 +784,9 @@ QObject *ObjectNodeInstance::createComponent(const QString &componentPath, QQmlC
             qWarning() << error;
     }
 
+    if (object)
+        object->setProperty("__designer_url__", QUrl::fromLocalFile(componentPath));
+
     return object;
 }
 
@@ -776,7 +795,9 @@ QObject *ObjectNodeInstance::createComponent(const QUrl &componentUrl, QQmlConte
     return QmlPrivateGate::createComponent(componentUrl, context);
 }
 
-QObject *ObjectNodeInstance::createCustomParserObject(const QString &nodeSource, const QByteArray &importCode, QQmlContext *context)
+QObject *ObjectNodeInstance::createCustomParserObject(const QString &nodeSource,
+                                                      const QByteArray &importCode,
+                                                      QQmlContext *context)
 {
     QmlPrivateGate::ComponentCompleteDisabler disableComponentComplete;
     Q_UNUSED(disableComponentComplete)
@@ -787,9 +808,11 @@ QObject *ObjectNodeInstance::createCustomParserObject(const QString &nodeSource,
     data.prepend(importCode);
     component.setData(data, context->baseUrl().resolved(QUrl("createCustomParserObject.qml")));
     QObject *object = component.beginCreate(context);
-    QmlPrivateGate::tweakObjects(object);
-    component.completeCreate();
-    QQmlEngine::setObjectOwnership(object, QQmlEngine::CppOwnership);
+    if (object) {
+        QmlPrivateGate::tweakObjects(object);
+        component.completeCreate();
+        QQmlEngine::setObjectOwnership(object, QQmlEngine::CppOwnership);
+    }
 
     if (component.isError()) {
         qWarning() << "Error in:" << Q_FUNC_INFO << component.url().toString();
@@ -899,6 +922,11 @@ QImage ObjectNodeInstance::renderImage() const
 QImage ObjectNodeInstance::renderPreviewImage(const QSize & /*previewImageSize*/) const
 {
     return QImage();
+}
+
+QSharedPointer<QQuickItemGrabResult> ObjectNodeInstance::createGrabResult() const
+{
+    return {};
 }
 
 QObject *ObjectNodeInstance::parent() const

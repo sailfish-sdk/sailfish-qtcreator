@@ -53,6 +53,8 @@ Rectangle {
 
     property string typeFilter: "QtQuick3D.Material"
 
+    property int activatedReason: ComboBox.ActivatedReason.Other
+
     color: "transparent"
     border.color: StudioTheme.Values.themeControlOutline
     border.width: StudioTheme.Values.border
@@ -89,11 +91,13 @@ Rectangle {
             }
 
             onCompressedActivated: {
+                editableListView.activatedReason = reason
+
                 if (itemFilterComboBox.empty && itemFilterComboBox.editText !== "") {
                     myRepeater.dirty = false
                     editableListView.add(itemFilterComboBox.editText)
                 } else {
-                    editableListView.replace(myIndex, itemFilterComboBox.editText)
+                    editableListView.replace(itemFilterComboBox.myIndex, itemFilterComboBox.editText)
                 }
             }
         }
@@ -104,6 +108,7 @@ Rectangle {
         color: "transparent"
         border.width: StudioTheme.Values.border
         border.color: StudioTheme.Values.themeInteraction
+        visible: myColumn.currentItem ? myColumn.currentItem.focus : false
         x: myColumn.currentItem ? myColumn.currentItem.x : 0
         y: myColumn.currentItem ? myColumn.currentItem.y : 0
         z: 10
@@ -155,6 +160,9 @@ Rectangle {
                     myColumn.currentIndex = lastIndex
                 else
                     myColumn.currentIndex = myRepeater.localModel.length - 1
+
+                if (editableListView.activatedReason === ComboBox.ActivatedReason.Other)
+                    myColumn.currentItem.forceActiveFocus()
             }
         }
 
@@ -180,8 +188,7 @@ Rectangle {
                 onClicked: extFuncLogic.show()
             }
             StudioControls.AbstractButton {
-                buttonIcon: "+"
-                iconFont: StudioTheme.Constants.font
+                buttonIcon: StudioTheme.Constants.plus
                 enabled: !myRepeater.dirty && !(editableListView.backendValue.isInModel && !editableListView.backendValue.isIdList)
                 onClicked: {
                     var idx = myRepeater.localModel.push("") - 1
@@ -192,8 +199,7 @@ Rectangle {
                 }
             }
             StudioControls.AbstractButton {
-                buttonIcon: "-"
-                iconFont: StudioTheme.Constants.font
+                buttonIcon: StudioTheme.Constants.minus
                 enabled: myRepeater.model.length && !(editableListView.backendValue.isInModel && !editableListView.backendValue.isIdList)
                 onClicked: {
                     var lastItem = myColumn.currentIndex === myRepeater.localModel.length - 1

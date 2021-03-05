@@ -51,15 +51,24 @@ public:
 
     static void registerDeclarativeType();
 
+    Q_INVOKABLE void showWidget();
     Q_INVOKABLE void showWidget(int x, int y);
     Q_INVOKABLE void hideWidget();
 
     QString bindingValue() const;
     void setBindingValue(const QString &text);
 
+    //there are few ways to setup backend for binding editor:
+    //1. backend value + model node backend
     void setBackendValue(const QVariant &backendValue);
     void setModelNodeBackend(const QVariant &modelNodeBackend);
+
+    //2. modelnode (this one also sets backend value type name to bool)
     void setStateModelNode(const QVariant &stateModelNode);
+
+    //3. modelnode + backend value type name
+    void setModelNode(const ModelNode &modelNode);
+    void setBackendValueTypeName(const TypeName &backendValueTypeName);
 
     Q_INVOKABLE void prepareBindings();
     Q_INVOKABLE void updateWindowName();
@@ -75,6 +84,7 @@ private:
     QVariant backendValue() const;
     QVariant modelNodeBackend() const;
     QVariant stateModelNode() const;
+    void prepareDialog();
 
 private:
     QPointer<BindingEditorDialog> m_dialog;

@@ -38,7 +38,7 @@ function llvmConfig(hostOS, qtcFunctions)
     var llvmInstallDirFromEnv = Environment.getEnv("LLVM_INSTALL_DIR")
     var llvmConfigVariants = [
         // CLANG-UPGRADE-CHECK: Adapt once we require a new minimum version.
-        "llvm-config", "llvm-config-8", "llvm-config-9", "llvm-config-10", "llvm-config-11", "llvm-config-12"
+        "llvm-config", "llvm-config-11", "llvm-config-10", "llvm-config-9"
     ];
 
     // Prefer llvm-config* from LLVM_INSTALL_DIR
@@ -110,11 +110,11 @@ function formattingLibs(llvmConfig, qtcFunctions, targetOS)
         return [];
 
     var clangVersion = version(llvmConfig)
-    if (Utilities.versionCompare(clangVersion, "10") >= 0)
-        return [];
     var libs = []
     if (qtcFunctions.versionIsAtLeast(clangVersion, MinimumLLVMVersion)) {
-        if (qtcFunctions.versionIsAtLeast(clangVersion, "8.0.0")) {
+        var hasLibClangFormat = File.directoryEntries(libDir(llvmConfig), File.Files)
+                .some(function(p) { return p.contains("clangFormat"); });
+        if (hasLibClangFormat) {
             libs.push(
                 "clangFormat",
                 "clangToolingInclusions",
@@ -124,13 +124,7 @@ function formattingLibs(llvmConfig, qtcFunctions, targetOS)
                 "clangBasic"
             );
         } else {
-            libs.push(
-                "clangFormat",
-                "clangToolingCore",
-                "clangRewrite",
-                "clangLex",
-                "clangBasic"
-            );
+            libs.push("clang-cpp");
         }
         libs = libs.concat(extraLibraries(llvmConfig, targetOS));
     }
@@ -140,7 +134,9 @@ function formattingLibs(llvmConfig, qtcFunctions, targetOS)
 
 function toolingLibs(llvmConfig, targetOS)
 {
-    var fixedList = [
+    var hasLibClangTooling = File.directoryEntries(libDir(llvmConfig), File.Files)
+            .some(function(p) { return p.contains("clangTooling"); });
+    var fixedList = hasLibClangTooling ? [
         "clangTooling",
         "clangFrontend",
         "clangIndex",
@@ -156,7 +152,7 @@ function toolingLibs(llvmConfig, targetOS)
         "clangAST",
         "clangLex",
         "clangBasic",
-    ];
+    ] : ["clang-cpp"];
 
     return fixedList.concat(extraLibraries(llvmConfig, targetOS));
 }

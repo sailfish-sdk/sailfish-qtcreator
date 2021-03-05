@@ -30,7 +30,6 @@
 #include "deploymentdata.h"
 #include "kit.h"
 
-#include <coreplugin/id.h>
 #include <coreplugin/idocument.h>
 
 #include <utils/environmentfwd.h>
@@ -41,6 +40,7 @@
 #include <QSet>
 
 #include <functional>
+#include <memory>
 
 namespace Core { class Context; }
 namespace Utils {
@@ -52,12 +52,10 @@ namespace ProjectExplorer {
 
 class BuildInfo;
 class BuildSystem;
-class BuildConfiguration;
 class ContainerNode;
 class EditorConfiguration;
 class FolderNode;
 class Node;
-class ProjectConfiguration;
 class ProjectImporter;
 class ProjectNode;
 class ProjectPrivate;
@@ -81,7 +79,7 @@ public:
     ~Project() override;
 
     QString displayName() const;
-    Core::Id id() const;
+    Utils::Id id() const;
 
     QString mimeType() const;
     bool canBuildProducts() const;
@@ -110,7 +108,7 @@ public:
     const QList<Target *> targets() const;
     // Note: activeTarget can be 0 (if no targets are defined).
     Target *activeTarget() const;
-    Target *target(Core::Id id) const;
+    Target *target(Utils::Id id) const;
     Target *target(Kit *k) const;
     virtual Tasks projectIssues(const Kit *k) const;
 
@@ -127,6 +125,8 @@ public:
 
     Utils::FilePaths files(const NodeMatcher &matcher) const;
     bool isKnownFile(const Utils::FilePath &filename) const;
+    const Node *nodeForFilePath(const Utils::FilePath &filePath,
+                                const NodeMatcher &extraMatcher = {});
 
     virtual QVariantMap toMap() const;
 
@@ -141,7 +141,8 @@ public:
 
     virtual bool needsConfiguration() const;
     bool needsBuildConfigurations() const;
-    virtual void configureAsExampleProject(const QSet<Core::Id> &preferredFeauters = QSet<Core::Id>());
+    virtual void configureAsExampleProject(ProjectExplorer::Kit *kit,
+            const QSet<Core::Id> &preferredFeauters = QSet<Core::Id>());
 
     virtual ProjectImporter *projectImporter() const;
 
@@ -163,16 +164,22 @@ public:
 
     void setRootProjectNode(std::unique_ptr<ProjectNode> &&root);
 
-    // Set project files that will be watched and trigger the same callback
+    // Set project files that will be watched and by default trigger the same callback
     // as the main project file.
-    void setExtraProjectFiles(const QSet<Utils::FilePath> &projectDocumentPaths);
+    using DocGenerator = std::function<std::unique_ptr<Core::IDocument>(const Utils::FilePath &)>;
+    using DocUpdater = std::function<void(Core::IDocument *)>;
+    void setExtraProjectFiles(const QSet<Utils::FilePath> &projectDocumentPaths,
+                              const DocGenerator &docGenerator = {},
+                              const DocUpdater &docUpdater = {});
 
     void setDisplayName(const QString &name);
-    void setProjectLanguage(Core::Id id, bool enabled);
-    void addProjectLanguage(Core::Id id);
+    void setProjectLanguage(Utils::Id id, bool enabled);
+    void addProjectLanguage(Utils::Id id);
 
     void setExtraData(const QString &key, const QVariant &data);
     QVariant extraData(const QString &key) const;
+
+    QStringList availableQmlPreviewTranslations(QString *errorMessage);
 
 signals:
     void projectFileIsDirty(const Utils::FilePath &path);
@@ -183,9 +190,6 @@ signals:
 
     // Note: activeTarget can be 0 (if no targets are defined).
     void activeTargetChanged(ProjectExplorer::Target *target);
-
-    void removedProjectConfiguration(ProjectExplorer::ProjectConfiguration *pc);
-    void addedProjectConfiguration(ProjectExplorer::ProjectConfiguration *pc);
 
     void aboutToRemoveTarget(ProjectExplorer::Target *target);
     void removedTarget(ProjectExplorer::Target *target);
@@ -208,9 +212,9 @@ protected:
 
     void setCanBuildProducts();
 
-    void setId(Core::Id id);
+    void setId(Utils::Id id);
     void setProjectLanguages(Core::Context language);
-    void removeProjectLanguage(Core::Id id);
+    void removeProjectLanguage(Utils::Id id);
     void setHasMakeInstallEquivalent(bool enabled);
 
     void setKnowsAllBuildExecutables(bool value);

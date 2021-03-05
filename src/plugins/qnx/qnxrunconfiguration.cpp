@@ -44,7 +44,7 @@ using namespace Utils;
 namespace Qnx {
 namespace Internal {
 
-QnxRunConfiguration::QnxRunConfiguration(Target *target, Core::Id id)
+QnxRunConfiguration::QnxRunConfiguration(Target *target, Utils::Id id)
     : RunConfiguration(target, id)
 {
     auto exeAspect = addAspect<ExecutableAspect>();
@@ -67,7 +67,7 @@ QnxRunConfiguration::QnxRunConfiguration(Target *target, Core::Id id)
     auto libAspect = addAspect<QtLibPathAspect>();
     libAspect->setSettingsKey("Qt4ProjectManager.QnxRunConfiguration.QtLibPath");
     libAspect->setLabelText(tr("Path to Qt libraries on device"));
-    libAspect->setDisplayStyle(BaseStringAspect::LineEditDisplay);
+    libAspect->setDisplayStyle(StringAspect::LineEditDisplay);
 
     setUpdater([this, target, exeAspect, symbolsAspect] {
         const BuildTargetInfo bti = buildTargetInfo();

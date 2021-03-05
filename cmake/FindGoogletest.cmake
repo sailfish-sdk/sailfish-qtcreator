@@ -22,9 +22,10 @@ find_path(GOOGLE_TEST_INCLUDE_DIR
   PATH_SUFFIXES googletest/include
   HINTS
     "${GOOGLETEST_DIR}" ENV GOOGLETEST_DIR
-    "${CMAKE_SOURCE_DIR}/googletest"
-    "${CMAKE_SOURCE_DIR}/../googletest"
-    "${CMAKE_SOURCE_DIR}/../../googletest"
+    "${PROJECT_SOURCE_DIR}/googletest"
+    "${PROJECT_SOURCE_DIR}/../googletest"
+    "${PROJECT_SOURCE_DIR}/../../googletest"
+    "${PROJECT_SOURCE_DIR}/tests/unit/unittest/3rdparty/googletest"
 )
 
 find_path(GOOGLE_TEST_SRC_ALL
@@ -32,9 +33,10 @@ find_path(GOOGLE_TEST_SRC_ALL
   PATH_SUFFIXES googletest/src
   HINTS
     "${GOOGLETEST_DIR}" ENV GOOGLETEST_DIR
-    "${CMAKE_SOURCE_DIR}/googletest"
-    "${CMAKE_SOURCE_DIR}/../googletest"
-    "${CMAKE_SOURCE_DIR}/../../googletest"
+    "${PROJECT_SOURCE_DIR}/googletest"
+    "${PROJECT_SOURCE_DIR}/../googletest"
+    "${PROJECT_SOURCE_DIR}/../../googletest"
+    "${PROJECT_SOURCE_DIR}/tests/unit/unittest/3rdparty/googletest"
 )
 
 
@@ -43,9 +45,10 @@ find_path(GOOGLE_MOCK_INCLUDE_DIR
   PATH_SUFFIXES googlemock/include
   HINTS
     "${GOOGLETEST_DIR}" ENV GOOGLETEST_DIR
-    "${CMAKE_SOURCE_DIR}/googletest"
-    "${CMAKE_SOURCE_DIR}/../googletest"
-    "${CMAKE_SOURCE_DIR}/../../googletest"
+    "${PROJECT_SOURCE_DIR}/googletest"
+    "${PROJECT_SOURCE_DIR}/../googletest"
+    "${PROJECT_SOURCE_DIR}/../../googletest"
+    "${PROJECT_SOURCE_DIR}/tests/unit/unittest/3rdparty/googletest"
 )
 
 find_path(GOOGLE_MOCK_SRC_ALL
@@ -53,9 +56,10 @@ find_path(GOOGLE_MOCK_SRC_ALL
   PATH_SUFFIXES googlemock/src
   HINTS
     "${GOOGLETEST_DIR}" ENV GOOGLETEST_DIR
-    "${CMAKE_SOURCE_DIR}/googletest"
-    "${CMAKE_SOURCE_DIR}/../googletest"
-    "${CMAKE_SOURCE_DIR}/../../googletest"
+    "${PROJECT_SOURCE_DIR}/googletest"
+    "${PROJECT_SOURCE_DIR}/../googletest"
+    "${PROJECT_SOURCE_DIR}/../../googletest"
+    "${PROJECT_SOURCE_DIR}/tests/unit/unittest/3rdparty/googletest"
 )
 
 include(FindPackageHandleStandardArgs)
@@ -64,6 +68,7 @@ find_package_handle_standard_args(Googletest
     GOOGLE_TEST_INCLUDE_DIR GOOGLE_MOCK_INCLUDE_DIR
     GOOGLE_TEST_SRC_ALL GOOGLE_MOCK_SRC_ALL
 )
+find_package(Threads REQUIRED)
 
 if(Googletest_FOUND AND NOT TARGET Googletest)
   add_library(Googletest STATIC
@@ -95,6 +100,8 @@ if(Googletest_FOUND AND NOT TARGET Googletest)
       GTEST_HAS_PARAM_TEST
       GTEST_HAS_DEATH_TEST
    )
+
+  target_link_libraries(Googletest Threads::Threads)
 endif()
 
 mark_as_advanced(GOOGLE_TEST_INCLUDE_DIR GOOGLE_MOCK_INCLUDE_DIR

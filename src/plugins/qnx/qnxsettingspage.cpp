@@ -119,7 +119,8 @@ void QnxSettingsWidget::addConfiguration()
     QnxConfiguration *config = new QnxConfiguration(Utils::FilePath::fromString(envFile));
     if (m_qnxConfigManager->configurations().contains(config)
             || !config->isValid()) {
-        QMessageBox::warning(Core::ICore::mainWindow(), tr("Warning"),
+        QMessageBox::warning(Core::ICore::dialogParent(),
+                             tr("Warning"),
                              tr("Configuration already exists or is invalid."));
         delete config;
         return;
@@ -140,7 +141,7 @@ void QnxSettingsWidget::removeConfiguration()
         return;
 
     QMessageBox::StandardButton button =
-            QMessageBox::question(Core::ICore::mainWindow(),
+            QMessageBox::question(Core::ICore::dialogParent(),
                                   tr("Remove QNX Configuration"),
                                   tr("Are you sure you want to remove:\n %1?").arg(config->displayName()),
                                   QMessageBox::Yes | QMessageBox::No);
@@ -245,7 +246,7 @@ void QnxSettingsWidget::apply()
 
 QnxSettingsPage::QnxSettingsPage()
 {
-    setId(Constants::QNX_SETTINGS_ID);
+    setId("DD.Qnx Configuration");
     setDisplayName(QnxSettingsWidget::tr("QNX"));
     setCategory(ProjectExplorer::Constants::DEVICE_SETTINGS_CATEGORY);
     setWidgetCreator([] { return new QnxSettingsWidget; });

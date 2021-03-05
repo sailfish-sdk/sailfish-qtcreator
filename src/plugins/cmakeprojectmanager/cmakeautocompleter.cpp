@@ -25,12 +25,7 @@
 
 #include "cmakeautocompleter.h"
 
-#include <QRegExp>
-#include <QTextCursor>
-#include <QTextBlock>
-#include <QDebug>
-
-#include <texteditor/tabsettings.h>
+#include <QRegularExpression>
 
 namespace CMakeProjectManager {
 namespace Internal {
@@ -117,7 +112,7 @@ QString CMakeAutoCompleter::insertMatchingQuote(const QTextCursor &cursor,
 int CMakeAutoCompleter::paragraphSeparatorAboutToBeInserted(QTextCursor &cursor)
 {
     const QString line = cursor.block().text().trimmed();
-    if (line.contains(QRegExp(QStringLiteral("^(endfunction|endmacro|endif|endforeach|endwhile)\\w*\\("))))
+    if (line.contains(QRegularExpression(QStringLiteral("^(endfunction|endmacro|endif|endforeach|endwhile)\\w*\\("))))
         tabSettings().indentLine(cursor.block(), tabSettings().indentationColumn(cursor.block().text()));
     return 0;
 }

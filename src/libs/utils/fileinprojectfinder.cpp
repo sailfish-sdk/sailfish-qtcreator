@@ -30,6 +30,7 @@
 #include "hostosinfo.h"
 #include "qrcparser.h"
 #include "qtcassert.h"
+#include "stringutils.h"
 
 #include <QCursor>
 #include <QDebug>
@@ -121,7 +122,7 @@ void FileInProjectFinder::setSysroot(const FilePath &sysroot)
 
 void FileInProjectFinder::addMappedPath(const FilePath &localFilePath, const QString &remoteFilePath)
 {
-    const QStringList segments = remoteFilePath.split('/', QString::SkipEmptyParts);
+    const QStringList segments = remoteFilePath.split('/', Qt::SkipEmptyParts);
 
     PathMappingNode *node = &m_pathMapRoot;
     for (const QString &segment : segments) {
@@ -191,10 +192,10 @@ bool FileInProjectFinder::findFileOrDirectory(const QString &originalPath, FileH
         return false;
     }
 
-    const auto segments = originalPath.splitRef('/', QString::SkipEmptyParts);
+    const auto segments = originalPath.split('/', Qt::SkipEmptyParts);
     const PathMappingNode *node = &m_pathMapRoot;
     for (const auto &segment : segments) {
-        auto it = node->children.find(segment.toString());
+        auto it = node->children.find(segment);
         if (it == node->children.end()) {
             node = nullptr;
             break;
@@ -386,7 +387,7 @@ FileInProjectFinder::CacheEntry FileInProjectFinder::findInSearchPath(
 QStringList FileInProjectFinder::filesWithSameFileName(const QString &fileName) const
 {
     QStringList result;
-    foreach (const FilePath &f, m_projectFiles) {
+    for (const FilePath &f : m_projectFiles) {
         if (f.fileName() == fileName)
             result << f.toString();
     }

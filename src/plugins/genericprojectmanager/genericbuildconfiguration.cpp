@@ -32,13 +32,13 @@
 #include <projectexplorer/buildinfo.h>
 #include <projectexplorer/buildsteplist.h>
 #include <projectexplorer/kitinformation.h>
-#include <projectexplorer/projectconfigurationaspects.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/target.h>
 
 #include <qtsupport/baseqtversion.h>
 #include <qtsupport/qtkitinformation.h>
 
+#include <utils/aspects.h>
 #include <utils/pathchooser.h>
 #include <utils/qtcassert.h>
 
@@ -49,7 +49,7 @@ using namespace Utils;
 namespace GenericProjectManager {
 namespace Internal {
 
-GenericBuildConfiguration::GenericBuildConfiguration(Target *parent, Core::Id id)
+GenericBuildConfiguration::GenericBuildConfiguration(Target *parent, Utils::Id id)
     : BuildConfiguration(parent, id)
 {
     setConfigWidgetDisplayName(tr("Generic Manager"));
@@ -91,8 +91,8 @@ GenericBuildConfigurationFactory::GenericBuildConfigurationFactory()
 
 void GenericBuildConfiguration::addToEnvironment(Utils::Environment &env) const
 {
-    prependCompilerPathToEnvironment(target()->kit(), env);
-    const QtSupport::BaseQtVersion *qt = QtSupport::QtKitAspect::qtVersion(target()->kit());
+    prependCompilerPathToEnvironment(kit(), env);
+    const QtSupport::BaseQtVersion *qt = QtSupport::QtKitAspect::qtVersion(kit());
     if (qt)
         env.prependOrSetPath(qt->hostBinPath().toString());
 }

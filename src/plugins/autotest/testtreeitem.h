@@ -37,7 +37,8 @@ namespace {
         LinkRole = Qt::UserRole + 2, // can be removed if AnnotationRole comes back
         ItalicRole, // used only inside the delegate
         TypeRole,
-        EnabledRole
+        EnabledRole,
+        FailedRole  // marker for having failed in last run
     };
 }
 
@@ -46,6 +47,7 @@ namespace Utils { class FilePath; }
 
 namespace Autotest {
 
+class ITestFramework;
 class TestConfiguration;
 class TestParseResult;
 enum class TestRunMode;
@@ -71,7 +73,9 @@ public:
         Naturally
     };
 
-    explicit TestTreeItem(const QString &name = QString(), const QString &filePath = QString(),
+    explicit TestTreeItem(ITestFramework *framework,
+                          const QString &name = QString(),
+                          const QString &filePath = QString(),
                           Type type = Root);
 
     virtual TestTreeItem *copyWithoutChildren() = 0;
@@ -83,6 +87,7 @@ public:
     bool modifyDataTagContent(const TestParseResult *result);
     bool modifyLineAndColumn(const TestParseResult *result);
 
+    ITestFramework *framework() const;
     const QString name() const { return m_name; }
     void setName(const QString &name) { m_name = name; }
     const QString filePath() const { return m_filePath; }
@@ -115,6 +120,7 @@ public:
     TestConfiguration *asConfiguration(TestRunMode mode) const;
     virtual QList<TestConfiguration *> getAllTestConfigurations() const;
     virtual QList<TestConfiguration *> getSelectedTestConfigurations() const;
+    virtual QList<TestConfiguration *> getFailedTestConfigurations() const;
     virtual QList<TestConfiguration *> getTestConfigurationsForFile(const Utils::FilePath &fileName) const;
     virtual bool lessThan(const TestTreeItem *other, SortMode mode) const;
     virtual TestTreeItem *find(const TestParseResult *result) = 0;
@@ -129,6 +135,8 @@ public:
     // decide whether an item should still be added to the treemodel
     virtual bool shouldBeAddedAfterFiltering() const { return true; }
     virtual QSet<QString> internalTargets() const;
+
+    QString cacheName() const { return m_filePath + ':' + m_name; }
 protected:
     void copyBasicDataFrom(const TestTreeItem *other);
     typedef std::function<bool(const TestTreeItem *)> CompareFunction;
@@ -146,9 +154,11 @@ private:
         Cleared
     };
 
+    ITestFramework *m_framework = nullptr;
     QString m_name;
     QString m_filePath;
     Qt::CheckState m_checked;
+    bool m_failed = false;
     Type m_type;
     int m_line = 0;
     int m_column = 0;

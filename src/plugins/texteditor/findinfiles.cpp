@@ -28,21 +28,23 @@
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/find/findplugin.h>
 #include <coreplugin/icore.h>
+
 #include <utils/filesearch.h>
 #include <utils/fileutils.h>
 #include <utils/historycompleter.h>
 #include <utils/pathchooser.h>
 #include <utils/qtcassert.h>
+#include <utils/stringutils.h>
 
-#include <QDebug>
-#include <QSettings>
-#include <QDir>
-#include <QPushButton>
-#include <QFileDialog>
-#include <QLabel>
-#include <QHBoxLayout>
-#include <QStackedWidget>
 #include <QComboBox>
+#include <QDebug>
+#include <QDir>
+#include <QFileDialog>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QPushButton>
+#include <QSettings>
+#include <QStackedWidget>
 
 using namespace Core;
 using namespace TextEditor;
@@ -96,7 +98,7 @@ QString FindInFiles::label() const
 
     const QChar slash = QLatin1Char('/');
     const QStringList &nonEmptyComponents = path().toFileInfo().absoluteFilePath()
-            .split(slash, QString::SkipEmptyParts);
+            .split(slash, Qt::SkipEmptyParts);
     return tr("%1 \"%2\":")
             .arg(title)
             .arg(nonEmptyComponents.isEmpty() ? QString(slash) : nonEmptyComponents.last());
@@ -205,7 +207,7 @@ QWidget *FindInFiles::createConfigWidget()
 
 FilePath FindInFiles::path() const
 {
-    return m_directory->fileName();
+    return m_directory->filePath();
 }
 
 void FindInFiles::writeSettings(QSettings *settings)
@@ -224,7 +226,7 @@ void FindInFiles::readSettings(QSettings *settings)
 
 void FindInFiles::setDirectory(const FilePath &directory)
 {
-    m_directory->setFileName(directory);
+    m_directory->setFilePath(directory);
 }
 
 void FindInFiles::setBaseDirectory(const FilePath &directory)
@@ -234,7 +236,7 @@ void FindInFiles::setBaseDirectory(const FilePath &directory)
 
 FilePath FindInFiles::directory() const
 {
-    return m_directory->fileName();
+    return m_directory->filePath();
 }
 
 void FindInFiles::findOnFileSystem(const QString &path)

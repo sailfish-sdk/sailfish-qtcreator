@@ -28,6 +28,7 @@
 #include "formeditorwidget.h"
 #include "formeditoritem.h"
 #include <nodehints.h>
+#include <qmldesignerconstants.h>
 #include <qmldesignerplugin.h>
 #include <designersettings.h>
 
@@ -185,7 +186,7 @@ FormEditorItem *FormEditorScene::addFormEditorItem(const QmlItemNode &qmlItemNod
     else
         formEditorItem = new FormEditorItem(qmlItemNode, this);
 
-    Q_ASSERT(!m_qmlItemNodeItemHash.contains(qmlItemNode));
+    QTC_ASSERT(!m_qmlItemNodeItemHash.contains(qmlItemNode), ;);
 
     m_qmlItemNodeItemHash.insert(qmlItemNode, formEditorItem);
     if (qmlItemNode.isRootNode()) {
@@ -321,10 +322,21 @@ void FormEditorScene::keyReleaseEvent(QKeyEvent *keyEvent)
         currentTool()->keyReleaseEvent(keyEvent);
 }
 
-void FormEditorScene::focusOutEvent(QFocusEvent *)
+void FormEditorScene::focusOutEvent(QFocusEvent *focusEvent)
 {
     if (currentTool())
         currentTool()->focusLost();
+
+    QmlDesignerPlugin::emitUsageStatisticsTime(Constants::EVENT_FORMEDITOR_TIME,
+                                               m_usageTimer.elapsed());
+
+    QGraphicsScene::focusOutEvent(focusEvent);
+}
+
+void FormEditorScene::focusInEvent(QFocusEvent *focusEvent)
+{
+    m_usageTimer.restart();
+    QGraphicsScene::focusInEvent(focusEvent);
 }
 
 FormEditorView *FormEditorScene::editorView() const

@@ -32,29 +32,27 @@ namespace Nim {
 
 class NimToolChain : public ProjectExplorer::ToolChain
 {
+    Q_DECLARE_TR_FUNCTIONS(Nim::NimToolChain)
+
 public:
     NimToolChain();
-    explicit NimToolChain(Core::Id typeId);
+    explicit NimToolChain(Utils::Id typeId);
 
     ProjectExplorer::Abi targetAbi() const override;
     bool isValid() const override;
 
     MacroInspectionRunner createMacroInspectionRunner() const override;
-    ProjectExplorer::Macros predefinedMacros(const QStringList &flags) const final;
     Utils::LanguageExtensions languageExtensions(const QStringList &flags) const final;
     Utils::WarningFlags warningFlags(const QStringList &flags) const final;
 
     BuiltInHeaderPathsRunner createBuiltInHeaderPathsRunner(
             const Utils::Environment &) const override;
-    ProjectExplorer::HeaderPaths builtInHeaderPaths(const QStringList &flags,
-                                                    const Utils::FilePath &sysRoot,
-                                                    const Utils::Environment &) const final;
     void addToEnvironment(Utils::Environment &env) const final;
     Utils::FilePath makeCommand(const Utils::Environment &env) const final;
     Utils::FilePath compilerCommand() const final;
     QString compilerVersion() const;
     void setCompilerCommand(const Utils::FilePath &compilerCommand);
-    ProjectExplorer::IOutputParser *outputParser() const final;
+    QList<Utils::OutputLineParser *> createOutputParsers() const final;
     std::unique_ptr<ProjectExplorer::ToolChainConfigWidget> createConfigurationWidget() final;
 
     QVariantMap toMap() const final;

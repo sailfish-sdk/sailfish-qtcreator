@@ -23,9 +23,11 @@
 **
 ****************************************************************************/
 
-#include "uvproject.h" // for targetUVisionPath()
+#include "uvproject.h" // for buildPackageId()
 #include "uvtargetdevicemodel.h"
 #include "uvtargetdeviceviewer.h"
+
+#include <utils/pathchooser.h>
 
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -73,16 +75,24 @@ DeviceSelectorDetailsPanel::DeviceSelectorDetailsPanel(DeviceSelection &selectio
     m_vendorEdit = new QLineEdit;
     m_vendorEdit->setReadOnly(true);
     layout->addRow(tr("Vendor:"), m_vendorEdit);
-    m_fimilyEdit = new QLineEdit;;
-    m_fimilyEdit->setReadOnly(true);
-    layout->addRow(tr("Family:"), m_fimilyEdit);
-    m_descEdit = new QPlainTextEdit;;
+    m_packageEdit = new QLineEdit;
+    m_packageEdit->setReadOnly(true);
+    layout->addRow(tr("Package:"), m_packageEdit);
+    m_descEdit = new QPlainTextEdit;
     m_descEdit->setReadOnly(true);
     layout->addRow(tr("Description:"), m_descEdit);
     m_memoryView = new DeviceSelectionMemoryView(m_selection);
     layout->addRow(tr("Memory:"), m_memoryView);
     m_algorithmView = new DeviceSelectionAlgorithmView(m_selection);
-    layout->addRow(tr("Flash algorithm"), m_algorithmView);
+    layout->addRow(tr("Flash algorithm:"), m_algorithmView);
+    m_peripheralDescriptionFileChooser = new Utils::PathChooser(this);
+    m_peripheralDescriptionFileChooser->setExpectedKind(Utils::PathChooser::File);
+    m_peripheralDescriptionFileChooser->setPromptDialogFilter(
+                tr("Peripheral description files (*.svd)"));
+    m_peripheralDescriptionFileChooser->setPromptDialogTitle(
+                tr("Select Peripheral Description File"));
+    layout->addRow(tr("Peripheral description file:"),
+                   m_peripheralDescriptionFileChooser);
     setLayout(layout);
 
     refresh();
@@ -95,6 +105,8 @@ DeviceSelectorDetailsPanel::DeviceSelectorDetailsPanel(DeviceSelection &selectio
             m_selection.algorithmIndex = index;
         emit selectionChanged();
     });
+    connect(m_peripheralDescriptionFileChooser, &Utils::PathChooser::pathChanged,
+            this, &DeviceSelectorDetailsPanel::selectionChanged);
 }
 
 static QString trimVendor(const QString &vendor)
@@ -106,11 +118,12 @@ static QString trimVendor(const QString &vendor)
 void DeviceSelectorDetailsPanel::refresh()
 {
     m_vendorEdit->setText(trimVendor(m_selection.vendorName));
-    m_fimilyEdit->setText(m_selection.family);
+    m_packageEdit->setText(buildPackageId(m_selection));
     m_descEdit->setPlainText(m_selection.desc);
     m_memoryView->refresh();
     m_algorithmView->refresh();
     m_algorithmView->setAlgorithm(m_selection.algorithmIndex);
+    m_peripheralDescriptionFileChooser->setPath(m_selection.svd);
 }
 
 // DeviceSelector

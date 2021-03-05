@@ -31,7 +31,6 @@
 
 #include <QCoreApplication>
 #include <QFont>
-#include <QString>
 #include <QSortFilterProxyModel>
 
 namespace CMakeProjectManager {
@@ -93,24 +92,6 @@ void ConfigModel::setConfigurationFromKit(const QHash<QString, QString> &kitConf
     for (InternalDataItem &i : m_configuration) {
         if (m_kitConfiguration.contains(i.key))
             i.kitValue = m_kitConfiguration.value(i.key);
-    }
-    setConfiguration(m_configuration);
-}
-
-void ConfigModel::setConfigurationForCMake(const QHash<QString, QString> &config)
-{
-    for (InternalDataItem &i : m_configuration) {
-        if (!config.contains(i.key))
-            continue;
-
-        const QString v = config.value(i.key);
-        if (i.value == v) {
-            i.newValue.clear();
-            i.isUserChanged = false;
-        } else {
-            i.newValue = v;
-            i.isUserChanged = true;
-        }
     }
     setConfiguration(m_configuration);
 }
@@ -205,7 +186,7 @@ ConfigModel::DataItem ConfigModel::dataItemFromIndex(const QModelIndex &idx)
         di.value = cmti->dataItem->currentValue();
         di.description = cmti->dataItem->description;
         di.values = cmti->dataItem->values;
-
+        di.isUnset = cmti->dataItem->isUnset;
         return di;
     }
     return DataItem();

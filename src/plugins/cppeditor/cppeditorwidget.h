@@ -81,7 +81,7 @@ public:
     void findUsages(QTextCursor cursor);
     void renameUsages(const QString &replacement = QString(),
                       QTextCursor cursor = QTextCursor());
-    void renameSymbolUnderCursor();
+    void renameSymbolUnderCursor() override;
 
     bool selectBlockUp() override;
     bool selectBlockDown() override;
@@ -93,6 +93,9 @@ public:
     void updateSemanticInfo() override;
     void invokeTextEditorWidgetAssist(TextEditor::AssistKind assistKind,
                                       TextEditor::IAssistProvider *provider) override;
+
+    static const QList<QTextEdit::ExtraSelection>
+    unselectLeadingWhitespace(const QList<QTextEdit::ExtraSelection> &selections);
 
 protected:
     bool event(QEvent *e) override;
@@ -121,7 +124,7 @@ private:
     void onIfdefedOutBlocksUpdated(unsigned revision,
                                    const QList<TextEditor::BlockRange> ifdefedOutBlocks);
 
-    void onShowInfoBarAction(const Core::Id &id, bool show);
+    void onShowInfoBarAction(const Utils::Id &id, bool show);
 
     void updateSemanticInfo(const CppTools::SemanticInfo &semanticInfo,
                             bool updateUseSelectionSynchronously = false);

@@ -49,11 +49,7 @@ using namespace Utils;
 
 namespace ProjectExplorer {
 
-ProcessParameters::ProcessParameters() :
-    m_macroExpander(nullptr),
-    m_commandMissing(false)
-{
-}
+ProcessParameters::ProcessParameters() = default;
 
 /*!
     Sets the command to run.
@@ -63,9 +59,10 @@ void ProcessParameters::setCommandLine(const CommandLine &cmdLine)
     m_command = cmdLine;
     m_effectiveCommand.clear();
     m_effectiveArguments.clear();
-    resolveAll();
-}
 
+    effectiveCommand();
+    effectiveArguments();
+}
 
 /*!
     Sets the \a workingDirectory for the process for a build configuration.
@@ -77,6 +74,8 @@ void ProcessParameters::setWorkingDirectory(const FilePath &workingDirectory)
 {
     m_workingDirectory = workingDirectory;
     m_effectiveWorkingDirectory.clear();
+
+    effectiveWorkingDirectory();
 }
 
 /*!
@@ -173,17 +172,17 @@ QString ProcessParameters::prettyCommand() const
     QString cmd = m_command.executable().toString();
     if (m_macroExpander)
         cmd = m_macroExpander->expand(cmd);
-    return Utils::FilePath::fromString(cmd).fileName();
+    return FilePath::fromString(cmd).fileName();
 }
 
 QString ProcessParameters::prettyArguments() const
 {
     QString margs = effectiveArguments();
     QString workDir = effectiveWorkingDirectory().toString();
-    Utils::QtcProcess::SplitError err;
-    Utils::QtcProcess::Arguments args =
-            Utils::QtcProcess::prepareArgs(margs, &err, Utils::HostOsInfo::hostOs(), &m_environment, &workDir);
-    if (err != Utils::QtcProcess::SplitOk)
+    QtcProcess::SplitError err;
+    QtcProcess::Arguments args =
+            QtcProcess::prepareArgs(margs, &err, HostOsInfo::hostOs(), &m_environment, &workDir);
+    if (err != QtcProcess::SplitOk)
         return margs; // Sorry, too complex - just fall back.
     return args.toString();
 }
@@ -203,7 +202,7 @@ QString ProcessParameters::summary(const QString &displayName) const
 
     return QString::fromLatin1("<b>%1:</b> %2 %3")
             .arg(displayName,
-                 Utils::QtcProcess::quoteArg(prettyCommand()),
+                 QtcProcess::quoteArg(prettyCommand()),
                  prettyArguments());
 }
 
@@ -214,17 +213,9 @@ QString ProcessParameters::summaryInWorkdir(const QString &displayName) const
 
     return QString::fromLatin1("<b>%1:</b> %2 %3 in %4")
             .arg(displayName,
-                 Utils::QtcProcess::quoteArg(prettyCommand()),
+                 QtcProcess::quoteArg(prettyCommand()),
                  prettyArguments(),
                  QDir::toNativeSeparators(effectiveWorkingDirectory().toString()));
-}
-
-void ProcessParameters::resolveAll()
-{
-    effectiveCommand();
-    effectiveArguments();
-    effectiveWorkingDirectory();
-    effectiveEnvironment();
 }
 
 } // ProcessExplorer

@@ -36,12 +36,13 @@
 #include "qmloutlinemodel.h"
 
 #include <coreplugin/coreconstants.h>
-#include <coreplugin/infobar.h>
 #include <coreplugin/modemanager.h>
 
 #include <qmljstools/qmljsindenter.h>
 #include <qmljstools/qmljsmodelmanager.h>
 #include <qmljstools/qmljsqtstylecodeformatter.h>
+
+#include <utils/infobar.h>
 
 #include <QDebug>
 
@@ -88,7 +89,7 @@ protected:
         QString text;
         for (; id; id = id->next) {
             if (!id->name.isEmpty())
-                text += id->name;
+                text += id->name.toString();
             else
                 text += QLatin1Char('?');
 
@@ -173,7 +174,7 @@ protected:
         QString text;
         for (; id; id = id->next) {
             if (!id->name.isEmpty())
-                text += id->name;
+                text += id->name.toString();
             else
                 text += QLatin1Char('?');
 
@@ -293,12 +294,12 @@ protected:
         init(&decl, ast);
 
         decl.text.fill(QLatin1Char(' '), _depth);
-        decl.text += ast->name;
+        decl.text += ast->name.toString();
 
         decl.text += QLatin1Char('(');
         for (FormalParameterList *it = ast->formals; it; it = it->next) {
             if (!it->element->bindingIdentifier.isEmpty())
-                decl.text += it->element->bindingIdentifier;
+                decl.text += it->element->bindingIdentifier.toString();
 
             if (it->next)
                 decl.text += QLatin1String(", ");
@@ -318,7 +319,7 @@ protected:
 
         Declaration decl;
         decl.text.fill(QLatin1Char(' '), _depth);
-        decl.text += ast->bindingIdentifier;
+        decl.text += ast->bindingIdentifier.toString();
 
         const SourceLocation first = ast->identifierToken;
         decl.startLine = first.startLine;
@@ -341,12 +342,12 @@ protected:
             init(&decl, ast);
 
             decl.text.fill(QLatin1Char(' '), _depth);
-            decl.text += field->name;
+            decl.text += field->name.toString();
 
             decl.text += QLatin1Char('(');
             for (FormalParameterList *it = funcExpr->formals; it; it = it->next) {
                 if (!it->element->bindingIdentifier.isEmpty())
-                    decl.text += it->element->bindingIdentifier;
+                    decl.text += it->element->bindingIdentifier.toString();
 
                 if (it->next)
                     decl.text += QLatin1String(", ");
@@ -647,7 +648,7 @@ void QmlJSEditorDocumentPrivate::cleanSemanticMarks()
 
 } // Internal
 
-QmlJSEditorDocument::QmlJSEditorDocument(Core::Id id)
+QmlJSEditorDocument::QmlJSEditorDocument(Utils::Id id)
     : d(new Internal::QmlJSEditorDocumentPrivate(this))
 {
     setId(id);
@@ -692,8 +693,8 @@ void QmlJSEditorDocument::setIsDesignModePreferred(bool value)
     d->m_isDesignModePreferred = value;
     if (value) {
         if (infoBar()->canInfoBeAdded(QML_UI_FILE_WARNING)) {
-            Core::InfoBarEntry info(QML_UI_FILE_WARNING,
-                                    tr("This file should only be edited in <b>Design</b> mode."));
+            Utils::InfoBarEntry info(QML_UI_FILE_WARNING,
+                                     tr("This file should only be edited in <b>Design</b> mode."));
             info.setCustomButtonInfo(tr("Switch Mode"), []() {
                 Core::ModeManager::activateMode(Core::Constants::MODE_DESIGN);
             });

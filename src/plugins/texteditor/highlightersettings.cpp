@@ -31,6 +31,7 @@
 
 #include <utils/fileutils.h>
 #include <utils/hostosinfo.h>
+#include <utils/stringutils.h>
 #include <utils/synchronousprocess.h>
 
 #include <QSettings>
@@ -141,7 +142,7 @@ void HighlighterSettings::fromSettings(const QString &category, QSettings *s)
 
 void HighlighterSettings::setIgnoredFilesPatterns(const QString &patterns)
 {
-    setExpressionsFromList(patterns.split(QLatin1Char(','), QString::SkipEmptyParts));
+    setExpressionsFromList(patterns.split(QLatin1Char(','), Qt::SkipEmptyParts));
 }
 
 QString HighlighterSettings::ignoredFilesPatterns() const
@@ -172,8 +173,8 @@ void HighlighterSettings::assignDefaultDefinitionsPath()
 
 bool HighlighterSettings::isIgnoredFilePattern(const QString &fileName) const
 {
-    for (const QRegExp &regExp : m_ignoredFiles)
-        if (regExp.indexIn(fileName) != -1)
+    for (const QRegularExpression &regExp : m_ignoredFiles)
+        if (fileName.indexOf(regExp) != -1)
             return true;
 
     return false;
@@ -188,11 +189,10 @@ bool HighlighterSettings::equals(const HighlighterSettings &highlighterSettings)
 void HighlighterSettings::setExpressionsFromList(const QStringList &patterns)
 {
     m_ignoredFiles.clear();
-    QRegExp regExp;
-    regExp.setCaseSensitivity(Qt::CaseInsensitive);
-    regExp.setPatternSyntax(QRegExp::Wildcard);
+    QRegularExpression regExp;
+    regExp.setPatternOptions(QRegularExpression::CaseInsensitiveOption);
     for (const QString &pattern : patterns) {
-        regExp.setPattern(pattern);
+        regExp.setPattern(QRegularExpression::wildcardToRegularExpression(pattern));
         m_ignoredFiles.append(regExp);
     }
 }
@@ -200,7 +200,7 @@ void HighlighterSettings::setExpressionsFromList(const QStringList &patterns)
 QStringList HighlighterSettings::listFromExpressions() const
 {
     QStringList patterns;
-    for (const QRegExp &regExp : m_ignoredFiles)
+    for (const QRegularExpression &regExp : m_ignoredFiles)
         patterns.append(regExp.pattern());
     return patterns;
 }

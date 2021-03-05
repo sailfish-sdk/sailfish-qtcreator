@@ -30,7 +30,7 @@
 
 #include <QDebug>
 #include <QLatin1String>
-#include <QRegExp>
+#include <QRegularExpression>
 
 #include <cmath>
 
@@ -269,12 +269,12 @@ bool JsonCheck::visit(StringLiteral *ast)
 
     analysis()->boostRanking();
 
-    const QStringRef literal = ast->value;
+    const QStringView literal = ast->value;
 
     const QString &pattern = m_schema->pattern();
     if (!pattern.isEmpty()) {
-        QRegExp regExp(pattern);
-        if (regExp.indexIn(literal.toString()) == -1) {
+        const QRegularExpression regExp(pattern);
+        if (regExp.match(literal.toString()).hasMatch()) {
             analysis()->m_messages.append(Message(ErrInvalidStringValuePattern,
                                                   ast->firstSourceLocation(),
                                                   QString(), QString(), false));

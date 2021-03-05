@@ -31,8 +31,9 @@
 #include <coreplugin/dialogs/readonlyfilesdialog.h>
 #include <coreplugin/documentmanager.h>
 #include <coreplugin/editormanager/editormanager.h>
-#include <utils/qtcassert.h>
+#include <utils/algorithm.h>
 #include <utils/fileutils.h>
+#include <utils/qtcassert.h>
 
 #include <QFile>
 #include <QFileInfo>
@@ -123,7 +124,9 @@ bool RefactoringChanges::removeFile(const QString &fileName) const
 TextEditorWidget *RefactoringChanges::openEditor(const QString &fileName, bool activate, int line, int column)
 {
     EditorManager::OpenEditorFlags flags = EditorManager::IgnoreNavigationHistory;
-    if (!activate)
+    if (activate)
+        flags |= EditorManager::SwitchSplitIfAlreadyVisible;
+    else
         flags |= EditorManager::DoNotChangeCurrentEditor;
     if (line != -1) {
         // openEditorAt uses a 1-based line and a 0-based column!
@@ -161,7 +164,7 @@ RefactoringFile::RefactoringFile(const QString &fileName, const QSharedPointer<R
     : m_fileName(fileName)
     , m_data(data)
 {
-    QList<IEditor *> editors = DocumentModel::editorsForFilePath(fileName);
+    QList<IEditor *> editors = DocumentModel::editorsForFilePath(Utils::FilePath::fromString(fileName));
     if (!editors.isEmpty()) {
         auto editorWidget = TextEditorWidget::fromEditor(editors.first());
         if (editorWidget && !editorWidget->isReadOnly())
@@ -312,7 +315,7 @@ bool RefactoringFile::apply()
 {
     // test file permissions
     if (!QFileInfo(fileName()).isWritable()) {
-        ReadOnlyFilesDialog roDialog(FilePath::fromString(fileName()), ICore::mainWindow());
+        ReadOnlyFilesDialog roDialog(FilePath::fromString(fileName()), ICore::dialogParent());
         const QString &failDetailText = QApplication::translate("RefactoringFile::apply",
                                                                 "Refactoring cannot be applied.");
         roDialog.setShowFailWarning(true, failDetailText);
@@ -342,6 +345,9 @@ bool RefactoringFile::apply()
                 c.joinPreviousEditBlock();
             else
                 c.beginEditBlock();
+
+            sort(m_indentRanges);
+            sort(m_reindentRanges);
 
             // build indent selections now, applying the changeset will change locations
             const RefactoringSelections &indentSelections =

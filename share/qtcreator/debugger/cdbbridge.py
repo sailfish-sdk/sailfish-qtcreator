@@ -110,7 +110,10 @@ class Dumper(DumperBase):
         # There is no cdb api for the size of bitfields.
         # Workaround this issue by parsing the native debugger text for integral types.
         if val.type.code == TypeCode.Integral:
-            integerString = nativeValue.nativeDebuggerValue()
+            try:
+                integerString = nativeValue.nativeDebuggerValue()
+            except UnicodeDecodeError:
+                integerString = ''  # cannot decode - read raw
             if integerString == 'true':
                 val.ldata = int(1).to_bytes(1, byteorder='little')
             elif integerString == 'false':
@@ -256,12 +259,12 @@ class Dumper(DumperBase):
     def qtCoreModuleName(self):
         modules = cdbext.listOfModules()
         # first check for an exact module name match
-        for coreName in ['Qt5Cored', 'Qt5Core', 'QtCored4', 'QtCore4']:
+        for coreName in ['Qt6Core', 'Qt6Cored', 'Qt5Cored', 'Qt5Core', 'QtCored4', 'QtCore4']:
             if coreName in modules:
                 self.qtCoreModuleName = lambda: coreName
                 return coreName
         # maybe we have a libinfix build.
-        for pattern in ['Qt5Core.*', 'QtCore.*']:
+        for pattern in ['Qt6Core.*', 'Qt5Core.*', 'QtCore.*']:
             matches = [module for module in modules if re.match(pattern, module)]
             if matches:
                 coreName = matches[0]
@@ -271,11 +274,11 @@ class Dumper(DumperBase):
 
     def qtDeclarativeModuleName(self):
         modules = cdbext.listOfModules()
-        for declarativeModuleName in ['Qt5Qmld', 'Qt5Qml']:
+        for declarativeModuleName in ['Qt6Qmld', 'Qt6Qml', 'Qt5Qmld', 'Qt5Qml']:
             if declarativeModuleName in modules:
                 self.qtDeclarativeModuleName = lambda: declarativeModuleName
                 return declarativeModuleName
-        matches = [module for module in modules if re.match('Qt5Qml.*', module)]
+        matches = [module for module in modules if re.match('Qt[56]Qml.*', module)]
         if matches:
             declarativeModuleName = matches[0]
             self.qtDeclarativeModuleName = lambda: declarativeModuleName
@@ -514,7 +517,10 @@ class Dumper(DumperBase):
         raise Exception("cdb does not support calling functions")
 
     def nameForCoreId(self, id):
-        idName = cdbext.call('Cored4!Core::nameForId(%d)' % id)
+        for dll in ['Utilsd4', 'Utils4']:
+            idName = cdbext.call('%s!Utils::nameForId(%d)' % (dll, id))
+            if idName is not None:
+                break
         return self.fromNativeValue(idName)
 
     def putCallItem(self, name, rettype, value, func, *args):

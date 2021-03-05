@@ -8,7 +8,6 @@ add_qtc_plugin(Android
     android_global.h
     androidavdmanager.cpp androidavdmanager.h
     androidbuildapkstep.cpp androidbuildapkstep.h
-    androidbuildapkwidget.cpp androidbuildapkwidget.h
     androidconfigurations.cpp androidconfigurations.h
     androidconstants.h
     androidcreatekeystorecertificate.cpp androidcreatekeystorecertificate.h androidcreatekeystorecertificate.ui
@@ -24,6 +23,8 @@ add_qtc_plugin(Android
     androidmanifesteditor.cpp androidmanifesteditor.h
     androidmanifesteditorfactory.cpp androidmanifesteditorfactory.h
     androidmanifesteditorwidget.cpp androidmanifesteditorwidget.h
+    androidmanifesteditoriconwidget.cpp androidmanifesteditoriconwidget.h
+    androidmanifesteditoriconcontainerwidget.cpp androidmanifesteditoriconcontainerwidget.h
     androidpackageinstallationstep.cpp androidpackageinstallationstep.h
     androidplugin.cpp androidplugin.h
     androidpotentialkit.cpp androidpotentialkit.h
@@ -38,14 +39,15 @@ add_qtc_plugin(Android
     androidsdkmanagerwidget.cpp androidsdkmanagerwidget.h androidsdkmanagerwidget.ui
     androidsdkmodel.cpp androidsdkmodel.h
     androidsdkpackage.cpp androidsdkpackage.h
+    androidservicewidget.cpp androidservicewidget.h androidservicewidget_p.h
     androidsettingswidget.cpp androidsettingswidget.h androidsettingswidget.ui
     androidsignaloperation.cpp androidsignaloperation.h
     androidtoolchain.cpp androidtoolchain.h
-    androidtoolmanager.cpp androidtoolmanager.h
     avddialog.cpp avddialog.h
     certificatesmodel.cpp certificatesmodel.h
     createandroidmanifestwizard.cpp createandroidmanifestwizard.h
     javaeditor.cpp javaeditor.h
     javaindenter.cpp javaindenter.h
     javaparser.cpp javaparser.h
+    splashiconcontainerwidget.cpp splashiconcontainerwidget.h
 )

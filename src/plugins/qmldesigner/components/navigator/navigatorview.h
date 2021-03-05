@@ -30,15 +30,20 @@
 #include <abstractview.h>
 
 #include <QPointer>
+#include <QHash>
+#include <QUrl>
 
 QT_BEGIN_NAMESPACE
 class QTreeView;
 class QItemSelection;
 class QModelIndex;
 class QAbstractItemModel;
+class QPixmap;
 QT_END_NAMESPACE
 
 namespace QmlDesigner {
+
+const int delegateMargin = 2;
 
 class NavigatorWidget;
 class NavigatorTreeModel;
@@ -46,7 +51,9 @@ class NavigatorTreeModel;
 enum NavigatorRoles {
     ItemIsVisibleRole = Qt::UserRole,
     RowIsPropertyRole = Qt::UserRole + 1,
-    ModelNodeRole = Qt::UserRole + 2
+    ModelNodeRole = Qt::UserRole + 2,
+    ToolTipImageRole = Qt::UserRole + 3,
+    ItemOrAncestorLocked = Qt::UserRole + 4
 };
 
 class NavigatorView : public AbstractView
@@ -78,17 +85,21 @@ public:
     void propertiesRemoved(const QList<AbstractProperty>& propertyList) override;
 
     void selectedNodesChanged(const QList<ModelNode> &selectedNodeList ,
-                                      const QList<ModelNode> &lastSelectedNodeList) override;
+                              const QList<ModelNode> &lastSelectedNodeList) override;
     void auxiliaryDataChanged(const ModelNode &node, const PropertyName &name, const QVariant &data) override;
     void instanceErrorChanged(const QVector<ModelNode> &errorNodeList) override;
 
     void bindingPropertiesChanged(const QList<BindingProperty> &propertyList, PropertyChangeFlags) override;
+
+    void customNotification(const AbstractView *view, const QString &identifier, const QList<ModelNode> &nodeList, const QList<QVariant> &data) override;
 
     void handleChangedExport(const ModelNode &modelNode, bool exported);
     bool isNodeInvisible(const ModelNode &modelNode) const;
 
     void disableWidget() override;
     void enableWidget() override;
+
+    void modelNodePreviewPixmapChanged(const ModelNode &node, const QPixmap &pixmap) override;
 
 private:
     ModelNode modelNodeForIndex(const QModelIndex &modelIndex) const;
@@ -103,12 +114,13 @@ private:
     void upButtonClicked();
     void downButtonClicked();
     void filterToggled(bool);
+    void reverseOrderToggled(bool);
 
 protected: //functions
     QTreeView *treeWidget() const;
     NavigatorTreeModel *treeModel();
     bool blockSelectionChangedSignal(bool block);
-    void expandRecursively(const QModelIndex &index);
+    void expandAncestors(const QModelIndex &index);
     void reparentAndCatch(NodeAbstractProperty property, const ModelNode &modelNode);
     void setupWidget();
 
@@ -117,6 +129,8 @@ private:
 
     QPointer<NavigatorWidget> m_widget;
     QPointer<NavigatorTreeModel> m_treeModel;
+
+    QHash<QUrl, QHash<QString, bool>> m_expandMap;
 
     NavigatorModelInterface *m_currentModelInterface = nullptr;
 

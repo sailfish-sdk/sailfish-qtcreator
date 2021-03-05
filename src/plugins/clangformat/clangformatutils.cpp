@@ -54,7 +54,11 @@ static clang::format::FormatStyle qtcStyle()
     style.AlignConsecutiveAssignments = false;
     style.AlignConsecutiveDeclarations = false;
     style.AlignEscapedNewlines = FormatStyle::ENAS_DontAlign;
+#if LLVM_VERSION_MAJOR >= 11
+    style.AlignOperands = FormatStyle::OAS_Align;
+#else
     style.AlignOperands = true;
+#endif
     style.AlignTrailingComments = true;
     style.AllowAllParametersOfDeclarationOnNextLine = true;
 #if LLVM_VERSION_MAJOR >= 10
@@ -111,7 +115,7 @@ static clang::format::FormatStyle qtcStyle()
     style.ExperimentalAutoDetectBinPacking = false;
     style.FixNamespaceComments = true;
     style.ForEachMacros = {"forever", "foreach", "Q_FOREACH", "BOOST_FOREACH"};
-    style.IncludeStyle.IncludeCategories = {{"^<Q.*", 200}};
+    style.IncludeStyle.IncludeCategories = {{"^<Q.*", 200, 200}};
     style.IncludeStyle.IncludeIsMainRegex = "(Test)?$";
     style.IndentCaseLabels = false;
     style.IndentWidth = 4;

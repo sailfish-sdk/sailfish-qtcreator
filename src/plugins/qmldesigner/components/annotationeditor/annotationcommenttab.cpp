@@ -26,15 +26,53 @@
 #include "annotationcommenttab.h"
 #include "ui_annotationcommenttab.h"
 
+#include "richtexteditor/richtexteditor.h"
+
+#include <QCryptographicHash>
+#include "QStringListModel"
+
+#include "projectexplorer/session.h"
+#include "projectexplorer/target.h"
+#include "qmldesignerplugin.h"
+#include "qmlprojectmanager/qmlproject.h"
+
 namespace QmlDesigner {
 
-AnnotationCommentTab::AnnotationCommentTab(QWidget *parent) :
-    QWidget(parent),
-    ui(new Ui::AnnotationCommentTab)
+AnnotationCommentTab::AnnotationCommentTab(QWidget *parent)
+    : QWidget(parent)
+    , ui(new Ui::AnnotationCommentTab)
 {
     ui->setupUi(this);
 
-    connect(ui->titleEdit, &QLineEdit::textEdited,
+    m_editor = new RichTextEditor{this};
+
+    connect(m_editor, &RichTextEditor::insertingImage, this, [this](QString &filePath) {
+        filePath = backupFile(filePath);
+    });
+
+    Utils::FilePath projPath = ProjectExplorer::SessionManager::startupProject()->projectFilePath();
+
+    m_editor->setDocumentBaseUrl(QUrl::fromLocalFile(projPath.toString()));
+    m_editor->setImageActionVisible(true);
+
+    ui->formLayout->setWidget(3, QFormLayout::FieldRole, m_editor);
+
+    ui->titleEdit->setModel(new QStringListModel{QStringList{"Description",
+                                                             "Display Condition",
+                                                             "helper lines",
+                                                             "position marker",
+                                                             "highlight",
+                                                             "project author",
+                                                             "project confirmed",
+                                                             "project developer",
+                                                             "project distributor",
+                                                             "project modified",
+                                                             "project type",
+                                                             "project version",
+                                                             "Screen Description",
+                                                             "Section"}});
+
+    connect(ui->titleEdit, &QComboBox::currentTextChanged,
             this, &AnnotationCommentTab::commentTitleChanged);
 }
 
@@ -47,9 +85,9 @@ Comment AnnotationCommentTab::currentComment() const
 {
     Comment result;
 
-    result.setTitle(ui->titleEdit->text().trimmed());
+    result.setTitle(ui->titleEdit->currentText().trimmed());
     result.setAuthor(ui->authorEdit->text().trimmed());
-    result.setText(ui->textEdit->toPlainText().trimmed());
+    result.setText(m_editor->richText().trimmed());
 
     if (m_comment.sameContent(result))
         result.setTimestamp(m_comment.timestamp());
@@ -72,9 +110,9 @@ void AnnotationCommentTab::setComment(const Comment &comment)
 
 void AnnotationCommentTab::resetUI()
 {
-    ui->titleEdit->setText(m_comment.title());
+    ui->titleEdit->setCurrentText(m_comment.title());
     ui->authorEdit->setText(m_comment.author());
-    ui->textEdit->setText(m_comment.text());
+    m_editor->setRichText(m_comment.deescapedText());
 
     if (m_comment.timestamp() > 0)
         ui->timeLabel->setText(m_comment.timestampStr());
@@ -90,6 +128,66 @@ void AnnotationCommentTab::resetComment()
 void AnnotationCommentTab::commentTitleChanged(const QString &text)
 {
     emit titleChanged(text, this);
+}
+
+QString AnnotationCommentTab::backupFile(const QString &filePath)
+{
+    const QDir projDir(
+        ProjectExplorer::SessionManager::startupProject()->projectDirectory().toString());
+
+    const QString imageSubDir(".AnnotationImages");
+    const QDir imgDir(projDir.absolutePath() + QDir::separator() + imageSubDir);
+
+    ensureDir(imgDir);
+
+    const QFileInfo oldFile(filePath);
+    QFileInfo newFile(imgDir, oldFile.fileName());
+
+    QString newName = newFile.baseName() + "_%1." + newFile.completeSuffix();
+
+    for (size_t i = 1; true; ++i) {
+        if (!newFile.exists()) {
+            QFile(oldFile.absoluteFilePath()).copy(newFile.absoluteFilePath());
+            break;
+        } else if (compareFileChecksum(oldFile.absoluteFilePath(),
+                                       newFile.absoluteFilePath()) == 0) {
+            break;
+        }
+
+        newFile.setFile(imgDir, newName.arg(i));
+    }
+
+    return projDir.relativeFilePath(newFile.absoluteFilePath());
+}
+
+void AnnotationCommentTab::ensureDir(const QDir &dir)
+{
+    if (!dir.exists()) {
+        dir.mkdir(".");
+    }
+}
+
+int AnnotationCommentTab::compareFileChecksum(const QString &firstFile, const QString &secondFile)
+{
+    QCryptographicHash sum1(QCryptographicHash::Md5);
+
+    {
+        QFile f1(firstFile);
+        if (f1.open(QFile::ReadOnly)) {
+            sum1.addData(&f1);
+        }
+    }
+
+    QCryptographicHash sum2(QCryptographicHash::Md5);
+
+    {
+        QFile f2(secondFile);
+        if (f2.open(QFile::ReadOnly)) {
+            sum2.addData(&f2);
+        }
+    }
+
+    return sum1.result().compare(sum2.result());
 }
 
 } //namespace QmlDesigner

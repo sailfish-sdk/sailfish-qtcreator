@@ -42,6 +42,7 @@
 #include <rewritertransaction.h>
 #include <rewriterview.h>
 #include <viewmanager.h>
+#include <qmldesignerconstants.h>
 #include <qmldesignerplugin.h>
 #include <qmlobjectnode.h>
 #include <qmltimelinekeyframegroup.h>
@@ -71,10 +72,10 @@ namespace QmlDesigner {
 
 static int deleteKey()
 {
-        if (Utils::HostOsInfo::isMacHost())
-            return Qt::Key_Backspace;
+    if (Utils::HostOsInfo::isMacHost())
+        return Qt::Key_Backspace;
 
-        return Qt::Key_Delete;
+    return Qt::Key_Delete;
 }
 
 QList<QmlTimelineKeyframeGroup> allTimelineFrames(const QmlTimeline &timeline)
@@ -91,7 +92,7 @@ QList<QmlTimelineKeyframeGroup> allTimelineFrames(const QmlTimeline &timeline)
 }
 
 TimelineGraphicsScene::TimelineGraphicsScene(TimelineWidget *parent)
-    : QGraphicsScene(parent)
+    : AbstractScrollGraphicsScene(parent)
     , m_parent(parent)
     , m_layout(new TimelineGraphicsLayout(this))
     , m_currentFrameIndicator(new TimelineFrameHandle)
@@ -123,9 +124,9 @@ TimelineGraphicsScene::TimelineGraphicsScene(TimelineWidget *parent)
 
     auto changeScale = [this](int factor) {
         timelineWidget()->changeScaleFactor(factor);
-        setRulerScaling(qreal(factor));
+        setZoom(factor);
     };
-    connect(m_layout, &TimelineGraphicsLayout::scaleFactorChanged, changeScale);
+    connect(m_layout, &TimelineGraphicsLayout::zoomChanged, changeScale);
 }
 
 TimelineGraphicsScene::~TimelineGraphicsScene()
@@ -144,7 +145,7 @@ void TimelineGraphicsScene::onShow()
             setCurrentFrame(cf);
         }
 
-        emit m_layout->scaleFactorChanged(0);
+        emit m_layout->zoomChanged(0);
     }
 }
 
@@ -271,6 +272,11 @@ void TimelineGraphicsScene::setEndFrame(int frame)
         timeline.modelNode().variantProperty("endFrame").setValue(frame);
 }
 
+int TimelineGraphicsScene::zoom() const
+{
+    return m_layout->zoom();
+}
+
 qreal TimelineGraphicsScene::rulerScaling() const
 {
     return m_layout->rulerScaling();
@@ -332,15 +338,20 @@ QVector<qreal> TimelineGraphicsScene::keyframePositions(const QmlTimelineKeyfram
     return positions;
 }
 
-void TimelineGraphicsScene::setRulerScaling(int scaleFactor)
+void TimelineGraphicsScene::setZoom(int scaleFactor)
+{
+    setZoom(scaleFactor, currentFramePosition());
+}
+
+void TimelineGraphicsScene::setZoom(int scaleFactor, double pivot)
 {
     const qreal oldOffset = scrollOffset();
     const qreal oldScaling = m_layout->rulerScaling();
-    const qreal oldPosition = mapToScene(currentFramePosition());
-    m_layout->setRulerScaleFactor(scaleFactor);
+    const qreal oldPosition = mapToScene(pivot);
+    m_layout->setZoom(scaleFactor);
 
     const qreal newScaling = m_layout->rulerScaling();
-    const qreal newPosition = mapToScene(currentFramePosition());
+    const qreal newPosition = mapToScene(pivot);
 
     const qreal newOffset = oldOffset + (newPosition - oldPosition);
 
@@ -378,17 +389,17 @@ void TimelineGraphicsScene::commitCurrentFrame(qreal frame)
     }
 }
 
-QList<TimelineKeyframeItem *> TimelineGraphicsScene::selectedKeyframes() const
+QList<TimelineKeyframeItem *> AbstractScrollGraphicsScene::selectedKeyframes() const
 {
     return m_selectedKeyframes;
 }
 
-bool TimelineGraphicsScene::hasSelection() const
+bool AbstractScrollGraphicsScene::hasSelection() const
 {
     return !m_selectedKeyframes.empty();
 }
 
-bool TimelineGraphicsScene::isCurrent(TimelineKeyframeItem *keyframe) const
+bool AbstractScrollGraphicsScene::isCurrent(TimelineKeyframeItem *keyframe) const
 {
     if (m_selectedKeyframes.empty())
         return false;
@@ -396,12 +407,12 @@ bool TimelineGraphicsScene::isCurrent(TimelineKeyframeItem *keyframe) const
     return m_selectedKeyframes.back() == keyframe;
 }
 
-bool TimelineGraphicsScene::isKeyframeSelected(TimelineKeyframeItem *keyframe) const
+bool AbstractScrollGraphicsScene::isKeyframeSelected(TimelineKeyframeItem *keyframe) const
 {
     return m_selectedKeyframes.contains(keyframe);
 }
 
-bool TimelineGraphicsScene::multipleKeyframesSelected() const
+bool AbstractScrollGraphicsScene::multipleKeyframesSelected() const
 {
     return m_selectedKeyframes.count() > 1;
 }
@@ -426,6 +437,18 @@ void TimelineGraphicsScene::invalidateKeyframesForTarget(const ModelNode &target
 {
     for (auto child : m_layout->childItems())
         TimelineSectionItem::updateFramesForTarget(child, target);
+}
+
+void TimelineGraphicsScene::invalidateHeightForTarget(const ModelNode &target)
+{
+    if (!target.isValid())
+        return;
+
+    const auto children = m_layout->childItems();
+    for (auto child : children)
+        TimelineSectionItem::updateHeightForTarget(child, target);
+
+    invalidateLayout();
 }
 
 void TimelineGraphicsScene::invalidateScene()
@@ -456,19 +479,19 @@ void TimelineGraphicsScene::invalidateRecordButtonsStatus()
         TimelinePropertyItem::updateRecordButtonStatus(item);
 }
 
-int TimelineGraphicsScene::scrollOffset() const
+int AbstractScrollGraphicsScene::scrollOffset() const
 {
     return m_scrollOffset;
 }
 
-void TimelineGraphicsScene::setScrollOffset(int offset)
+void AbstractScrollGraphicsScene::setScrollOffset(int offset)
 {
     m_scrollOffset = offset;
     emitScrollOffsetChanged();
     update();
 }
 
-QGraphicsView *TimelineGraphicsScene::graphicsView() const
+QGraphicsView *AbstractScrollGraphicsScene::graphicsView() const
 {
     for (auto *v : views())
         if (v->objectName() == "SceneView")
@@ -477,7 +500,7 @@ QGraphicsView *TimelineGraphicsScene::graphicsView() const
     return nullptr;
 }
 
-QGraphicsView *TimelineGraphicsScene::rulerView() const
+QGraphicsView *AbstractScrollGraphicsScene::rulerView() const
 {
     for (auto *v : views())
         if (v->objectName() == "RulerView")
@@ -491,7 +514,7 @@ QmlTimeline TimelineGraphicsScene::currentTimeline() const
     return QmlTimeline(timelineModelNode());
 }
 
-QRectF TimelineGraphicsScene::selectionBounds() const
+QRectF AbstractScrollGraphicsScene::selectionBounds() const
 {
     QRectF bbox;
 
@@ -501,8 +524,8 @@ QRectF TimelineGraphicsScene::selectionBounds() const
     return bbox;
 }
 
-void TimelineGraphicsScene::selectKeyframes(const SelectionMode &mode,
-                                            const QList<TimelineKeyframeItem *> &items)
+void AbstractScrollGraphicsScene::selectKeyframes(const SelectionMode &mode,
+                                                  const QList<TimelineKeyframeItem *> &items)
 {
     if (mode == SelectionMode::Remove || mode == SelectionMode::Toggle) {
         for (auto *item : items) {
@@ -536,13 +559,14 @@ void TimelineGraphicsScene::selectKeyframes(const SelectionMode &mode,
     emit selectionChanged();
 }
 
-void TimelineGraphicsScene::clearSelection()
+void AbstractScrollGraphicsScene::clearSelection()
 {
     for (auto *keyframe : m_selectedKeyframes)
         if (keyframe)
             keyframe->setHighlighted(false);
 
     m_selectedKeyframes.clear();
+    emit selectionChanged();
 }
 
 QList<QGraphicsItem *> TimelineGraphicsScene::itemsAt(const QPointF &pos)
@@ -580,6 +604,7 @@ void TimelineGraphicsScene::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
     /* The tool has handle the event last. */
     QGraphicsScene::mouseReleaseEvent(event);
     m_tools.mouseReleaseEvent(topItem, event);
+    m_parent->setFocus();
 }
 
 void TimelineGraphicsScene::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event)
@@ -644,6 +669,19 @@ void TimelineGraphicsScene::keyReleaseEvent(QKeyEvent *keyEvent)
     QGraphicsScene::keyReleaseEvent(keyEvent);
 }
 
+void TimelineGraphicsScene::focusOutEvent(QFocusEvent *focusEvent)
+{
+    QmlDesignerPlugin::emitUsageStatisticsTime(Constants::EVENT_TIMELINE_TIME,
+                                               m_usageTimer.elapsed());
+    QGraphicsScene::focusOutEvent(focusEvent);
+}
+
+void TimelineGraphicsScene::focusInEvent(QFocusEvent *focusEvent)
+{
+    m_usageTimer.restart();
+    QGraphicsScene::focusInEvent(focusEvent);
+}
+
 void TimelineGraphicsScene::invalidateSections()
 {
     for (auto child : m_layout->childItems())
@@ -681,7 +719,7 @@ ModelNode TimelineGraphicsScene::timelineModelNode() const
 void TimelineGraphicsScene::handleKeyframeDeletion()
 {
     QList<ModelNode> nodesToBeDeleted;
-    for (auto keyframe : m_selectedKeyframes) {
+    for (auto keyframe : selectedKeyframes()) {
         nodesToBeDeleted.append(keyframe->frameNode());
     }
     deleteKeyframes(nodesToBeDeleted);
@@ -710,7 +748,7 @@ void TimelineGraphicsScene::pasteKeyframesToTarget(const ModelNode &targetNode)
 void TimelineGraphicsScene::copySelectedKeyframes()
 {
     TimelineActions::copyKeyframes(
-        Utils::transform(m_selectedKeyframes, &TimelineKeyframeItem::frameNode));
+        Utils::transform(selectedKeyframes(), &TimelineKeyframeItem::frameNode));
 }
 
 void TimelineGraphicsScene::pasteSelectedKeyframes()
@@ -729,16 +767,15 @@ void TimelineGraphicsScene::deleteKeyframeGroup(const ModelNode &group)
     if (!QmlTimelineKeyframeGroup::isValidQmlTimelineKeyframeGroup(group))
         return;
 
-    timelineView()->executeInTransaction("TimelineGraphicsScene::handleKeyframeGroupDeletion", [group](){
+    timelineView()->executeInTransaction("TimelineGraphicsScene::handleKeyframeGroupDeletion", [group]() {
         ModelNode nonConst = group;
         nonConst.destroy();
     });
-
 }
 
 void TimelineGraphicsScene::deleteKeyframes(const QList<ModelNode> &frames)
 {
-    timelineView()->executeInTransaction("TimelineGraphicsScene::handleKeyframeDeletion", [frames](){
+    timelineView()->executeInTransaction("TimelineGraphicsScene::handleKeyframeDeletion", [frames]() {
         for (auto keyframe : frames) {
             if (keyframe.isValid()) {
                 ModelNode frame = keyframe;
@@ -756,7 +793,20 @@ void TimelineGraphicsScene::activateLayout()
     m_layout->activate();
 }
 
-void TimelineGraphicsScene::emitScrollOffsetChanged()
+AbstractView *TimelineGraphicsScene::abstractView() const
+{
+    return timelineView();
+}
+
+int AbstractScrollGraphicsScene::getScrollOffset(QGraphicsScene *scene)
+{
+    auto scrollScene = qobject_cast<AbstractScrollGraphicsScene *>(scene);
+    if (scrollScene)
+        return scrollScene->scrollOffset();
+    return 0;
+}
+
+void AbstractScrollGraphicsScene::emitScrollOffsetChanged()
 {
     for (QGraphicsItem *item : items())
         TimelineMovableAbstractItem::emitScrollOffsetChanged(item);
@@ -782,5 +832,9 @@ bool TimelineGraphicsScene::event(QEvent *event)
         return QGraphicsScene::event(event);
     }
 }
+
+QmlDesigner::AbstractScrollGraphicsScene::AbstractScrollGraphicsScene(QWidget *parent)
+    : QGraphicsScene(parent)
+{}
 
 } // namespace QmlDesigner

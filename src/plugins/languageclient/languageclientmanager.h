@@ -31,7 +31,7 @@
 #include "locatorfilter.h"
 #include "lsplogger.h"
 
-#include <coreplugin/id.h>
+#include <utils/id.h>
 
 #include <languageserverprotocol/diagnostics.h>
 #include <languageserverprotocol/languagefeatures.h>
@@ -83,7 +83,13 @@ public:
     static Client *clientForDocument(TextEditor::TextDocument *document);
     static Client *clientForFilePath(const Utils::FilePath &filePath);
     static Client *clientForUri(const LanguageServerProtocol::DocumentUri &uri);
-    static void reOpenDocumentWithClient(TextEditor::TextDocument *document, Client *client);
+
+    ///
+    /// \brief openDocumentWithClient
+    /// makes sure the document is opened and activated with the client and
+    /// deactivates the document for a potential previous active client
+    ///
+    static void openDocumentWithClient(TextEditor::TextDocument *document, Client *client);
 
     static void logBaseMessage(const LspLogMessage::MessageSender sender,
                                const QString &clientName,
@@ -98,14 +104,11 @@ private:
 
     void editorOpened(Core::IEditor *editor);
     void documentOpened(Core::IDocument *document);
-    void openDocumentWithClient(TextEditor::TextDocument *document, Client *client);
     void documentClosed(Core::IDocument *document);
     void documentContentsSaved(Core::IDocument *document);
     void documentWillSave(Core::IDocument *document);
-    void findLinkAt(TextEditor::TextDocument *document, const QTextCursor &cursor,
-                    Utils::ProcessLinkCallback callback, const bool resolveTarget);
-    void findUsages(TextEditor::TextDocument *document, const QTextCursor &cursor);
 
+    void updateProject(ProjectExplorer::Project *project);
     void projectAdded(ProjectExplorer::Project *project);
     void projectRemoved(ProjectExplorer::Project *project);
 

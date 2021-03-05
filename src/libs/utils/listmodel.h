@@ -67,10 +67,8 @@ public:
 
     void clear() { rootItem()->removeChildren(); }
 
-    using const_iterator = typename QVector<ChildType *>::const_iterator;
-    const_iterator begin() const { return const_iterator(rootItem()->begin()); }
-    const_iterator end() const { return const_iterator(rootItem()->end()); }
-
+    auto begin() const { return rootItem()->begin(); }
+    auto end() const { return rootItem()->end(); }
 };
 
 template <class ItemData>
@@ -120,7 +118,29 @@ public:
         return item ? &item->itemData : nullptr;
     }
 
-    void forItems(const std::function<void(ItemData &)> &func) const
+    QModelIndex findIndex(const std::function<bool(const ItemData &)> &pred) const
+    {
+        ChildType *item = findItemByData(pred);
+        return item ? BaseTreeModel::indexForItem(item) : QModelIndex();
+    }
+
+    QList<ItemData> allData() const
+    {
+        QList<ItemData> res;
+        BaseModel::rootItem()->forFirstLevelChildren([&res](ChildType *child) {
+            res.append(child->itemData);
+        });
+        return res;
+    }
+
+    void setAllData(const QList<ItemData> &items)
+    {
+        BaseModel::rootItem()->removeChildren();
+        for (const ItemData &data : items)
+            appendItem(data);
+    }
+
+    void forAllData(const std::function<void(ItemData &)> &func) const
     {
         BaseModel::rootItem()->forFirstLevelChildren([func](ChildType *child) {
             func(child->itemData);
@@ -151,6 +171,7 @@ public:
         return {};
     }
 
+    using QAbstractItemModel::itemData;
     virtual QVariant itemData(const ItemData &idata, int column, int role) const
     {
         if (m_dataAccessor)

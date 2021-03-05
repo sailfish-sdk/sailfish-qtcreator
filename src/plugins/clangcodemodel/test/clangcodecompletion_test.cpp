@@ -26,6 +26,7 @@
 #include "clangcodecompletion_test.h"
 
 #include "clangautomationutils.h"
+#include "clangbatchfileprocessor.h"
 #include "../clangcompletionassistinterface.h"
 #include "../clangmodelmanagersupport.h"
 
@@ -112,15 +113,7 @@ public:
         QTC_ASSERT(resource.isValid(), return);
         const QByteArray contents = QByteArray(reinterpret_cast<const char*>(resource.data()),
                                                resource.size());
-        cursorPosition = findCursorMarkerPosition(contents);
-        if (!contents.isEmpty()) {
-            if (!temporaryDir) {
-                m_temporaryDir.reset(new CppTools::Tests::TemporaryDir);
-                temporaryDir = m_temporaryDir.data();
-            }
-
-            filePath = temporaryDir->createFile(fileName, contents);
-        }
+        finish(fileName, contents, temporaryDir);
     }
 
     static TestDocument fromExistingFile(const QString &filePath)
@@ -129,6 +122,14 @@ public:
         QTC_ASSERT(!filePath.isEmpty(), return testDocument);
         testDocument.filePath = filePath;
         testDocument.cursorPosition = findCursorMarkerPosition(readFile(filePath));
+        return testDocument;
+    }
+
+    static TestDocument fromString(const QByteArray &fileName, const QByteArray &contents,
+                                   CppTools::Tests::TemporaryDir *tempDir = nullptr)
+    {
+        TestDocument testDocument;
+        testDocument.finish(fileName, contents, tempDir);
         return testDocument;
     }
 
@@ -147,6 +148,21 @@ public:
 
 private:
     TestDocument() = default;
+
+    void finish(const QByteArray &fileName, const QByteArray &contents,
+                CppTools::Tests::TemporaryDir *temporaryDir = nullptr)
+    {
+        cursorPosition = findCursorMarkerPosition(contents);
+        if (!contents.isEmpty()) {
+            if (!temporaryDir) {
+                m_temporaryDir.reset(new CppTools::Tests::TemporaryDir);
+                temporaryDir = m_temporaryDir.data();
+            }
+
+            filePath = temporaryDir->createFile(fileName, contents);
+        }
+    }
+
     QSharedPointer<CppTools::Tests::TemporaryDir> m_temporaryDir;
 };
 
@@ -183,7 +199,7 @@ OpenEditorAtCursorPosition::OpenEditorAtCursorPosition(const TestDocument &testD
 OpenEditorAtCursorPosition::~OpenEditorAtCursorPosition()
 {
     if (m_editor)
-        Core::EditorManager::closeEditor(m_editor, /* askAboutModifiedEditors= */ false);
+        Core::EditorManager::closeEditors({m_editor}, /* askAboutModifiedEditors= */ false);
 }
 
 
@@ -313,12 +329,15 @@ class ProjectLessCompletionTest
 public:
     ProjectLessCompletionTest(const QByteArray &testFileName,
                               const QString &textToInsert = QString(),
-                              const QStringList &includePaths = QStringList())
+                              const QStringList &includePaths = QStringList(),
+                              const QByteArray &contents = {})
     {
         CppTools::Tests::TestCase garbageCollectionGlobalSnapshot;
         QVERIFY(garbageCollectionGlobalSnapshot.succeededSoFar());
 
-        const TestDocument testDocument(testFileName, globalTemporaryDir());
+        const auto testDocument = contents.isEmpty()
+                ? TestDocument(testFileName, globalTemporaryDir())
+                : TestDocument::fromString(testFileName, contents, globalTemporaryDir());
         QVERIFY(testDocument.isCreatedAndHasValidCursorPosition());
         OpenEditorAtCursorPosition openEditor(testDocument);
         QVERIFY(openEditor.succeeded());
@@ -326,7 +345,7 @@ public:
         if (!textToInsert.isEmpty())
             openEditor.editor()->insert(textToInsert);
 
-        proposal = completionResults(openEditor.editor(), includePaths, 15000);
+        proposal = completionResults(openEditor.editor(), includePaths, timeOutInMs());
     }
 
     TextEditor::ProposalModelPtr proposal;
@@ -552,6 +571,30 @@ void ClangCodeCompletionTest::testCompleteMembers()
     QVERIFY(!hasSnippet(t.proposal, "class")); // Snippet
 }
 
+void ClangCodeCompletionTest::testCompleteMembersFromInside()
+{
+    ProjectLessCompletionTest t("membercompletion-inside.cpp");
+
+    QVERIFY(hasItem(t.proposal, "publicFunc"));
+    QVERIFY(hasItem(t.proposal, "privateFunc"));
+}
+
+void ClangCodeCompletionTest::testCompleteMembersFromOutside()
+{
+    ProjectLessCompletionTest t("membercompletion-outside.cpp");
+
+    QVERIFY(hasItem(t.proposal, "publicFunc"));
+    QVERIFY(!hasItem(t.proposal, "privateFunc"));
+}
+
+void ClangCodeCompletionTest::testCompleteMembersFromFriend()
+{
+    ProjectLessCompletionTest t("membercompletion-friend.cpp");
+
+    QVERIFY(hasItem(t.proposal, "publicFunc"));
+    QVERIFY(hasItem(t.proposal, "privateFunc"));
+}
+
 void ClangCodeCompletionTest::testCompleteFunctions()
 {
     ProjectLessCompletionTest t("functionCompletion.cpp");
@@ -615,7 +658,8 @@ void ClangCodeCompletionTest::testCompleteProjectDependingCode()
     OpenEditorAtCursorPosition openEditor(testDocument);
     QVERIFY(openEditor.succeeded());
 
-    TextEditor::ProposalModelPtr proposal = completionResults(openEditor.editor());
+    TextEditor::ProposalModelPtr proposal = completionResults(openEditor.editor(), {},
+                                                              timeOutInMs());
     QVERIFY(hasItem(proposal, "projectConfiguration1"));
 }
 
@@ -628,7 +672,8 @@ void ClangCodeCompletionTest::testCompleteProjectDependingCodeAfterChangingProje
     QVERIFY(openEditor.succeeded());
 
     // Check completion without project
-    TextEditor::ProposalModelPtr proposal = completionResults(openEditor.editor());
+    TextEditor::ProposalModelPtr proposal = completionResults(openEditor.editor(), {},
+                                                              timeOutInMs());
     QVERIFY(hasItem(proposal, "noProjectConfigurationDetected"));
 
     {
@@ -639,7 +684,7 @@ void ClangCodeCompletionTest::testCompleteProjectDependingCodeAfterChangingProje
         QVERIFY(projectLoader.load());
         openEditor.waitUntilProjectPartChanged(QLatin1String("myproject.project"));
 
-        proposal = completionResults(openEditor.editor());
+        proposal = completionResults(openEditor.editor(), {}, timeOutInMs());
 
         QVERIFY(hasItem(proposal, "projectConfiguration1"));
         QVERIFY(!hasItem(proposal, "projectConfiguration2"));
@@ -647,7 +692,7 @@ void ClangCodeCompletionTest::testCompleteProjectDependingCodeAfterChangingProje
         // Check completion with project configuration 2
         QVERIFY(projectLoader.updateProject({{"PROJECT_CONFIGURATION_2"}}));
         openEditor.waitUntilBackendIsNotified();
-        proposal = completionResults(openEditor.editor());
+        proposal = completionResults(openEditor.editor(), {}, timeOutInMs());
 
         QVERIFY(!hasItem(proposal, "projectConfiguration1"));
         QVERIFY(hasItem(proposal, "projectConfiguration2"));
@@ -655,7 +700,7 @@ void ClangCodeCompletionTest::testCompleteProjectDependingCodeAfterChangingProje
 
     // Check again completion without project
     openEditor.waitUntilProjectPartChanged(QLatin1String(""));
-    proposal = completionResults(openEditor.editor());
+    proposal = completionResults(openEditor.editor(), {}, timeOutInMs());
     QVERIFY(hasItem(proposal, "noProjectConfigurationDetected"));
 }
 
@@ -681,11 +726,103 @@ void ClangCodeCompletionTest::testCompleteProjectDependingCodeInGeneratedUiFile(
     QVERIFY(openSource.succeeded());
 
     // ...and check comletions
-    TextEditor::ProposalModelPtr proposal = completionResults(openSource.editor());
+    TextEditor::ProposalModelPtr proposal = completionResults(openSource.editor(), {},
+                                                              timeOutInMs());
     QVERIFY(hasItem(proposal, "menuBar"));
     QVERIFY(hasItem(proposal, "statusBar"));
     QVERIFY(hasItem(proposal, "centralWidget"));
     QVERIFY(hasItem(proposal, "setupUi"));
+}
+
+static QByteArray makeSignalCompletionContents(const QByteArray &customContents)
+{
+    static const QByteArray definitions = R"(
+        class QObject {
+        public:
+            void aSignal() __attribute__((annotate("qt_signal")));
+            void anotherSignal() __attribute__((annotate("qt_signal")));
+            void notASignal();
+            static void connect();
+            static void disconnect();
+        };
+        class DerivedFromQObject : public QObject {
+        public:
+            void myOwnSignal() __attribute__((annotate("qt_signal")));
+            void alsoNotASignal();
+        };
+        class NotAQObject {
+        public:
+            void notASignal();
+            void alsoNotASignal();
+            static void connect();
+        };)";
+
+    return definitions + customContents + " /* COMPLETE HERE */";
+}
+
+void ClangCodeCompletionTest::testSignalCompletion_data()
+{
+    QTest::addColumn<QByteArray>("customContents");
+    QTest::addColumn<QByteArrayList>("hits");
+
+    // libclang mis-reports CXCursor_ClassDecl instead of CXCursor_Constructor, so the lists
+    // below include the class name.
+    QTest::addRow("positive: connect() on QObject class")
+            << QByteArray("int main() { QObject::connect(dummy, QObject::")
+            << QByteArrayList{"aSignal", "anotherSignal", "QObject"};
+    QTest::addRow("positive: connect() on QObject object")
+            << QByteArray("int main() { QObject o; o.connect(dummy, QObject::")
+            << QByteArrayList{"aSignal", "anotherSignal", "QObject"};
+    QTest::addRow("positive: connect() on QObject pointer")
+            << QByteArray("int main() { QObject *o; o->connect(dummy, QObject::")
+            << QByteArrayList{"aSignal", "anotherSignal", "QObject"};
+    QTest::addRow("positive: connect() on QObject rvalue")
+            << QByteArray("int main() { QObject().connect(dummy, QObject::")
+            << QByteArrayList{"aSignal", "anotherSignal", "QObject"};
+    QTest::addRow("positive: connect() on QObject pointer rvalue")
+            << QByteArray("int main() { (new QObject)->connect(dummy, QObject::")
+            << QByteArrayList{"aSignal", "anotherSignal", "QObject"};
+    QTest::addRow("positive: disconnect() on QObject")
+            << QByteArray("int main() { QObject::disconnect(dummy, QObject::")
+            << QByteArrayList{"aSignal", "anotherSignal", "QObject"};
+    QTest::addRow("positive: connect() in member function of derived class")
+            << QByteArray("void DerivedFromQObject::alsoNotASignal() { connect(this, DerivedFromQObject::")
+            << QByteArrayList{"aSignal", "anotherSignal", "myOwnSignal", "QObject", "DerivedFromQObject"};
+
+    const QByteArrayList allQObjectFunctions{"aSignal", "anotherSignal", "notASignal", "connect",
+                                             "disconnect", "QObject", "~QObject", "operator="};
+    QTest::addRow("negative: different function name")
+            << QByteArray("int main() { QObject::notASignal(dummy, QObject::")
+            << allQObjectFunctions;
+    QTest::addRow("negative: connect function from other class")
+            << QByteArray("int main() { NotAQObject::connect(dummy, QObject::")
+            << allQObjectFunctions;
+    QTest::addRow("negative: first argument")
+            << QByteArray("int main() { QObject::connect(QObject::")
+            << allQObjectFunctions;
+    QTest::addRow("negative: third argument")
+            << QByteArray("int main() { QObject::connect(dummy1, dummy2, QObject::")
+            << allQObjectFunctions;
+
+    QTest::addRow("negative: not a QObject")
+            << QByteArray("int main() { QObject::connect(dummy, NotAQObject::")
+            << QByteArrayList{"notASignal", "alsoNotASignal", "connect", "NotAQObject",
+                              "~NotAQObject", "operator="};
+}
+
+
+void ClangCodeCompletionTest::testSignalCompletion()
+{
+    QFETCH(QByteArray, customContents);
+    QFETCH(QByteArrayList, hits);
+
+    const QByteArray contents = makeSignalCompletionContents(customContents);
+    const ProjectLessCompletionTest t("signalcompletion.cpp", {}, {}, contents);
+
+    QVERIFY(t.proposal);
+    QCOMPARE(t.proposal->size(), hits.size());
+    for (const QByteArray &hit : qAsConst(hits))
+        QVERIFY(hasItem(t.proposal, hit));
 }
 
 } // namespace Tests

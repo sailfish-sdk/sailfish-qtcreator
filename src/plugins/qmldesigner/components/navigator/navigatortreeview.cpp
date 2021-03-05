@@ -30,8 +30,10 @@
 #include "navigatorview.h"
 #include "navigatortreemodel.h"
 #include "qproxystyle.h"
+#include "previewtooltip.h"
 
 #include <metainfo.h>
+#include <theme.h>
 
 #include <utils/icon.h>
 #include <utils/utilsicons.h>
@@ -42,7 +44,8 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QStyleFactory>
-
+#include <QEvent>
+#include <QImage>
 
 namespace QmlDesigner {
 
@@ -60,32 +63,28 @@ public:
         baseStyle()->setParent(parent);
     }
 
-    void drawPrimitive(PrimitiveElement element, const QStyleOption *option, QPainter *painter, const QWidget *widget = nullptr) const override
+    void drawPrimitive(PrimitiveElement element,
+                       const QStyleOption *option,
+                       QPainter *painter,
+                       const QWidget *widget = nullptr) const override
     {
         static QRect mouseOverStateSavedFrameRectangle;
         if (element == QStyle::PE_PanelItemViewRow) {
             if (option->state & QStyle::State_MouseOver)
                 mouseOverStateSavedFrameRectangle = option->rect;
 
-            if (option->state & QStyle::State_Selected)
-                NavigatorTreeView::drawSelectionBackground(painter, *option);
-
+            painter->fillRect(option->rect.adjusted(0, delegateMargin, 0, -delegateMargin),
+                              Theme::getColor(Theme::Color::QmlDesigner_BorderColor));
         } else if (element == PE_IndicatorItemViewItemDrop) {
             // between elements and on elements we have a width
             if (option->rect.width() > 0) {
                 m_currentTextColor = option->palette.text().color();
                 QRect frameRectangle = adjustedRectangleToWidgetWidth(option->rect, widget);
                 painter->save();
-
                 if (option->rect.height() == 0) {
                     bool isNotRootItem = option->rect.top() > 10 && mouseOverStateSavedFrameRectangle.top() > 10;
-                    if (isNotRootItem) {
+                    if (isNotRootItem)
                         drawIndicatorLine(frameRectangle.topLeft(), frameRectangle.topRight(), painter);
-                        //  there is only a line in the styleoption object at this moment
-                        //  so we need to use the last saved rect from the mouse over state
-                        frameRectangle = adjustedRectangleToWidgetWidth(mouseOverStateSavedFrameRectangle, widget);
-                        drawBackgroundFrame(frameRectangle, painter);
-                    }
                 } else {
                     drawHighlightFrame(frameRectangle, painter);
                 }
@@ -93,12 +92,72 @@ public:
             }
         } else if (element == PE_FrameFocusRect) {
             // don't draw
+        } else if (element == PE_IndicatorBranch) {
+            painter->save();
+            static const int decoration_size = 10;
+            int mid_h = option->rect.x() + option->rect.width() / 2;
+            int mid_v = option->rect.y() + option->rect.height() / 2;
+            int bef_h = mid_h;
+            int bef_v = mid_v;
+            int aft_h = mid_h;
+            int aft_v = mid_v;
+            QBrush brush(Theme::getColor(Theme::Color::DSsliderHandle), Qt::SolidPattern);
+            if (option->state & State_Item) {
+                if (option->direction == Qt::RightToLeft)
+                    painter->fillRect(option->rect.left(), mid_v, bef_h - option->rect.left(), 1, brush);
+                else
+                    painter->fillRect(aft_h, mid_v, option->rect.right() - aft_h + 1, 1, brush);
+            }
+            if (option->state & State_Sibling)
+                painter->fillRect(mid_h, aft_v, 1, option->rect.bottom() - aft_v + 1, brush);
+            if (option->state & (State_Open | State_Children | State_Item | State_Sibling))
+                painter->fillRect(mid_h, option->rect.y(), 1, bef_v - option->rect.y(), brush);
+            if (option->state & State_Children) {
+                int delta = decoration_size / 2;
+                bef_h -= delta;
+                bef_v -= delta;
+                aft_h += delta;
+                aft_v += delta;
+
+                const QRectF rect(bef_h, bef_v, decoration_size + 1, decoration_size + 1);
+                painter->fillRect(rect, QBrush(Theme::getColor(Theme::Color::QmlDesigner_BackgroundColorDarkAlternate)));
+
+                static const QPointF collapsePoints[3] = {
+                    QPointF(0.0, 0.0),
+                    QPointF(4.0, 4.0),
+                    QPointF(0.0, 8.0)
+                };
+
+                static const QPointF expandPoints[3] = {
+                    QPointF(0.0, 0.0),
+                    QPointF(8.0, 0.0),
+                    QPointF(4.0, 4.0)
+                };
+
+                auto color = Theme::getColor(Theme::Color::IconsBaseColor);
+                painter->setPen(color);
+                painter->setBrush(color);
+
+                if (option->state & QStyle::State_Open) {
+                    painter->translate(QPointF(mid_h - 4, mid_v - 2));
+                    painter->drawConvexPolygon(expandPoints, 3);
+                } else {
+                    painter->translate(QPointF(mid_h - 2, mid_v - 4));
+                    painter->drawConvexPolygon(collapsePoints, 3);
+                }
+            }
+            painter->restore();
+
         } else {
             QProxyStyle::drawPrimitive(element, option, painter, widget);
         }
     }
 
-    int styleHint(StyleHint hint, const QStyleOption *option = nullptr, const QWidget *widget = nullptr, QStyleHintReturn *returnData = nullptr) const override {
+    int styleHint(StyleHint hint,
+                  const QStyleOption *option = nullptr,
+                  const QWidget *widget = nullptr,
+                  QStyleHintReturn *returnData = nullptr) const override
+    {
         if (hint == SH_ItemView_ShowDecorationSelected)
             return 0;
         else
@@ -165,14 +224,73 @@ NavigatorTreeView::NavigatorTreeView(QWidget *parent)
     setMinimumWidth(240);
     setRootIsDecorated(false);
     setIndentation(indentation() * 0.5);
+    viewport()->setAttribute(Qt::WA_Hover);
 }
 
 void NavigatorTreeView::drawSelectionBackground(QPainter *painter, const QStyleOption &option)
 {
     painter->save();
-    painter->fillRect(option.rect, option.palette.color(QPalette::Highlight));
+    painter->fillRect(option.rect.adjusted(0, delegateMargin, 0, -delegateMargin),
+                      Theme::getColor(Theme::Color::QmlDesigner_HighlightColor));
     painter->restore();
 }
 
+bool NavigatorTreeView::viewportEvent(QEvent *event)
+{
+    const QPoint offset(10, 5);
+
+    if (event->type() == QEvent::ToolTip) {
+        auto navModel = qobject_cast<NavigatorTreeModel *>(model());
+        if (navModel) {
+            QHelpEvent *helpEvent = static_cast<QHelpEvent *>(event);
+            QModelIndex index = indexAt(helpEvent->pos());
+            QVariantMap imgMap = navModel->data(index, ToolTipImageRole).toMap();
+
+            if (!imgMap.isEmpty()) {
+                m_previewToolTipNodeId = index.internalId();
+                if (!m_previewToolTip || devicePixelRatioF() != m_previewToolTip->devicePixelRatioF()) {
+                    if (!m_previewToolTip) {
+                        connect(navModel, &NavigatorTreeModel::toolTipPixmapUpdated,
+                                [this](const QString &id, const QPixmap &pixmap) {
+                            if (m_previewToolTip && m_previewToolTip->id() == id)
+                                m_previewToolTip->setPixmap(pixmap);
+                        });
+                    } else {
+                        delete m_previewToolTip;
+                    }
+                    m_previewToolTip = new PreviewToolTip();
+                }
+                m_previewToolTip->setId(imgMap["id"].toString());
+                m_previewToolTip->setType(imgMap["type"].toString());
+                m_previewToolTip->setInfo(imgMap["info"].toString());
+                m_previewToolTip->setPixmap(imgMap["pixmap"].value<QPixmap>());
+                m_previewToolTip->move(helpEvent->globalPos() + offset);
+                if (!m_previewToolTip->isVisible())
+                    m_previewToolTip->show();
+            } else if (m_previewToolTip) {
+                m_previewToolTip->hide();
+                m_previewToolTipNodeId = -1;
+            }
+        }
+    } else if (event->type() == QEvent::Leave) {
+        if (m_previewToolTip) {
+            m_previewToolTip->hide();
+            m_previewToolTipNodeId = -1;
+        }
+    } else if (event->type() == QEvent::HoverMove) {
+        if (m_previewToolTip && m_previewToolTip->isVisible()) {
+            auto *he = static_cast<QHoverEvent *>(event);
+            QModelIndex index = indexAt(he->pos());
+            if (!index.isValid() || index.internalId() != quintptr(m_previewToolTipNodeId)) {
+                m_previewToolTip->hide();
+                m_previewToolTipNodeId = -1;
+            } else {
+                m_previewToolTip->move(mapToGlobal(he->pos()) + offset);
+            }
+        }
+    }
+
+    return QTreeView::viewportEvent(event);
+}
 
 }

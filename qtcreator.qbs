@@ -5,7 +5,7 @@ import qbs.FileInfo
 Project {
     name: "Qt Creator"
     minimumQbsVersion: "1.8.0"
-    property string minimumMacosVersion: "10.8"
+    property string minimumMacosVersion: "10.12"
     property bool withAutotests: qbs.buildVariant === "debug"
     property path ide_source_tree: path
     property pathList additionalPlugins: []
@@ -43,6 +43,22 @@ Project {
             for (var i = 0; i < props.length; ++i) {
                 for (var j = 0; j < props[i].length; ++j)
                     list.push(props[i][j] + "/**/*.pr[io]");
+            }
+            return list;
+        }
+    }
+
+    Product {
+        name: "cmake project files"
+        files: {
+            var patterns = ["**/CMakeLists.txt", "**/*.cmake", "**/*.cmake.in"];
+            var list = [].concat(patterns);
+            var props = [additionalPlugins, additionalLibs, additionalTools, additionalAutotests];
+            for (var i = 0; i < props.length; ++i) {
+                for (var j = 0; j < props[i].length; ++j) {
+                    for (var k = 0; k < patterns.length; ++k)
+                        list.push(props[i][j] + "/" + patterns[k]);
+                }
             }
             return list;
         }

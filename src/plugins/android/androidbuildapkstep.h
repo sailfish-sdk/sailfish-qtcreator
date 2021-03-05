@@ -37,13 +37,14 @@ class QAbstractItemModel;
 QT_END_NAMESPACE
 
 namespace Android {
+namespace Internal {
 
-class ANDROID_EXPORT AndroidBuildApkStep : public ProjectExplorer::AbstractProcessStep
+class AndroidBuildApkStep : public ProjectExplorer::AbstractProcessStep
 {
     Q_OBJECT
 
 public:
-    AndroidBuildApkStep(ProjectExplorer::BuildStepList *bc, Core::Id id);
+    AndroidBuildApkStep(ProjectExplorer::BuildStepList *bc, Utils::Id id);
 
     bool fromMap(const QVariantMap &map) override;
     QVariantMap toMap() const override;
@@ -68,21 +69,21 @@ public:
     bool verboseOutput() const;
     void setVerboseOutput(bool verbose);
 
-    bool useMinistro() const;
-    void setUseMinistro(bool b);
-
     bool addDebugger() const;
     void setAddDebugger(bool debug);
 
     QString buildTargetSdk() const;
     void setBuildTargetSdk(const QString &sdk);
 
-    QVariant data(Core::Id id) const override;
+    void stdError(const QString &output) override;
+
+    QVariant data(Utils::Id id) const override;
 private:
-    Q_INVOKABLE void showInGraphicalShell();
+    void showInGraphicalShell();
 
     bool init() override;
-    ProjectExplorer::BuildStepConfigWidget *createConfigWidget() override;
+    void setupOutputFormatter(Utils::OutputFormatter *formatter) override;
+    QWidget *createConfigWidget() override;
     void processStarted() override;
     void processFinished(int exitCode, QProcess::ExitStatus status) override;
     bool verifyKeystorePassword();
@@ -93,7 +94,6 @@ private:
     bool m_buildAAB = false;
     bool m_signPackage = false;
     bool m_verbose = false;
-    bool m_useMinistro = false;
     bool m_openPackageLocation = false;
     bool m_openPackageLocationForRun = false;
     bool m_addDebugger = true;
@@ -110,8 +110,6 @@ private:
     bool m_skipBuilding = false;
     QString m_inputFile;
 };
-
-namespace Internal {
 
 class AndroidBuildApkStepFactory : public ProjectExplorer::BuildStepFactory
 {

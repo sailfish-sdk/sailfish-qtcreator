@@ -46,8 +46,8 @@ class LANGUAGESERVERPROTOCOL_EXPORT JsonRpcMessage : public IContent
 {
 public:
     JsonRpcMessage();
-    JsonRpcMessage(const QJsonObject &jsonObject);
-    JsonRpcMessage(QJsonObject &&jsonObject);
+    explicit JsonRpcMessage(const QJsonObject &jsonObject);
+    explicit JsonRpcMessage(QJsonObject &&jsonObject);
 
     QByteArray toRawData() const final;
     QByteArray mimeType() const final;
@@ -76,8 +76,8 @@ public:
     }
     static QByteArray jsonRpcMimeType();
     static void parseContent(const QByteArray &content, QTextCodec *codec, QString &errorMessage,
-                             ResponseHandlers responseHandlers,
-                             MethodHandler methodHandler);
+                             const ResponseHandlers &responseHandlers,
+                             const MethodHandler &methodHandler);
     static QJsonObject toJsonObject(const QByteArray &content, QTextCodec *codec, QString &parseError);
 
 private:
@@ -88,13 +88,14 @@ template <typename Params>
 class Notification : public JsonRpcMessage
 {
 public:
-    Notification() : Notification(QString()) {}
-    Notification(const QString &methodName, const Params &params = Params())
+    Notification(const QString &methodName, const Params &params)
     {
         setMethod(methodName);
         setParams(params);
     }
-    using JsonRpcMessage::JsonRpcMessage;
+
+    explicit Notification(const QJsonObject &jsonObject) : JsonRpcMessage(jsonObject) {}
+    explicit Notification(QJsonObject &&jsonObject) : JsonRpcMessage(std::move(jsonObject)) {}
 
     QString method() const
     { return fromJsonValue<QString>(m_jsonObject.value(methodKey)); }
@@ -133,7 +134,7 @@ class Notification<std::nullptr_t> : public JsonRpcMessage
 {
 public:
     Notification() : Notification(QString()) {}
-    Notification(const QString &methodName, const std::nullptr_t &/*params*/ = nullptr)
+    explicit Notification(const QString &methodName, const std::nullptr_t &/*params*/ = nullptr)
     {
         setMethod(methodName);
         setParams(nullptr);
@@ -267,12 +268,11 @@ template <typename Result, typename ErrorDataType, typename Params>
 class Request : public Notification<Params>
 {
 public:
-    Request() : Notification<Params>() { setId(QUuid::createUuid().toString()); }
-    Request(const QString &methodName, const Params &params = Params())
+    Request(const QString &methodName, const Params &params)
         : Notification<Params>(methodName, params)
-    { setId(QUuid::createUuid().toString()); }
-    Request(const QJsonObject &jsonObject) : Notification<Params>(jsonObject) { }
-    Request(QJsonObject &&jsonObject) : Notification<Params>(std::move(jsonObject)) { }
+    { setId(MessageId(QUuid::createUuid().toString())); }
+    explicit Request(const QJsonObject &jsonObject) : Notification<Params>(jsonObject) { }
+    explicit Request(QJsonObject &&jsonObject) : Notification<Params>(std::move(jsonObject)) { }
 
     MessageId id() const
     { return MessageId(JsonRpcMessage::m_jsonObject.value(idKey)); }
@@ -323,7 +323,7 @@ private:
 class LANGUAGESERVERPROTOCOL_EXPORT CancelParameter : public JsonObject
 {
 public:
-    CancelParameter(const MessageId &id) { setId(id); }
+    explicit CancelParameter(const MessageId &id) { setId(id); }
     CancelParameter() = default;
     using JsonObject::JsonObject;
 
@@ -343,7 +343,7 @@ public:
 class LANGUAGESERVERPROTOCOL_EXPORT CancelRequest : public Notification<CancelParameter>
 {
 public:
-    CancelRequest(const CancelParameter &params = CancelParameter());
+    explicit CancelRequest(const CancelParameter &params);
     using Notification::Notification;
     constexpr static const char methodName[] = "$/cancelRequest";
 };

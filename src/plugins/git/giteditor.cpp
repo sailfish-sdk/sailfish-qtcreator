@@ -38,6 +38,7 @@
 #include <vcsbase/vcsbaseeditorconfig.h>
 #include <vcsbase/vcsoutputwindow.h>
 
+#include <utils/ansiescapecodehandler.h>
 #include <utils/qtcassert.h>
 #include <utils/temporaryfile.h>
 
@@ -45,7 +46,7 @@
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QMenu>
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QSet>
 #include <QTextBlock>
 #include <QTextCodec>
@@ -107,7 +108,7 @@ public:
 };
 
 GitEditorWidget::GitEditorWidget() :
-    m_changeNumberPattern(CHANGE_PATTERN)
+    m_changeNumberPattern(QRegularExpression::anchoredPattern(CHANGE_PATTERN))
 {
     QTC_ASSERT(m_changeNumberPattern.isValid(), return);
     /* Diff format:
@@ -131,7 +132,7 @@ QString GitEditorWidget::changeUnderCursor(const QTextCursor &c) const
     if (!cursor.hasSelection())
         return QString();
     const QString change = cursor.selectedText();
-    if (m_changeNumberPattern.exactMatch(change))
+    if (m_changeNumberPattern.match(change).hasMatch())
         return change;
     return QString();
 }
@@ -185,8 +186,8 @@ static QString sanitizeBlameOutput(const QString &b)
     forever {
         QTC_CHECK(prevPos < pos);
         int afterParen = prevPos + parenPos;
-        result.append(b.midRef(prevPos, stripPos));
-        result.append(b.midRef(afterParen, pos - afterParen));
+        result.append(b.mid(prevPos, stripPos));
+        result.append(b.mid(afterParen, pos - afterParen));
         prevPos = pos;
         QTC_CHECK(prevPos != 0);
         if (pos == b.size())
@@ -205,6 +206,20 @@ void GitEditorWidget::setPlainText(const QString &text)
     // If desired, filter out the date from annotation
     switch (contentType())
     {
+    case LogOutput: {
+        Utils::AnsiEscapeCodeHandler handler;
+        const QList<Utils::FormattedText> formattedTextList
+                = handler.parseText(Utils::FormattedText(text));
+
+        clear();
+        QTextCursor cursor = textCursor();
+        cursor.beginEditBlock();
+        for (const auto &formattedChunk : formattedTextList)
+            cursor.insertText(formattedChunk.text, formattedChunk.format);
+        cursor.endEditBlock();
+
+        return;
+    }
     case AnnotateOutput:
         modText = sanitizeBlameOutput(text);
         break;
@@ -247,7 +262,7 @@ void GitEditorWidget::applyDiffChunk(const DiffChunk& chunk, bool revert)
 void GitEditorWidget::init()
 {
     VcsBaseEditorWidget::init();
-    Core::Id editorId = textDocument()->id();
+    Utils::Id editorId = textDocument()->id();
     if (editorId == Git::Constants::GIT_COMMIT_TEXT_EDITOR_ID)
         textDocument()->setSyntaxHighlighter(new GitSubmitHighlighter);
     else if (editorId == Git::Constants::GIT_REBASE_EDITOR_ID)
@@ -272,7 +287,7 @@ void GitEditorWidget::addDiffActions(QMenu *menu, const DiffChunk &chunk)
 void GitEditorWidget::aboutToOpen(const QString &fileName, const QString &realFileName)
 {
     Q_UNUSED(realFileName)
-    Core::Id editorId = textDocument()->id();
+    Utils::Id editorId = textDocument()->id();
     if (editorId == Git::Constants::GIT_COMMIT_TEXT_EDITOR_ID
             || editorId == Git::Constants::GIT_REBASE_EDITOR_ID) {
         QFileInfo fi(fileName);
@@ -310,7 +325,7 @@ bool GitEditorWidget::isValidRevision(const QString &revision) const
 void GitEditorWidget::addChangeActions(QMenu *menu, const QString &change)
 {
     if (contentType() != OtherContent)
-        GitClient::addChangeActions(menu, sourceWorkingDirectory(), change);
+        GitClient::addChangeActions(menu, source(), change);
 }
 
 QString GitEditorWidget::revisionSubject(const QTextBlock &inBlock) const
@@ -337,9 +352,10 @@ QString GitEditorWidget::fileNameForLine(int line) const
     // 7971b6e7 share/qtcreator/dumper/dumper.py   (hjk
     QTextBlock block = document()->findBlockByLineNumber(line - 1);
     QTC_ASSERT(block.isValid(), return source());
-    static QRegExp renameExp("^" CHANGE_PATTERN "\\s+([^(]+)");
-    if (renameExp.indexIn(block.text()) != -1) {
-        const QString fileName = renameExp.cap(1).trimmed();
+    static QRegularExpression renameExp("^" CHANGE_PATTERN "\\s+([^(]+)");
+    const QRegularExpressionMatch match = renameExp.match(block.text());
+    if (match.hasMatch()) {
+        const QString fileName = match.captured(1).trimmed();
         if (!fileName.isEmpty())
             return fileName;
     }
@@ -348,12 +364,7 @@ QString GitEditorWidget::fileNameForLine(int line) const
 
 QString GitEditorWidget::sourceWorkingDirectory() const
 {
-    Utils::FilePath path = Utils::FilePath::fromString(source());
-    if (!path.isEmpty() && !path.isDir())
-        path = path.parentDir();
-    while (!path.isEmpty() && !path.exists())
-        path = path.parentDir();
-    return path.toString();
+    return GitClient::fileWorkingDirectory(source());
 }
 
 void GitEditorWidget::refresh()

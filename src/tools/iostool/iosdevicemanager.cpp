@@ -33,7 +33,7 @@
 #include <QTimer>
 #include <QThread>
 #include <QSettings>
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QUrl>
 #include <mach/error.h>
 
@@ -452,6 +452,10 @@ public:
 
     void deviceCallbackReturned();
     QString commandName();
+    QString getStringValue(AMDevice *device,
+                           CFStringRef domain,
+                           CFStringRef key,
+                           const QString &fallback = QString());
 };
 
 class AppOpSession: public CommandSession {
@@ -795,7 +799,7 @@ void IosDeviceManagerPrivate::deviceWithId(QString deviceId, int timeout,
     pendingLookup->timer.setSingleShot(true);
     pendingLookup->timer.setInterval(timeout);
     QObject::connect(&(pendingLookup->timer), &QTimer::timeout, q, &IosDeviceManager::checkPendingLookups);
-    m_pendingLookups.insertMulti(deviceId, pendingLookup);
+    m_pendingLookups.insert(deviceId, pendingLookup);
     pendingLookup->timer.start();
 }
 enum GdbServerStatus {
@@ -1437,11 +1441,12 @@ void AppOpSession::deviceCallbackReturned()
 
 int AppOpSession::qmljsDebugPort() const
 {
-    QRegExp qmlPortRe = QRegExp(QLatin1String("-qmljsdebugger=port:([0-9]+)"));
-    foreach (const QString &arg, extraArgs) {
-        if (qmlPortRe.indexIn(arg) == 0) {
+    const QRegularExpression qmlPortRe(QLatin1String("-qmljsdebugger=port:([0-9]+)"));
+    for (const QString &arg : qAsConst(extraArgs)) {
+        const QRegularExpressionMatch match = qmlPortRe.match(arg);
+        if (match.hasMatch()) {
             bool ok;
-            int res = qmlPortRe.cap(1).toInt(&ok);
+            int res = match.captured(1).toInt(&ok);
             if (ok && res >0 && res <= 0xFFFF)
                 return res;
         }
@@ -1584,69 +1589,52 @@ QString DevInfoSession::commandName()
     return QString::fromLatin1("DevInfoSession(%1, %2)").arg(deviceId);
 }
 
+QString DevInfoSession::getStringValue(AMDevice *device,
+                                       CFStringRef domain,
+                                       CFStringRef key,
+                                       const QString &fallback)
+{
+    QString value = fallback;
+    CFPropertyListRef cfValue = lib()->deviceCopyValue(device, domain, key);
+    if (cfValue) {
+        if (CFGetTypeID(cfValue) == CFStringGetTypeID())
+            value = QString::fromCFString(reinterpret_cast<CFStringRef>(cfValue));
+        CFRelease(cfValue);
+    }
+    return value;
+}
+
 void DevInfoSession::deviceCallbackReturned()
 {
     if (debugAll)
         qDebug() << "device available";
     QMap<QString,QString> res;
-    QString deviceNameKey = QLatin1String("deviceName");
-    QString developerStatusKey = QLatin1String("developerStatus");
-    QString deviceConnectedKey = QLatin1String("deviceConnected");
-    QString osVersionKey = QLatin1String("osVersion");
+    const QString deviceNameKey = "deviceName";
+    const QString developerStatusKey = "developerStatus";
+    const QString deviceConnectedKey = "deviceConnected";
+    const QString osVersionKey = "osVersion";
+    const QString cpuArchitectureKey = "cpuArchitecture";
+    const QString uniqueDeviceId = "uniqueDeviceId";
     bool failure = !device;
     if (!failure) {
         failure = !connectDevice();
         if (!failure) {
             res[deviceConnectedKey] = QLatin1String("YES");
-            CFPropertyListRef cfDeviceName = lib()->deviceCopyValue(device, 0,
-                                                                   CFSTR("DeviceName"));
-            // CFShow(cfDeviceName);
-            if (cfDeviceName) {
-                if (CFGetTypeID(cfDeviceName) == CFStringGetTypeID())
-                    res[deviceNameKey] = QString::fromCFString(reinterpret_cast<CFStringRef>(cfDeviceName));
-                CFRelease(cfDeviceName);
-            }
-            if (!res.contains(deviceNameKey))
-                res[deviceNameKey] = QString();
-        }
-        if (!failure) {
-            CFPropertyListRef cfDevStatus = lib()->deviceCopyValue(device,
-                                                                   CFSTR("com.apple.xcode.developerdomain"),
-                                                                   CFSTR("DeveloperStatus"));
-            // CFShow(cfDevStatus);
-            if (cfDevStatus) {
-                if (CFGetTypeID(cfDevStatus) == CFStringGetTypeID())
-                    res[developerStatusKey] = QString::fromCFString(reinterpret_cast<CFStringRef>(cfDevStatus));
-                CFRelease(cfDevStatus);
-            }
-            if (!res.contains(developerStatusKey))
-                res[developerStatusKey] = QLatin1String("*off*");
-        }
-        if (!failure) {
-            CFPropertyListRef cfProductVersion = lib()->deviceCopyValue(device,
-                                                                        0,
-                                                                        CFSTR("ProductVersion"));
-            //CFShow(cfProductVersion);
-            CFPropertyListRef cfBuildVersion = lib()->deviceCopyValue(device,
-                                                                      0,
-                                                                      CFSTR("BuildVersion"));
-            //CFShow(cfBuildVersion);
-            QString versionString;
-            if (cfProductVersion) {
-                if (CFGetTypeID(cfProductVersion) == CFStringGetTypeID())
-                    versionString = QString::fromCFString(reinterpret_cast<CFStringRef>(cfProductVersion));
-                CFRelease(cfProductVersion);
-            }
-            if (cfBuildVersion) {
-                if (!versionString.isEmpty() && CFGetTypeID(cfBuildVersion) == CFStringGetTypeID())
-                    versionString += QString::fromLatin1(" (%1)").arg(
-                                QString::fromCFString(reinterpret_cast<CFStringRef>(cfBuildVersion)));
-                    CFRelease(cfBuildVersion);
-            }
-            if (!versionString.isEmpty())
-                res[osVersionKey] = versionString;
+            res[deviceNameKey] = getStringValue(device, nullptr, CFSTR("DeviceName"));
+            res[developerStatusKey] = getStringValue(device,
+                                                     CFSTR("com.apple.xcode.developerdomain"),
+                                                     CFSTR("DeveloperStatus"),
+                                                     "*off*");
+            res[cpuArchitectureKey] = getStringValue(device, nullptr, CFSTR("CPUArchitecture"));
+            res[uniqueDeviceId] = getStringValue(device, nullptr, CFSTR("UniqueDeviceID"));
+            const QString productVersion = getStringValue(device, nullptr, CFSTR("ProductVersion"));
+            const QString buildVersion = getStringValue(device, nullptr, CFSTR("BuildVersion"));
+            if (!productVersion.isEmpty() && !buildVersion.isEmpty())
+                res[osVersionKey] = QString("%1 (%2)").arg(productVersion, buildVersion);
+            else if (!productVersion.isEmpty())
+                res[osVersionKey] = productVersion;
             else
-                res[osVersionKey] = QLatin1String("*unknown*");
+                res[osVersionKey] = "*unknown*";
         }
         disconnectDevice();
     }

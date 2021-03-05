@@ -31,7 +31,6 @@
 #include "debuggersourcepathmappingwidget.h"
 
 #include <coreplugin/icore.h>
-#include <coreplugin/variablechooser.h>
 
 #include <app/app_version.h>
 
@@ -39,6 +38,7 @@
 #include <utils/pathchooser.h>
 #include <utils/qtcassert.h>
 #include <utils/savedaction.h>
+#include <utils/variablechooser.h>
 
 #include <QCheckBox>
 #include <QCoreApplication>
@@ -203,7 +203,7 @@ public:
         if (HostOsInfo::isWindowsHost()) {
             SavedAction *registerAction = action(RegisterForPostMortem);
             m_group.insert(registerAction, checkBoxRegisterForPostMortem);
-            connect(registerAction, &QAction::toggled,
+            connect(registerAction->action(), &QAction::toggled,
                     checkBoxRegisterForPostMortem, &QAbstractButton::setChecked);
         } else {
             checkBoxRegisterForPostMortem->setVisible(false);
@@ -211,7 +211,7 @@ public:
 
         GlobalDebuggerOptions *options = Internal::globalDebuggerOptions();
         SourcePathMap allPathMap = options->sourcePathMap;
-        for (auto regExpMap : qAsConst(options->sourcePathRegExpMap))
+        for (const auto &regExpMap : qAsConst(options->sourcePathRegExpMap))
             allPathMap.insert(regExpMap.first.pattern(), regExpMap.second);
         m_sourceMappingWidget->setSourcePathMap(allPathMap);
     }
@@ -236,7 +236,7 @@ void CommonOptionsPageWidget::apply()
     for (auto it = allPathMap.begin(), end = allPathMap.end(); it != end; ++it) {
         const QString key = it.key();
         if (key.startsWith('('))
-            options->sourcePathRegExpMap.append(qMakePair(QRegExp(key), it.value()));
+            options->sourcePathRegExpMap.append(qMakePair(QRegularExpression(key), it.value()));
         else
             options->sourcePathMap.insert(key, it.value());
     }
@@ -296,7 +296,7 @@ public:
         label->setText("<html><head/><body>\n<p>"
            + tr("The debugging helpers are used to produce a nice "
                 "display of objects of certain types like QString or "
-                "std::map in the &quot;Locals and Expressions&quot; view.")
+                "std::map in the &quot;Locals&quot; and &quot;Expressions&quot; views.")
             + "</p></body></html>");
 
         auto groupBoxCustomDumperCommands = new QGroupBox(debuggingHelperGroupBox);

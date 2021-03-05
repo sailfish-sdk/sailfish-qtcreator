@@ -52,7 +52,6 @@
 #include <utils/runextensions.h>
 
 #include <QFileDialog>
-#include <QTimer>
 
 #ifdef Q_OS_WIN
 #include <Windows.h>
@@ -78,7 +77,7 @@ bool isClCompatibleCompiler(const QString &compilerName)
     return compilerName.endsWith("cl");
 }
 
-Core::Id getCompilerId(QString compilerName)
+Utils::Id getCompilerId(QString compilerName)
 {
     if (Utils::HostOsInfo::isWindowsHost()) {
         if (compilerName.endsWith(".exe"))
@@ -96,7 +95,7 @@ Core::Id getCompilerId(QString compilerName)
     return ProjectExplorer::Constants::CLANG_TOOLCHAIN_TYPEID;
 }
 
-ToolChain *toolchainFromCompilerId(const Core::Id &compilerId, const Core::Id &language)
+ToolChain *toolchainFromCompilerId(const Utils::Id &compilerId, const Utils::Id &language)
 {
     return ToolChainManager::toolChain([&compilerId, &language](const ToolChain *tc) {
         if (!tc->isValid() || tc->language() != language)
@@ -126,7 +125,7 @@ QString compilerPath(QString pathFlag)
     return QDir::fromNativeSeparators(pathFlag);
 }
 
-ToolChain *toolchainFromFlags(const Kit *kit, const QStringList &flags, const Core::Id &language)
+ToolChain *toolchainFromFlags(const Kit *kit, const QStringList &flags, const Utils::Id &language)
 {
     if (flags.empty())
         return ToolChainKitAspect::toolChain(kit, language);
@@ -139,7 +138,7 @@ ToolChain *toolchainFromFlags(const Kit *kit, const QStringList &flags, const Co
     if (toolchain)
         return toolchain;
 
-    Core::Id compilerId = getCompilerId(compiler.fileName());
+    Utils::Id compilerId = getCompilerId(compiler.fileName());
     if ((toolchain = toolchainFromCompilerId(compilerId, language)))
         return toolchain;
 
@@ -337,20 +336,15 @@ void createTree(std::unique_ptr<ProjectNode> &root,
 CompilationDatabaseBuildSystem::CompilationDatabaseBuildSystem(Target *target)
     : BuildSystem(target)
     , m_cppCodeModelUpdater(std::make_unique<CppTools::CppProjectUpdater>())
-    , m_parseDelay(new QTimer(this))
     , m_deployFileWatcher(new FileSystemWatcher(this))
 {
     connect(target->project(), &CompilationDatabaseProject::rootProjectDirectoryChanged,
             this, [this] {
         m_projectFileHash.clear();
-        m_parseDelay->start();
+        requestDelayedParse();
     });
 
-    connect(m_parseDelay, &QTimer::timeout, this, &CompilationDatabaseBuildSystem::reparseProject);
-
-    m_parseDelay->setSingleShot(true);
-    m_parseDelay->setInterval(1000);
-    m_parseDelay->start();
+    requestDelayedParse();
 
     connect(project(), &Project::projectFileIsDirty, this, &CompilationDatabaseBuildSystem::reparseProject);
 
@@ -373,8 +367,8 @@ void CompilationDatabaseBuildSystem::triggerParsing()
 
 void CompilationDatabaseBuildSystem::buildTreeAndProjectParts()
 {
-    Kit *kit = target()->kit();
-    ProjectExplorer::KitInfo kitInfo(kit);
+    Kit *k = kit();
+    ProjectExplorer::KitInfo kitInfo(k);
     QTC_ASSERT(kitInfo.isValid(), return);
     // Reset toolchains to pick them based on the database entries.
     kitInfo.cToolChain = nullptr;
@@ -393,7 +387,7 @@ void CompilationDatabaseBuildSystem::buildTreeAndProjectParts()
         prevEntry = &entry;
 
         RawProjectPart rpp = makeRawProjectPart(projectFilePath(),
-                                                kit,
+                                                k,
                                                 kitInfo,
                                                 entry.workingDir,
                                                 entry.fileName,
@@ -451,10 +445,12 @@ Utils::FilePath CompilationDatabaseProject::rootPathFromSettings() const
 #endif
 }
 
-void CompilationDatabaseProject::configureAsExampleProject(const QSet<Core::Id> &preferredFeatures)
+void CompilationDatabaseProject::configureAsExampleProject(Kit *kit, const QSet<Core::Id> &preferredFeatures)
 {
     Q_UNUSED(preferredFeatures);
-    if (KitManager::defaultKit())
+    if (kit)
+        addTargetForKit(kit);
+    else if (KitManager::defaultKit())
         addTargetForKit(KitManager::defaultKit());
 }
 
@@ -523,7 +519,7 @@ CompilationDatabaseEditorFactory::CompilationDatabaseEditorFactory()
 class CompilationDatabaseBuildConfiguration : public BuildConfiguration
 {
 public:
-    CompilationDatabaseBuildConfiguration(Target *target, Core::Id id)
+    CompilationDatabaseBuildConfiguration(Target *target, Utils::Id id)
         : BuildConfiguration(target, id)
     {
     }

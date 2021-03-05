@@ -47,6 +47,7 @@ class Edit3DView;
 namespace Internal { class DesignModeWidget; }
 
 class ViewManagerData;
+class ImageCache;
 
 class QMLDESIGNERCORE_EXPORT ViewManager
 {
@@ -100,6 +101,11 @@ public:
 
     bool usesRewriterView(RewriterView *rewriterView);
 
+    void disableStandardViews();
+    void enableStandardViews();
+
+    ImageCache &imageCache();
+
 private: // functions
     Q_DISABLE_COPY(ViewManager)
 
@@ -107,6 +113,7 @@ private: // functions
     void attachItemLibraryView();
     void attachAdditionalViews();
     void detachAdditionalViews();
+    void detachStandardViews();
 
     Model *currentModel() const;
     Model *documentModel() const;
@@ -115,9 +122,10 @@ private: // functions
     void switchStateEditorViewToBaseState();
     void switchStateEditorViewToSavedState();
     QList<QPointer<AbstractView>> views() const;
+    const QList<QPointer<AbstractView> > standardViews() const;
 
 private: // variables
-    ViewManagerData *d;
+    std::unique_ptr<ViewManagerData> d;
 };
 
 } // namespace QmlDesigner

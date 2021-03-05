@@ -25,9 +25,10 @@
 
 #pragma once
 
+#include <utils/id.h>
+
 #include <QDialog>
 
-namespace Core { class Id; }
 namespace ProjectExplorer { class Kit; }
 
 namespace QmlProfiler {
@@ -46,7 +47,7 @@ public:
     void setPort(const int port);
 
     ProjectExplorer::Kit *kit() const;
-    void setKitId(Core::Id id);
+    void setKitId(Utils::Id id);
 
 private:
     QmlProfilerAttachDialogPrivate *d;

@@ -26,6 +26,7 @@
 #include "fancymainwindow.h"
 
 #include "algorithm.h"
+#include "porting.h"
 #include "qtcassert.h"
 #include "stringutils.h"
 
@@ -74,7 +75,7 @@ public:
     DockWidget(QWidget *inner, FancyMainWindow *parent, bool immutable = false);
 
     bool eventFilter(QObject *, QEvent *event) override;
-    void enterEvent(QEvent *event) override;
+    void enterEvent(EnterEvent *event) override;
     void leaveEvent(QEvent *event) override;
     void handleMouseTimeout();
     void handleToplevelChanged(bool floating);
@@ -114,7 +115,7 @@ public:
 
     QSize minimumSizeHint() const override { return sizeHint(); }
 
-    void enterEvent(QEvent *event) override
+    void enterEvent(EnterEvent *event) override
     {
         if (isEnabled())
             update();
@@ -136,7 +137,7 @@ void DockWidgetTitleButton::paintEvent(QPaintEvent *)
     QPainter p(this);
 
     QStyleOptionToolButton opt;
-    opt.init(this);
+    opt.initFrom(this);
     opt.state |= QStyle::State_AutoRaise;
     opt.icon = icon();
     opt.subControls = {};
@@ -193,7 +194,7 @@ public:
         setProperty("managed_titlebar", 1);
     }
 
-    void enterEvent(QEvent *event) override
+    void enterEvent(EnterEvent *event) override
     {
         setActive(true);
         QWidget::enterEvent(event);
@@ -303,7 +304,7 @@ bool DockWidget::eventFilter(QObject *, QEvent *event)
     return false;
 }
 
-void DockWidget::enterEvent(QEvent *event)
+void DockWidget::enterEvent(EnterEvent *event)
 {
     if (!m_immutable)
         QApplication::instance()->installEventFilter(this);
@@ -475,9 +476,9 @@ void FancyMainWindow::saveSettings(QSettings *settings) const
 void FancyMainWindow::restoreSettings(const QSettings *settings)
 {
     QHash<QString, QVariant> hash;
-    foreach (const QString &key, settings->childKeys()) {
+    const QStringList childKeys = settings->childKeys();
+    for (const QString &key : childKeys)
         hash.insert(key, settings->value(key));
-    }
     restoreSettings(hash);
 }
 
@@ -552,7 +553,7 @@ void FancyMainWindow::addDockActionsToMenu(QMenu *menu)
         QTC_ASSERT(action2, return false);
         return stripAccelerator(action1->text()).toLower() < stripAccelerator(action2->text()).toLower();
     });
-    foreach (QAction *action, actions)
+    for (QAction *action : qAsConst(actions))
         menu->addAction(action);
     menu->addAction(&d->m_showCentralWidget);
     menu->addAction(&d->m_menuSeparator1);

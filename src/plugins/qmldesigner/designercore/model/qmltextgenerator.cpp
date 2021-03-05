@@ -27,6 +27,8 @@
 
 #include <QVariant>
 #include <QColor>
+#include <QVector3D>
+#include <QVector2D>
 
 #include "bindingproperty.h"
 #include "signalhandlerproperty.h"
@@ -47,9 +49,16 @@ inline static QString properColorName(const QColor &color)
         return QString::asprintf("#%02x%02x%02x%02x", color.alpha(), color.red(), color.green(), color.blue());
 }
 
-inline static QString doubleToString(double d)
+inline static QString doubleToString(const PropertyName &propertyName, double d)
 {
-    QString string = QString::number(d, 'f', 3);
+    static QVector<PropertyName> lowPrecisionProperties
+        = {"width", "height", "x", "y", "rotation", "scale", "opacity"};
+    int precision = 5;
+    if (propertyName.contains("anchors") || propertyName.contains("font")
+        || lowPrecisionProperties.contains(propertyName))
+        precision = 3;
+
+    QString string = QString::number(d, 'f', precision);
     if (string.contains(QLatin1Char('.'))) {
         while (string.at(string.length()- 1) == QLatin1Char('0'))
             string.chop(1);
@@ -140,7 +149,7 @@ QString QmlTextGenerator::toQml(const AbstractProperty &property, int indentDept
 
             case QMetaType::Float:
             case QMetaType::Double:
-                return doubleToString(value.toDouble());
+                return doubleToString(property.name(), value.toDouble());
             case QMetaType::Int:
             case QMetaType::LongLong:
             case QMetaType::UInt:
@@ -149,6 +158,14 @@ QString QmlTextGenerator::toQml(const AbstractProperty &property, int indentDept
             case QMetaType::QString:
             case QMetaType::QChar:
                 return QStringLiteral("\"%1\"").arg(escape(unicodeEscape(stringValue)));
+            case QMetaType::QVector2D: {
+                auto vec = value.value<QVector2D>();
+                return QStringLiteral("Qt.vector2d(%1, %2)").arg(vec.x()).arg(vec.y());
+            }
+            case QMetaType::QVector3D: {
+                auto vec = value.value<QVector3D>();
+                return QStringLiteral("Qt.vector3d(%1, %2, %3)").arg(vec.x()).arg(vec.y()).arg(vec.z());
+            }
             default:
                 return QStringLiteral("\"%1\"").arg(escape(stringValue));
             }

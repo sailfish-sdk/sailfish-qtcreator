@@ -1,9 +1,6 @@
-if (WITH_TESTS)
-  set(TST_COMPONENT CppEditor)
-endif()
-
 add_qtc_plugin(GenericProjectManager
-  PLUGIN_DEPENDS Core ProjectExplorer QtSupport TextEditor ${TST_COMPONENT}
+  PLUGIN_DEPENDS Core ProjectExplorer QtSupport TextEditor
+  PLUGIN_TEST_DEPENDS CppEditor
   PLUGIN_RECOMMENDS CppTools
   SOURCES ${TEST_SOURCES}
     filesselectionwizardpage.cpp filesselectionwizardpage.h
@@ -12,7 +9,6 @@ add_qtc_plugin(GenericProjectManager
     genericproject.cpp genericproject.h
     genericprojectconstants.h
     genericprojectfileseditor.cpp genericprojectfileseditor.h
-    genericprojectmanager.qrc
     genericprojectplugin.cpp genericprojectplugin.h
     genericprojectwizard.cpp genericprojectwizard.h
 )

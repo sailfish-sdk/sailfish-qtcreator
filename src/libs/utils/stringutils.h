@@ -27,6 +27,8 @@
 
 #include "utils_global.h"
 
+#include "porting.h"
+
 #include <QList>
 #include <QString>
 
@@ -102,4 +104,11 @@ T makeUniquelyNumbered(const T &preferred, const Container &reserved)
 
 QTCREATOR_UTILS_EXPORT QString formatElapsedTime(qint64 elapsed);
 
+/* This function is only necessary if you need to match the wildcard expression against a
+ * string that might contain path separators - otherwise
+ * QRegularExpression::wildcardToRegularExpression() can be used.
+ * Working around QRegularExpression::wildcardToRegularExpression() taking native separators
+ * into account and handling them to disallow matching a wildcard characters.
+ */
+QTCREATOR_UTILS_EXPORT QString wildcardToRegularExpression(const QString &original);
 } // namespace Utils

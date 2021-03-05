@@ -31,19 +31,20 @@
 #include "vcsbaseeditorconfig.h"
 #include "vcscommand.h"
 
-#include <coreplugin/icore.h>
-#include <coreplugin/vcsmanager.h>
-#include <coreplugin/patchtool.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/editormanager/ieditorfactory.h>
+#include <coreplugin/icore.h>
+#include <coreplugin/patchtool.h>
+#include <coreplugin/vcsmanager.h>
 #include <cpaster/codepasterservice.h>
 #include <extensionsystem/pluginmanager.h>
 #include <projectexplorer/editorconfiguration.h>
-#include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/project.h>
+#include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/session.h>
 #include <texteditor/textdocument.h>
 #include <texteditor/textdocumentlayout.h>
+#include <utils/porting.h>
 #include <utils/progressindicator.h>
 #include <utils/qtcassert.h>
 
@@ -424,11 +425,10 @@ bool UrlTextCursorHandler::findContentsUnderCursor(const QTextCursor &cursor)
     if (cursorForUrl.hasSelection()) {
         const QString line = cursorForUrl.selectedText();
         const int cursorCol = cursor.columnNumber();
-        int urlMatchIndex = -1;
         QRegularExpressionMatchIterator i = m_pattern.globalMatch(line);
         while (i.hasNext()) {
             const QRegularExpressionMatch match = i.next();
-            urlMatchIndex = match.capturedStart();
+            const int urlMatchIndex = match.capturedStart();
             const QString url = match.captured(0);
             if (urlMatchIndex <= cursorCol && cursorCol <= urlMatchIndex + url.length()) {
                 m_urlData.startColumn = urlMatchIndex;
@@ -443,14 +443,15 @@ bool UrlTextCursorHandler::findContentsUnderCursor(const QTextCursor &cursor)
 
 void UrlTextCursorHandler::highlightCurrentContents()
 {
+    const QColor linkColor = creatorTheme()->color(Theme::TextColorLink);
     QTextEdit::ExtraSelection sel;
     sel.cursor = currentCursor();
     sel.cursor.setPosition(currentCursor().position()
                            - (currentCursor().columnNumber() - m_urlData.startColumn));
     sel.cursor.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, m_urlData.url.length());
     sel.format.setFontUnderline(true);
-    sel.format.setForeground(Qt::blue);
-    sel.format.setUnderlineColor(Qt::blue);
+    sel.format.setForeground(linkColor);
+    sel.format.setUnderlineColor(linkColor);
     sel.format.setProperty(QTextFormat::UserProperty, m_urlData.url);
     editorWidget()->setExtraSelections(VcsBaseEditorWidget::OtherSelection,
                                        QList<QTextEdit::ExtraSelection>() << sel);
@@ -826,6 +827,12 @@ bool VcsBaseEditorWidget::isFileLogAnnotateEnabled() const
 void VcsBaseEditorWidget::setFileLogAnnotateEnabled(bool e)
 {
     d->m_fileLogAnnotateEnabled = e;
+}
+
+void VcsBaseEditorWidget::setHighlightingEnabled(bool e)
+{
+    auto dh = static_cast<DiffAndLogHighlighter *>(textDocument()->syntaxHighlighter());
+    dh->setEnabled(e);
 }
 
 QString VcsBaseEditorWidget::workingDirectory() const
@@ -1254,7 +1261,8 @@ const VcsBaseEditorParameters *VcsBaseEditor::findType(const VcsBaseEditorParame
 // Find the codec used for a file querying the editor.
 static QTextCodec *findFileCodec(const QString &source)
 {
-    Core::IDocument *document = Core::DocumentModel::documentForFilePath(source);
+    Core::IDocument *document = Core::DocumentModel::documentForFilePath(
+        Utils::FilePath::fromString(source));
     if (auto textDocument = qobject_cast<Core::BaseTextDocument *>(document))
         return const_cast<QTextCodec *>(textDocument->codec());
     return nullptr;
@@ -1557,8 +1565,8 @@ void VcsBaseEditorWidget::addChangeActions(QMenu *, const QString &)
 QSet<QString> VcsBaseEditorWidget::annotationChanges() const
 {
     QSet<QString> changes;
-    QString text = toPlainText();
-    QStringRef txt(&text);
+    const QString text = toPlainText();
+    StringView txt = make_stringview(text);
     if (txt.isEmpty())
         return changes;
     if (!d->m_annotationSeparatorPattern.pattern().isEmpty()) {

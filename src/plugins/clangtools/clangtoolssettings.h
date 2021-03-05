@@ -25,8 +25,9 @@
 
 #pragma once
 
-#include <coreplugin/id.h>
 #include <cpptools/clangdiagnosticconfig.h>
+
+#include <utils/id.h>
 
 #include <QObject>
 #include <QString>
@@ -44,8 +45,8 @@ public:
     void fromMap(const QVariantMap &map, const QString &prefix = QString());
     void toMap(QVariantMap &map, const QString &prefix = QString()) const;
 
-    Core::Id diagnosticConfigId() const;
-    void setDiagnosticConfigId(const Core::Id &id) { m_diagnosticConfigId = id; }
+    Utils::Id diagnosticConfigId() const;
+    void setDiagnosticConfigId(const Utils::Id &id) { m_diagnosticConfigId = id; }
 
     bool buildBeforeAnalysis() const { return m_buildBeforeAnalysis; }
     void setBuildBeforeAnalysis(bool yesno) { m_buildBeforeAnalysis = yesno; }
@@ -53,10 +54,16 @@ public:
     int parallelJobs() const { return m_parallelJobs; }
     void setParallelJobs(int jobs) { m_parallelJobs = jobs; }
 
+    bool analyzeOpenFiles() const { return m_analyzeOpenFiles; }
+    void setAnalyzeOpenFiles(bool analyzeOpenFiles) { m_analyzeOpenFiles = analyzeOpenFiles; }
+
+    bool operator==(const RunSettings &other) const;
+
 private:
-    Core::Id m_diagnosticConfigId;
+    Utils::Id m_diagnosticConfigId;
     int m_parallelJobs = -1;
     bool m_buildBeforeAnalysis = true;
+    bool m_analyzeOpenFiles = true;
 };
 
 class ClangToolsSettings : public QObject

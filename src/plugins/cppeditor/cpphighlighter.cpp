@@ -33,6 +33,8 @@
 #include <cplusplus/SimpleLexer.h>
 #include <cplusplus/Lexer.h>
 
+#include <utils/porting.h>
+
 #include <QTextDocument>
 
 using namespace CppEditor;
@@ -150,11 +152,10 @@ void CppHighlighter::highlightBlock(const QString &text)
             setFormatWithSpaces(text, tk.utf16charsBegin(), tk.utf16chars(),
                           formatForCategory(C_PREPROCESSOR));
             expectPreprocessorKeyword = true;
-        } else if (highlightCurrentWordAsPreprocessor
-                   && (tk.isKeyword() || tk.is(T_IDENTIFIER))
-                   && isPPKeyword(text.midRef(tk.utf16charsBegin(), tk.utf16chars()))) {
+        } else if (highlightCurrentWordAsPreprocessor && (tk.isKeyword() || tk.is(T_IDENTIFIER))
+                   && isPPKeyword(Utils::midView(text, tk.utf16charsBegin(), tk.utf16chars()))) {
             setFormat(tk.utf16charsBegin(), tk.utf16chars(), formatForCategory(C_PREPROCESSOR));
-            const QStringRef ppKeyword = text.midRef(tk.utf16charsBegin(), tk.utf16chars());
+            const QStringView ppKeyword = Utils::midView(text, tk.utf16charsBegin(), tk.utf16chars());
             if (ppKeyword == QLatin1String("error")
                     || ppKeyword == QLatin1String("warning")
                     || ppKeyword == QLatin1String("pragma")) {
@@ -164,7 +165,10 @@ void CppHighlighter::highlightBlock(const QString &text)
         } else if (tk.is(T_NUMERIC_LITERAL)) {
             setFormat(tk.utf16charsBegin(), tk.utf16chars(), formatForCategory(C_NUMBER));
         } else if (tk.isStringLiteral() || tk.isCharLiteral()) {
-            setFormatWithSpaces(text, tk.utf16charsBegin(), tk.utf16chars(), formatForCategory(C_STRING));
+            if (!highlightRawStringLiteral(text, tk)) {
+                setFormatWithSpaces(text, tk.utf16charsBegin(), tk.utf16chars(),
+                                    formatForCategory(C_STRING));
+            }
         } else if (tk.isComment()) {
             const int startPosition = initialLexerState ? previousTokenEnd : tk.utf16charsBegin();
             if (tk.is(T_COMMENT) || tk.is(T_CPP_COMMENT)) {
@@ -195,7 +199,8 @@ void CppHighlighter::highlightBlock(const QString &text)
 
         } else if (tk.isKeyword()
                    || (m_languageFeatures.qtKeywordsEnabled
-                       && CppTools::isQtKeyword(text.midRef(tk.utf16charsBegin(), tk.utf16chars())))
+                       && CppTools::isQtKeyword(
+                           QStringView{text}.mid(tk.utf16charsBegin(), tk.utf16chars())))
                    || (m_languageFeatures.objCEnabled && tk.isObjCAtKeyword())) {
             setFormat(tk.utf16charsBegin(), tk.utf16chars(), formatForCategory(C_KEYWORD));
         } else if (tk.isPrimitiveType()) {
@@ -208,7 +213,8 @@ void CppHighlighter::highlightBlock(const QString &text)
         } else if (i == 0 && tokens.size() > 1 && tk.is(T_IDENTIFIER) && tokens.at(1).is(T_COLON)) {
             setFormat(tk.utf16charsBegin(), tk.utf16chars(), formatForCategory(C_LABEL));
         } else if (tk.is(T_IDENTIFIER)) {
-            highlightWord(text.midRef(tk.utf16charsBegin(), tk.utf16chars()), tk.utf16charsBegin(),
+            highlightWord(Utils::midView(text, tk.utf16charsBegin(), tk.utf16chars()),
+                          tk.utf16charsBegin(),
                           tk.utf16chars());
         }
     }
@@ -271,7 +277,7 @@ void CppHighlighter::setLanguageFeatures(const LanguageFeatures &languageFeature
     }
 }
 
-bool CppHighlighter::isPPKeyword(const QStringRef &text) const
+bool CppHighlighter::isPPKeyword(const QStringView &text) const
 {
     switch (text.length())
     {
@@ -345,7 +351,7 @@ bool CppHighlighter::isPPKeyword(const QStringRef &text) const
     return false;
 }
 
-void CppHighlighter::highlightWord(QStringRef word, int position, int length)
+void CppHighlighter::highlightWord(QStringView word, int position, int length)
 {
     // try to highlight Qt 'identifiers' like QObject and Q_PROPERTY
 
@@ -361,6 +367,54 @@ void CppHighlighter::highlightWord(QStringRef word, int position, int length)
             setFormat(position, length, formatForCategory(C_TYPE));
         }
     }
+}
+
+bool CppHighlighter::highlightRawStringLiteral(const QStringView &_text, const Token &tk)
+{
+    // Step one: Does the lexer think this is a raw string literal?
+    switch (tk.kind()) {
+    case T_RAW_STRING_LITERAL:
+    case T_RAW_WIDE_STRING_LITERAL:
+    case T_RAW_UTF8_STRING_LITERAL:
+    case T_RAW_UTF16_STRING_LITERAL:
+    case T_RAW_UTF32_STRING_LITERAL:
+        break;
+    default:
+        return false;
+    }
+
+    // TODO: Remove on upgrade to Qt >= 5.14.
+    const QString text = _text.toString();
+
+    // Step two: Find all the components. Bail out if we don't have a complete,
+    //           well-formed raw string literal.
+    const int rOffset = text.indexOf(QLatin1String("R\""), tk.utf16charsBegin());
+    if (rOffset == -1)
+        return false;
+    const int delimiterOffset = rOffset + 2;
+    const int openParenOffset = text.indexOf('(', delimiterOffset);
+    if (openParenOffset == -1)
+        return false;
+    const QStringView delimiter = text.mid(delimiterOffset, openParenOffset - delimiterOffset);
+    if (text.at(tk.utf16charsEnd() - 1) != '"')
+        return false;
+    const int endDelimiterOffset = tk.utf16charsEnd() - 1 - delimiter.length();
+    if (endDelimiterOffset <= delimiterOffset)
+        return false;
+    if (text.mid(endDelimiterOffset, delimiter.length()) != delimiter)
+        return false;
+    if (text.at(endDelimiterOffset - 1) != ')')
+        return false;
+
+    // Step three: Do the actual formatting. For clarity, we display only the actual content as
+    //             a string, and the rest (including the delimiter) as a keyword.
+    const QTextCharFormat delimiterFormat = formatForCategory(C_KEYWORD);
+    const int stringOffset = delimiterOffset + delimiter.length() + 1;
+    setFormat(tk.utf16charsBegin(), stringOffset, delimiterFormat);
+    setFormatWithSpaces(text, stringOffset, endDelimiterOffset - stringOffset - 1,
+                        formatForCategory(C_STRING));
+    setFormat(endDelimiterOffset - 1, delimiter.length() + 2, delimiterFormat);
+    return true;
 }
 
 void CppHighlighter::highlightDoxygenComment(const QString &text, int position, int)

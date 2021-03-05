@@ -5,6 +5,8 @@
   <style name="Selection" foreground="#bec0c2" background="#1d545c"/>
   <style name="LineNumber" foreground="#bec0c2" background="#404244"/>
   <style name="SearchResult" background="#8a7f2c"/>
+  <style name="SearchResultAlt1" foreground="#aaaaff" background="#363655"/>
+  <style name="SearchResultAlt2" foreground="#ffaaaa" background="#553636"/>
   <style name="SearchScope" background="#8a602c"/>
   <style name="Parentheses" foreground="#bec0c2" background="#1d545c"/>
   <style name="ParenthesesMismatch" background="#ff6aad"/>
@@ -57,6 +59,11 @@
   <style name="DiffDestLine" background="#588a2c"/>
   <style name="DiffDestChar" foreground="#2e2f30" background="#7cc33e"/>
   <style name="LogChangeLine" foreground="#d65645"/>
+  <style name="LogAuthorName" foreground="#ceffe5"/>
+  <style name="LogCommitDate" foreground="#00ff00"/>
+  <style name="LogCommitHash" foreground="#ff0000"/>
+  <style name="LogCommitSubject" foreground="#d6cf9a"/>
+  <style name="LogDecoration" foreground="#ff00ff"/>
   <style name="Warning" underlineColor="#d6c545" underlineStyle="SingleUnderline"/>
   <style name="WarningContext" underlineColor="#d6c545" underlineStyle="DotLine"/>
   <style name="Error" underlineColor="#d65645" underlineStyle="SingleUnderline"/>

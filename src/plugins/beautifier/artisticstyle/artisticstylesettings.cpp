@@ -32,6 +32,7 @@
 #include <coreplugin/icore.h>
 
 #include <utils/runextensions.h>
+#include <utils/stringutils.h>
 #include <utils/synchronousprocess.h>
 
 #include <QDateTime>
@@ -42,19 +43,17 @@
 
 namespace Beautifier {
 namespace Internal {
-namespace ArtisticStyle {
 
-namespace {
 const char USE_OTHER_FILES[]          = "useOtherFiles";
 const char USE_SPECIFIC_CONFIG_FILE[] = "useSpecificConfigFile";
 const char SPECIFIC_CONFIG_FILE[]     = "specificConfigFile";
 const char USE_HOME_FILE[]            = "useHomeFile";
 const char USE_CUSTOM_STYLE[]         = "useCustomStyle";
 const char CUSTOM_STYLE[]             = "customStyle";
-}
+const char SETTINGS_NAME[]            = "artisticstyle";
 
 ArtisticStyleSettings::ArtisticStyleSettings() :
-    AbstractSettings(Constants::ArtisticStyle::SETTINGS_NAME, ".astyle")
+    AbstractSettings(SETTINGS_NAME, ".astyle")
 {
     connect(&m_versionWatcher, &QFutureWatcherBase::finished,
             this, &ArtisticStyleSettings::helperSetVersion);
@@ -75,8 +74,8 @@ static int parseVersion(const QString &text)
     const QRegularExpression rx("([2-9]{1})\\.([0-9]{2})(\\.[1-9]{1})?$");
     const QRegularExpressionMatch match = rx.match(text);
     if (match.hasMatch()) {
-        const int major = match.capturedRef(1).toInt() * 100;
-        const int minor = match.capturedRef(2).toInt();
+        const int major = match.captured(1).toInt() * 100;
+        const int minor = match.captured(2).toInt();
         return major + minor;
     }
     return 0;
@@ -174,7 +173,7 @@ QString ArtisticStyleSettings::documentationFilePath() const
 {
     return Core::ICore::userResourcePath() + '/' + Beautifier::Constants::SETTINGS_DIRNAME + '/'
             + Beautifier::Constants::DOCUMENTATION_DIRNAME + '/'
-            + Constants::ArtisticStyle::SETTINGS_NAME + ".xml";
+            + SETTINGS_NAME + ".xml";
 }
 
 void ArtisticStyleSettings::createDocumentationFile() const
@@ -206,7 +205,7 @@ void ArtisticStyleSettings::createDocumentationFile() const
     for (QString line : lines) {
         line = line.trimmed();
         if ((line.startsWith("--") && !line.startsWith("---")) || line.startsWith("OR ")) {
-            const QStringList rawKeys = line.split(" OR ", QString::SkipEmptyParts);
+            const QStringList rawKeys = line.split(" OR ", Qt::SkipEmptyParts);
             for (QString k : rawKeys) {
                 k = k.trimmed();
                 k.remove('#');
@@ -249,6 +248,5 @@ void ArtisticStyleSettings::createDocumentationFile() const
     }
 }
 
-} // namespace ArtisticStyle
 } // namespace Internal
 } // namespace Beautifier

@@ -35,13 +35,13 @@
 #include <cmath>
 #include <sstream>
 
-namespace DesignTools {
+namespace QmlDesigner {
 
 CurveItem::CurveItem(QGraphicsItem *parent)
     : CurveEditorItem(parent)
     , m_id(0)
     , m_style()
-    , m_type(ValueType::Undefined)
+    , m_type(PropertyTreeItem::ValueType::Undefined)
     , m_component(PropertyTreeItem::Component::Generic)
     , m_transform()
     , m_keyframes()
@@ -52,7 +52,7 @@ CurveItem::CurveItem(unsigned int id, const AnimationCurve &curve, QGraphicsItem
     : CurveEditorItem(parent)
     , m_id(id)
     , m_style()
-    , m_type(ValueType::Undefined)
+    , m_type(PropertyTreeItem::ValueType::Undefined)
     , m_component(PropertyTreeItem::Component::Generic)
     , m_transform()
     , m_keyframes()
@@ -87,6 +87,16 @@ QRectF CurveItem::boundingRect() const
     for (auto *item : m_keyframes)
         bbox(bounds, item->keyframe());
 
+    if (auto *s = qobject_cast<GraphicsScene *>(scene())) {
+        bounds.setLeft(s->animationRangeMin());
+        bounds.setRight(s->animationRangeMax());
+    }
+
+    if (qFuzzyCompare(bounds.height(), 0.0)) {
+        auto tmp = CurveEditorStyle::defaultValueRange() / 2.0;
+        bounds.adjust(0.0, -tmp, 0.0, tmp);
+    }
+
     return m_transform.mapRect(bounds);
 }
 
@@ -119,6 +129,8 @@ void CurveItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidg
             } else {
                 if (locked())
                     pen.setColor(m_style.lockedColor);
+                else if (!segment.isLegal())
+                    pen.setColor(m_style.errorColor);
                 else if (isUnderMouse())
                     pen.setColor(m_style.hoverColor);
                 else if (hasSelectedKeyframe())
@@ -173,12 +185,47 @@ bool CurveItem::hasSelectedKeyframe() const
     return false;
 }
 
+bool CurveItem::hasEditableSegment(double time) const
+{
+    return curve().segment(time).interpolation() != Keyframe::Interpolation::Easing;
+}
+
+bool CurveItem::isFirst(const KeyframeItem *key) const
+{
+    if (m_keyframes.empty())
+        return false;
+
+    return m_keyframes.first() == key;
+}
+
+bool CurveItem::isLast(const KeyframeItem *key) const
+{
+    if (m_keyframes.empty())
+        return false;
+
+    return m_keyframes.last() == key;
+}
+
+int CurveItem::indexOf(const KeyframeItem *key) const
+{
+    if (m_keyframes.empty())
+        return -1;
+
+    int out = 0;
+    for (auto &&el : m_keyframes) {
+        if (el == key)
+            return out;
+        out++;
+    }
+    return -1;
+}
+
 unsigned int CurveItem::id() const
 {
     return m_id;
 }
 
-ValueType CurveItem::valueType() const
+PropertyTreeItem::ValueType CurveItem::valueType() const
 {
     return m_type;
 }
@@ -278,6 +325,22 @@ QVector<HandleItem *> CurveItem::handles() const
     return out;
 }
 
+CurveSegment CurveItem::segment(const KeyframeItem *keyframe, HandleItem::Slot slot) const
+{
+    auto finder = [keyframe](KeyframeItem *item) { return item == keyframe; };
+    auto iter = std::find_if(m_keyframes.begin(), m_keyframes.end(), finder);
+    if (iter == m_keyframes.end())
+        return CurveSegment();
+
+    int index = static_cast<int>(std::distance(m_keyframes.begin(), iter));
+    if (slot == HandleItem::Slot::Left && index > 0)
+        return CurveSegment(m_keyframes[index - 1]->keyframe(), keyframe->keyframe());
+    else if (slot == HandleItem::Slot::Right && index < (m_keyframes.size() - 1))
+        return CurveSegment(keyframe->keyframe(), m_keyframes[index + 1]->keyframe());
+
+    return CurveSegment();
+}
+
 void CurveItem::restore()
 {
     if (m_keyframes.empty())
@@ -322,7 +385,7 @@ void CurveItem::setHandleVisibility(bool visible)
         frame->setHandleVisibility(visible);
 }
 
-void CurveItem::setValueType(ValueType type)
+void CurveItem::setValueType(PropertyTreeItem::ValueType type)
 {
     m_type = type;
 }
@@ -336,7 +399,7 @@ void CurveItem::setCurve(const AnimationCurve &curve)
 {
     freeClear(m_keyframes);
 
-    for (auto frame : curve.keyframes()) {
+    for (const auto &frame : curve.keyframes()) {
         auto *item = new KeyframeItem(frame, this);
         item->setLocked(locked());
         item->setComponentTransform(m_transform);
@@ -413,6 +476,9 @@ void CurveItem::connect(GraphicsScene *scene)
 
 void CurveItem::insertKeyframeByTime(double time)
 {
+    if (locked())
+        return;
+
     AnimationCurve acurve = curve();
     acurve.insert(time);
     setCurve(acurve);
@@ -442,4 +508,4 @@ void CurveItem::emitCurveChanged()
     update();
 }
 
-} // End namespace DesignTools.
+} // End namespace QmlDesigner.

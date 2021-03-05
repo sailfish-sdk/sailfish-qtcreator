@@ -26,7 +26,7 @@
 
 #include "qmakeprojectmanager/qmakebuildconfiguration.h"
 
-#include <projectexplorer/projectconfigurationaspects.h>
+#include <utils/aspects.h>
 
 namespace Ios {
 namespace Internal {
@@ -36,7 +36,7 @@ class IosBuildConfiguration : public QmakeProjectManager::QmakeBuildConfiguratio
     Q_OBJECT
 
 public:
-    IosBuildConfiguration(ProjectExplorer::Target *target, Core::Id id);
+    IosBuildConfiguration(ProjectExplorer::Target *target, Utils::Id id);
 
 private:
     friend class IosBuildSettingsWidget;
@@ -46,8 +46,8 @@ private:
 
     void updateQmakeCommand();
 
-    ProjectExplorer::BaseStringAspect *m_signingIdentifier = nullptr;
-    ProjectExplorer::BaseBoolAspect *m_autoManagedSigning = nullptr;
+    Utils::StringAspect *m_signingIdentifier = nullptr;
+    Utils::BoolAspect *m_autoManagedSigning = nullptr;
 };
 
 class IosBuildConfigurationFactory : public QmakeProjectManager::QmakeBuildConfigurationFactory

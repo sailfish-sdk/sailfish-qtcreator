@@ -39,7 +39,6 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
-#include <QRegExp>
 #include <QSortFilterProxyModel>
 #include <QVBoxLayout>
 
@@ -154,7 +153,7 @@ AddRunConfigDialog::AddRunConfigDialog(Target *target, QWidget *parent)
     buttonBox->button(QDialogButtonBox::Ok)->setText(tr("Create"));
 
     connect(filterEdit, &QLineEdit::textChanged, this, [proxyModel](const QString &text) {
-        proxyModel->setFilterRegExp(QRegExp(text, Qt::CaseInsensitive));
+        proxyModel->setFilterRegularExpression(QRegularExpression(text, QRegularExpression::CaseInsensitiveOption));
     });
     connect(m_view, &TreeView::doubleClicked, this, [this] { accept(); });
     const auto updateOkButton = [buttonBox, this] {
@@ -184,7 +183,7 @@ void AddRunConfigDialog::accept()
     const TreeItem * const item = model->itemForIndex(proxyModel->mapToSource(selected.first()));
     QTC_ASSERT(item, return);
     m_creationInfo = static_cast<const CandidateTreeItem *>(item)->creationInfo();
-    QTC_ASSERT(m_creationInfo.id.isValid(), return);
+    QTC_ASSERT(m_creationInfo.factory, return);
     QDialog::accept();
 }
 

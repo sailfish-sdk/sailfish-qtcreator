@@ -50,6 +50,7 @@
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QLoggingCategory>
+#include <QRegularExpression>
 
 using namespace QmlDebug;
 using namespace QmlDebug::Constants;
@@ -67,7 +68,7 @@ QmlInspectorAgent::QmlInspectorAgent(QmlEngine *engine, QmlDebugConnection *conn
     : m_qmlEngine(engine)
     , m_inspectorToolsContext("Debugger.QmlInspector")
     , m_selectAction(new QAction(this))
-    , m_showAppOnTopAction(action(ShowAppOnTop))
+    , m_showAppOnTopAction(action(ShowAppOnTop)->action())
 {
     m_debugIdToIname.insert(WatchItem::InvalidId, "inspect");
     connect(action(ShowQmlObjectTree),
@@ -439,7 +440,7 @@ void QmlInspectorAgent::verifyAndInsertObjectInTree(const ObjectReference &objec
             const int firstIndex = int(strlen("inspect"));
             const int secondIndex = iname.indexOf('.', firstIndex + 1);
             if (secondIndex != -1)
-                engineId = iname.midRef(firstIndex + 1, secondIndex - firstIndex - 1).toInt();
+                engineId = iname.mid(firstIndex + 1, secondIndex - firstIndex - 1).toInt();
         }
 
         // Still not found? Maybe we're loading the engine itself.
@@ -464,7 +465,7 @@ void QmlInspectorAgent::verifyAndInsertObjectInTree(const ObjectReference &objec
             int lastIndex = iname.lastIndexOf('.');
             int secondLastIndex = iname.lastIndexOf('.', lastIndex - 1);
             if (secondLastIndex != WatchItem::InvalidId)
-                parentId = iname.midRef(secondLastIndex + 1, lastIndex - secondLastIndex - 1).toInt();
+                parentId = iname.mid(secondLastIndex + 1, lastIndex - secondLastIndex - 1).toInt();
             else
                 parentId = engineId;
         } else {
@@ -555,10 +556,11 @@ void QmlInspectorAgent::buildDebugIdHashRecursive(const ObjectReference &ref)
 
     // handle the case where the url contains the revision number encoded.
     // (for object created by the debugger)
-    static QRegExp rx("(.*)_(\\d+):(\\d+)$");
-    if (rx.exactMatch(fileUrl.path())) {
-        fileUrl.setPath(rx.cap(1));
-        lineNum += rx.cap(3).toInt() - 1;
+    const QRegularExpression rx("^(.*)_(\\d+):(\\d+)$");
+    const QRegularExpressionMatch match = rx.match(fileUrl.path());
+    if (match.hasMatch()) {
+        fileUrl.setPath(match.captured(1));
+        lineNum += match.captured(3).toInt() - 1;
     }
 
     const QString filePath = m_qmlEngine->toFileInProject(fileUrl);
@@ -709,10 +711,10 @@ void QmlInspectorAgent::toolsClientStateChanged(QmlDebugClient::State state)
     if (state == QmlDebugClient::Enabled) {
         Core::ICore::addAdditionalContext(m_inspectorToolsContext);
         Core::ActionManager::registerAction(m_selectAction,
-                                            Core::Id(Constants::QML_SELECTTOOL),
+                                            Utils::Id(Constants::QML_SELECTTOOL),
                                             m_inspectorToolsContext);
         Core::ActionManager::registerAction(m_showAppOnTopAction,
-                                            Core::Id(Constants::QML_SHOW_APP_ON_TOP),
+                                            Utils::Id(Constants::QML_SHOW_APP_ON_TOP),
                                             m_inspectorToolsContext);
 
         enableTools(m_qmlEngine->state() == InferiorRunOk);
@@ -721,9 +723,9 @@ void QmlInspectorAgent::toolsClientStateChanged(QmlDebugClient::State state)
     } else  {
         enableTools(false);
 
-        Core::ActionManager::unregisterAction(m_selectAction, Core::Id(Constants::QML_SELECTTOOL));
+        Core::ActionManager::unregisterAction(m_selectAction, Utils::Id(Constants::QML_SELECTTOOL));
         Core::ActionManager::unregisterAction(m_showAppOnTopAction,
-                                              Core::Id(Constants::QML_SHOW_APP_ON_TOP));
+                                              Utils::Id(Constants::QML_SHOW_APP_ON_TOP));
         Core::ICore::removeAdditionalContext(m_inspectorToolsContext);
     }
 }

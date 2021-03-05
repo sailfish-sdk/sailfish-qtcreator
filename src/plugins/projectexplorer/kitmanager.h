@@ -30,7 +30,6 @@
 #include "kit.h"
 
 #include <coreplugin/featureprovider.h>
-#include <coreplugin/id.h>
 
 #include <QObject>
 #include <QPair>
@@ -38,15 +37,20 @@
 
 #include <functional>
 
+QT_BEGIN_NAMESPACE
+class QLabel;
+QT_END_NAMESPACE
+
 namespace Utils {
 class Environment;
 class FilePath;
+class LayoutBuilder;
 class MacroExpander;
+class OutputLineParser;
 } // namespace Utils
 
 namespace ProjectExplorer {
 class Task;
-class IOutputParser;
 class KitAspectWidget;
 class KitManager;
 
@@ -69,7 +73,7 @@ public:
     using Item = QPair<QString, QString>;
     using ItemList = QList<Item>;
 
-    Core::Id id() const { return m_id; }
+    Utils::Id id() const { return m_id; }
     int priority() const { return m_priority; }
     QString displayName() const { return m_displayName; }
     QString description() const { return m_description; }
@@ -91,12 +95,12 @@ public:
     virtual KitAspectWidget *createConfigWidget(Kit *) const = 0;
 
     virtual void addToEnvironment(const Kit *k, Utils::Environment &env) const;
-    virtual IOutputParser *createOutputParser(const Kit *k) const;
+    virtual QList<Utils::OutputLineParser *> createOutputParsers(const Kit *k) const;
 
     virtual QString displayNamePostfix(const Kit *k) const;
 
-    virtual QSet<Core::Id> supportedPlatforms(const Kit *k) const;
-    virtual QSet<Core::Id> availableFeatures(const Kit *k) const;
+    virtual QSet<Utils::Id> supportedPlatforms(const Kit *k) const;
+    virtual QSet<Utils::Id> availableFeatures(const Kit *k) const;
 
     virtual void addToMacroExpander(ProjectExplorer::Kit *kit, Utils::MacroExpander *expander) const;
 
@@ -106,7 +110,7 @@ protected:
     KitAspect();
     ~KitAspect();
 
-    void setId(Core::Id id) { m_id = id; }
+    void setId(Utils::Id id) { m_id = id; }
     void setDisplayName(const QString &name) { m_displayName = name; }
     void setDescription(const QString &desc) { m_description = desc; }
     void makeEssential() { m_essential = true; }
@@ -116,7 +120,7 @@ protected:
 private:
     QString m_displayName;
     QString m_description;
-    Core::Id m_id;
+    Utils::Id m_id;
     int m_priority = 0; // The higher the closer to the top.
     bool m_essential = false;
 };
@@ -128,7 +132,7 @@ class PROJECTEXPLORER_EXPORT KitAspectWidget : public QObject
 public:
     KitAspectWidget(Kit *kit, const KitAspect *ki);
 
-    Core::Id kitInformationId() const;
+    Utils::Id kitInformationId() const;
 
     virtual void makeReadOnly() = 0;
     virtual void refresh() = 0;
@@ -137,19 +141,20 @@ public:
     virtual QWidget *mainWidget() const = 0;
     virtual QWidget *buttonWidget() const { return nullptr; }
 
+    void addToLayout(Utils::LayoutBuilder &builder);
+    void setVisible(bool visible);
+
     bool isSticky() const { return m_isSticky; }
 
     static QString msgManage();
 
     Kit *kit() const { return m_kit; }
 
-signals:
-    void dirty();
-
 protected:
     Kit *m_kit;
     const KitAspect *m_kitInformation;
     bool m_isSticky;
+    QLabel *m_label = nullptr;
 };
 
 class PROJECTEXPLORER_EXPORT KitManager : public QObject
@@ -162,14 +167,14 @@ public:
 
     static const QList<Kit *> kits();
     static Kit *kit(const Kit::Predicate &predicate);
-    static Kit *kit(Core::Id id);
+    static Kit *kit(Utils::Id id);
     static Kit *defaultKit();
 
     static const QList<KitAspect *> kitAspects();
-    static const QSet<Core::Id> irrelevantAspects();
-    static void setIrrelevantAspects(const QSet<Core::Id> &aspects);
+    static const QSet<Utils::Id> irrelevantAspects();
+    static void setIrrelevantAspects(const QSet<Utils::Id> &aspects);
 
-    static Kit *registerKit(const std::function<void(Kit *)> &init, Core::Id id = {});
+    static Kit *registerKit(const std::function<void(Kit *)> &init, Utils::Id id = {});
     static void deregisterKit(Kit *k);
     static void setDefaultKit(Kit *k);
 

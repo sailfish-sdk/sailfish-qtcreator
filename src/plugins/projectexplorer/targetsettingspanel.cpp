@@ -136,7 +136,7 @@ TargetSetupPageWrapper::TargetSetupPageWrapper(Project *project)
     auto box = new QDialogButtonBox(this);
 
     m_configureButton = new QPushButton(this);
-    m_configureButton->setText(tr("Configure Project"));
+    m_configureButton->setText(tr("&Configure Project"));
     box->addButton(m_configureButton, QDialogButtonBox::AcceptRole);
 
     auto hbox = new QHBoxLayout;
@@ -396,17 +396,16 @@ public:
     {
         Kit *kit = KitManager::kit(m_kitId);
         QTC_ASSERT(kit, return);
-        const QString kitName = kit->displayName();
         const QString projectName = m_project->displayName();
 
-        QAction *enableAction = menu->addAction(tr("Enable Kit \"%1\" for Project \"%2\"").arg(kitName, projectName));
+        QAction *enableAction = menu->addAction(tr("Enable Kit for Project \"%1\"").arg(projectName));
         enableAction->setEnabled(isSelectable && m_kitId.isValid() && !isEnabled());
         QObject::connect(enableAction, &QAction::triggered, [this, kit] {
             m_project->addTargetForKit(kit);
         });
 
         QAction * const enableForAllAction
-                = menu->addAction(tr("Enable Kit \"%1\" for All Projects").arg(kitName));
+                = menu->addAction(tr("Enable Kit for All Projects"));
         enableForAllAction->setEnabled(isSelectable);
         QObject::connect(enableForAllAction, &QAction::triggered, [kit] {
             for (Project * const p : SessionManager::projects()) {
@@ -415,7 +414,7 @@ public:
             }
         });
 
-        QAction *disableAction = menu->addAction(tr("Disable Kit \"%1\" for Project \"%2\"").arg(kitName, projectName));
+        QAction *disableAction = menu->addAction(tr("Disable Kit for Project \"%1\"").arg(projectName));
         disableAction->setEnabled(isSelectable && m_kitId.isValid() && isEnabled());
         QObject::connect(disableAction, &QAction::triggered, m_project, [this] {
             Target *t = target();
@@ -440,8 +439,7 @@ public:
             m_project->removeTarget(t);
         });
 
-        QAction *disableForAllAction
-                = menu->addAction(tr("Disable Kit \"%1\" for All Projects").arg(kitName));
+        QAction *disableForAllAction = menu->addAction(tr("Disable Kit for All Projects"));
         disableForAllAction->setEnabled(isSelectable);
         QObject::connect(disableForAllAction, &QAction::triggered, [kit] {
             for (Project * const p : SessionManager::projects()) {
@@ -614,13 +612,32 @@ public:
     QWidget *panel() const
     {
         if (!m_panel) {
-            m_panel = (m_subIndex == RunPage)
-                    ? new PanelsWidget(RunSettingsWidget::tr("Run Settings"),
-                                       QIcon(":/projectexplorer/images/RunSettings.png"),
-                                       new RunSettingsWidget(target()))
-                    : new PanelsWidget(QCoreApplication::translate("BuildSettingsPanel", "Build Settings"),
-                                       QIcon(":/projectexplorer/images/BuildSettings.png"),
-                                       new BuildSettingsWidget(target()));
+            QString splitterStateKey = "PanelSplitterState:"
+                    + m_project->projectFilePath().toString() + ':';
+            if (m_subIndex == RunPage) {
+                splitterStateKey += "Run";
+                m_panel = new PanelsWidget(RunSettingsWidget::tr("Run Settings"),
+                                           QIcon(":/projectexplorer/images/RunSettings.png"),
+                                           new RunSettingsWidget(target()));
+            } else {
+                splitterStateKey += "Build";
+                m_panel = new PanelsWidget(QCoreApplication::translate("BuildSettingsPanel", "Build Settings"),
+                                           QIcon(":/projectexplorer/images/BuildSettings.png"),
+                                           new BuildSettingsWidget(target()));
+            }
+            const auto panel = qobject_cast<PanelsWidget *>(m_panel.data());
+            const auto loadSplitterValue = [panel, splitterStateKey] {
+                const QByteArray splitterState = SessionManager::value(splitterStateKey).toByteArray();
+                if (!splitterState.isEmpty())
+                    panel->loadSplitterState(splitterState);
+            };
+            loadSplitterValue();
+            QObject::connect(SessionManager::instance(), &SessionManager::aboutToSaveSession,
+                             panel, [panel, splitterStateKey] {
+                SessionManager::setValue(splitterStateKey, panel->saveSplitterState());
+            });
+            QObject::connect(SessionManager::instance(), &SessionManager::sessionLoaded,
+                             panel, loadSplitterValue);
         }
         return m_panel;
     }

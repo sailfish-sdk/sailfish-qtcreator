@@ -36,7 +36,7 @@ class QEasingCurve;
 class QPainterPath;
 QT_END_NAMESPACE
 
-namespace DesignTools {
+namespace QmlDesigner {
 
 class CurveSegment
 {
@@ -46,6 +46,8 @@ public:
     CurveSegment(const Keyframe &first, const Keyframe &last);
 
     bool isValid() const;
+
+    bool isLegal() const;
 
     bool containsX(double x) const;
 
@@ -83,6 +85,10 @@ public:
 
     void setRight(const Keyframe &frame);
 
+    void moveLeftTo(const QPointF &pos);
+
+    void moveRightTo(const QPointF &pos);
+
     void setInterpolation(const Keyframe::Interpolation &interpol);
 
 private:
@@ -91,4 +97,4 @@ private:
     Keyframe m_right;
 };
 
-} // End namespace DesignTools.
+} // End namespace QmlDesigner.

@@ -33,6 +33,7 @@
 #include <utils/fancylineedit.h>
 #include <utils/pathchooser.h>
 #include <utils/runextensions.h>
+#include <utils/stringutils.h>
 
 #include <QDialogButtonBox>
 #include <QDir>
@@ -349,7 +350,7 @@ void SelectableFilesModel::collectFiles(Tree *root, Utils::FilePaths *result) co
 QList<Glob> SelectableFilesModel::parseFilter(const QString &filter)
 {
     QList<Glob> result;
-    const QStringList list = filter.split(QLatin1Char(';'), QString::SkipEmptyParts);
+    const QStringList list = filter.split(QLatin1Char(';'), Qt::SkipEmptyParts);
     for (const QString &e : list) {
         QString entry = e.trimmed();
         Glob g;
@@ -362,7 +363,8 @@ QList<Glob> SelectableFilesModel::parseFilter(const QString &filter)
             g.matchString = entry.mid(1);
         } else {
             g.mode = Glob::REGEXP;
-            g.matchRegexp = QRegExp(entry, Qt::CaseInsensitive, QRegExp::Wildcard);
+            const QString re = QRegularExpression::wildcardToRegularExpression(entry);
+            g.matchRegexp = QRegularExpression(re, QRegularExpression::CaseInsensitiveOption);
         }
         result.append(g);
     }
@@ -563,7 +565,7 @@ SelectableFilesWidget::SelectableFilesWidget(QWidget *parent) :
     connect(m_baseDirChooser, &Utils::PathChooser::validChanged,
             this, &SelectableFilesWidget::baseDirectoryChanged);
     connect(m_startParsingButton, &QAbstractButton::clicked,
-            this, [this]() { startParsing(m_baseDirChooser->fileName()); });
+            this, [this]() { startParsing(m_baseDirChooser->filePath()); });
 
     m_selectFilesFilterLabel->setText(tr("Select files matching:"));
     m_selectFilesFilterEdit->setText(selectFilter);
@@ -645,7 +647,7 @@ void SelectableFilesWidget::resetModel(const Utils::FilePath &path, const Utils:
     connect(m_model, &SelectableFilesModel::checkedFilesChanged,
             this, &SelectableFilesWidget::selectedFilesChanged);
 
-    m_baseDirChooser->setFileName(path);
+    m_baseDirChooser->setFilePath(path);
     m_view->setModel(m_model);
 
     startParsing(path);

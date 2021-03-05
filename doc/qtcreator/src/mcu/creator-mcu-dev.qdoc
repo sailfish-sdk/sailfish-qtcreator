@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the Qt Creator documentation.
@@ -49,46 +49,35 @@
     For a list of Qt for MCU reference implementations, see the
     \l{Qt for MCUs - Supported Target Platforms}{Qt for MCUs} documentation.
 
-    You use the \l{Connecting Bare Metal Devices}{Bare metal plugin} to connect
-    to a debug server provider for debugging on MCUs.
-
     \section1 Requirements
 
     To use \QC to develop QML applications for MCUs, you need the following:
 
     \list
         \li Qt for MCU SDK (only available for Windows)
-        \li The Bare Metal plugin
         \li \l{https://developer.arm.com/tools-and-software/open-source-software/developer-tools/gnu-toolchain/gnu-rm}
             {GNU ARM Embedded Toolchain}
-        \li The hardware-specific requirements vary depending on the hardware platform you are developing for.
-            For more information see:
-            \list
-                \li \l{Getting Started on NXP}
-                \li \l{Getting Started on STM}
-                \li \l{Getting Started on Renesas}
-             \endlist
     \endlist
+
+    The hardware-specific requirements vary depending on the hardware platform you are developing for.
+    For more information see:
+    \list
+        \li \l{Getting Started on NXP}
+        \li \l{Getting Started on STM}
+        \li \l{Getting Started on Renesas}
+     \endlist
 
     \section1 Setting Up the Development Environment
 
     You must download and install the required software and create connections
-    between \QC and MCUs. For more information, see \l{Getting Started on Windows}.
+    between \QC and MCUs. The following subsections guide you through the
+    setup process.
 
-    \section2 Enabling Bare Metal and MCU Plugins
+    \section2 MCU Plugin
 
-    To be able to develop for MCUs, you must enable the Bare Metal and MCU
-    plugins:
-
-    \list 1
-        \li Select \uicontrol Help > \uicontrol {About Plugins} >
-            \uicontrol {Device Support} > \uicontrol {Bare Metal} and
-            \uicontrol {MCU Support} to enable the Bare Metal and MCU
-            plugins.
-        \li Select \uicontrol {Restart Now} to restart \QC and load the plugins.
-        \li Create connections for debugging on the MCU board, as described in
-            \l{Connecting Bare Metal Devices}.
-    \endlist
+    To be able to develop applications for MCUs, you need the MCU plugin.
+    This plugin is enabled automatically by the Qt Installer when you
+    install Qt for MCUs.
 
     \section2 Specifying MCU Settings
 
@@ -103,28 +92,42 @@
             to the directory where you installed Qt for MCUs SDK.
         \li In the \uicontrol {Targets supported by the Qt for MCUs SDK}
             field, select your MCU board.
-        \li In the \uicontrol {GNU ARM Embedded Toolchain} field,
-            specify the path to the directory where you installed the
-            tool chain.
-        \li For STM32 boards:
+        \li In the \uicontrol Requirements section, ensure that the
+            platform-specific requirements are met. This varies depending
+            on the target chosen:
             \list
-                \li In the \uicontrol {STM32Cube SDK} field, specify the
-                    path to the directory where you installed the SDK.
-                \li In the \uicontrol {STM32Cube Programmer} field,
-                    specify the path to the directory where you
-                    installed the tool.
+                \li For STM32 targets:
+                    \list
+                        \li The \uicontrol {GNU ARM Embedded Toolchain} or
+                            \uicontrol {IAR ARM Compiler} path.
+                        \li The \uicontrol {STM32CubeProgrammer} install path.
+                        \li The \uicontrol {MCU SDK} for the chosen target.
+                        \li The \uicontrol {FreeRTOS Sources} for the chosen target.
+                    \endlist
+                 \li For NXP targets:
+                    \list
+                        \li The \uicontrol {GNU ARM Embedded Toolchain} or
+                            \uicontrol {IAR ARM Compiler} path.
+                        \li The \uicontrol {MCUXpresso IDE} install path.
+                        \li The \uicontrol {MCU SDK} for the chosen target.
+                        \li The \uicontrol {FreeRTOS Sources} for the chosen target.
+                    \endlist
+                 \li For Renesas targets:
+                    \list
+                        \li The \uicontrol {Green Hills Compiler} path.
+                        \li The \uicontrol {Renesas Graphics Library} path.
+                    \endlist
             \endlist
-        \li For NXP boards:
-            \list
-                \li In the \uicontrol {NXP EVKB-IMXRT 1050 SDK} field,
-                    specify the path to the directory where you
-                    installed the SDK.
-                \li In the \uicontrol {SEGGER JLink} field, specify the
-                    path to the directory where you installed the tool.
-            \endlist
-        \li Select \uicontrol Apply to save the settings and to generate
-            a MCU device and kit.
+        \li Select the
+            \uicontrol {Automatically create kits for all available targets on start}
+            option to create kits automatically.
+            \note You could also use \uicontrol {Create Kit} or
+                 \uicontrol{Remove Kit} to manually create or remove kits for the chosen
+                 target.
+        \li Select \uicontrol Apply to save the settings.
     \endlist
+    \note You must restart \QC if you chose to create kits automatically
+          for all the available targets.
 
     \section2 Adding MCU Devices
 
@@ -152,9 +155,10 @@
     \note This optional step is not necessary if you have already
     set up the MCU SDK as outlined in \l{Specifying MCU Settings}.
 
-    \QC automatically adds kits for building applications and running them
-    on the specified MCU boards when you select \uicontrol Apply in the
-    \uicontrol MCU tab after configuring the MCU tool chain.
+    \QC automatically adds kits for all the available targets, if
+    the
+    \uicontrol {Automatically create kits for all available targets on start}
+    option is enabled under the \uicontrol MCU settings tab.
 
     \image qtcreator-mcu-kit.png "MCU kits"
 

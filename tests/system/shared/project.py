@@ -507,7 +507,7 @@ def __getSupportedPlatforms__(text, templateName, getAsStrings=False):
     if templateName.startswith("Qt Quick Application - "):
         result = set([Targets.DESKTOP_5_10_1_DEFAULT, Targets.DESKTOP_5_14_1_DEFAULT])
     elif 'Supported Platforms' in text:
-        supports = text[text.find('Supported Platforms'):].split(":")[1].strip().split(" ")
+        supports = text[text.find('Supported Platforms'):].split(":")[1].strip().split("\n")
         result = set()
         if 'Desktop' in supports:
             if (version == None or version < "5.0") and not templateName.startswith("Qt Quick 2"):
@@ -617,7 +617,7 @@ def addCPlusPlusFile(name, template, projectName, forceOverwrite=False, addToVCS
     if name == None:
         test.fatal("File must have a name - got None.")
         return
-    __createProjectOrFileSelectType__("  C++", template, isProject=False)
+    __createProjectOrFileSelectType__("  C/C++", template, isProject=False)
     window = "{type='ProjectExplorer::JsonWizard' unnamed='1' visible='1'}"
     basePathEdit = waitForObject("{type='Utils::FancyLineEdit' unnamed='1' visible='1' "
                                  "window=%s}" % window)

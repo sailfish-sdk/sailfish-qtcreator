@@ -29,10 +29,6 @@
 
 #include <QtQuick3DRuntimeRender/private/qssgrendergeometry_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrenderlight_p.h>
-#include <QtQuick3D/private/qquick3darealight_p.h>
-#include <QtQuick3D/private/qquick3ddirectionallight_p.h>
-#include <QtQuick3D/private/qquick3dpointlight_p.h>
-#include <QtQuick3D/private/qquick3dspotlight_p.h>
 #include <QtCore/qmath.h>
 
 #include <limits>
@@ -49,25 +45,38 @@ LightGeometry::~LightGeometry()
 {
 }
 
-QQuick3DAbstractLight *QmlDesigner::Internal::LightGeometry::light() const
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+QString LightGeometry::name() const
 {
-    return m_light;
+    return objectName();
 }
 
-void QmlDesigner::Internal::LightGeometry::setLight(QQuick3DAbstractLight *light)
+void LightGeometry::setName(const QString &name)
 {
-    if (m_light == light)
+    setObjectName(name);
+    emit nameChanged();
+}
+#endif
+
+LightGeometry::LightType LightGeometry::lightType() const
+{
+    return m_lightType;
+}
+
+void LightGeometry::setLightType(LightGeometry::LightType lightType)
+{
+    if (m_lightType == lightType)
         return;
 
-    m_light = light;
+    m_lightType = lightType;
 
-    emit lightChanged();
+    emit lightTypeChanged();
     update();
 }
 
 QSSGRenderGraphObject *LightGeometry::updateSpatialNode(QSSGRenderGraphObject *node)
 {
-    if (!m_light)
+    if (m_lightType == LightType::Invalid)
         return node;
 
     node = QQuick3DGeometry::updateSpatialNode(node);
@@ -81,14 +90,22 @@ QSSGRenderGraphObject *LightGeometry::updateSpatialNode(QSSGRenderGraphObject *n
     QVector3D maxBounds;
     fillVertexData(vertexData, indexData, minBounds, maxBounds);
 
+    geometry->setStride(12);
+#if QT_VERSION < QT_VERSION_CHECK(6, 1, 0)
     geometry->addAttribute(QSSGRenderGeometry::Attribute::PositionSemantic, 0,
                            QSSGRenderGeometry::Attribute::ComponentType::F32Type);
     geometry->addAttribute(QSSGRenderGeometry::Attribute::IndexSemantic, 0,
                            QSSGRenderGeometry::Attribute::ComponentType::U16Type);
-    geometry->setStride(12);
+    geometry->setPrimitiveType(QSSGRenderGeometry::Lines);
+#else
+    geometry->addAttribute(QSSGMesh::RuntimeMeshData::Attribute::PositionSemantic, 0,
+                           QSSGMesh::Mesh::ComponentType::Float32);
+    geometry->addAttribute(QSSGMesh::RuntimeMeshData::Attribute::IndexSemantic, 0,
+                           QSSGMesh::Mesh::ComponentType::UnsignedInt16);
+    geometry->setPrimitiveType(QSSGMesh::Mesh::DrawMode::Lines);
+#endif
     geometry->setVertexData(vertexData);
     geometry->setIndexData(indexData);
-    geometry->setPrimitiveType(QSSGRenderGeometry::Lines);
     geometry->setBounds(minBounds, maxBounds);
 
     return node;
@@ -99,28 +116,25 @@ void LightGeometry::fillVertexData(QByteArray &vertexData, QByteArray &indexData
 {
     int vertexSize = 0;
     int indexSize = 0;
-    const int dirSegments = 12; // Segment lines in directional light circle
-    const int spotArc = 6; // Segment lines per cone line in spotlight arc
-    const int spotCone = 4; // Lines in spotlight cone
-    const int pointLightDensity = 5;
+    const int arc = 12; // Segment lines per cone line in spot/directional light arc
+    const int dirLines = 4; // Directional lines in spot/directional light
+    const quint16 segments = arc * dirLines;
+    const double segment = M_PI * 2. / double(segments);
 
-    if (qobject_cast<QQuick3DAreaLight *>(m_light)) {
-        // Area light model is a rectangle with perpendicular lines on corners
-        vertexSize = int(sizeof(float)) * 3 * 8;
-        indexSize = int(sizeof(quint16)) * 8 * 2;
-    } else if (qobject_cast<QQuick3DDirectionalLight *>(m_light)) {
+    if (m_lightType == LightType::Area) {
+        // Area light model is a rectangle
+        vertexSize = int(sizeof(float)) * 3 * 4;
+        indexSize = int(sizeof(quint16)) * 4 * 2;
+    } else if (m_lightType == LightType::Directional) {
         // Directional light model is a circle with perpendicular lines on circumference vertices
-        vertexSize = int(sizeof(float)) * 3 * dirSegments * 2;
-        indexSize = int(sizeof(quint16)) * dirSegments * 2 * 2;
-    } else if (qobject_cast<QQuick3DPointLight *>(m_light)) {
-        // Point light model is a set of lines radiating from central point.
-        // We reserve more than we need so we don't have to calculate the actual need here,
-        // and resize later when we know the exact count.
-        vertexSize = int(sizeof(float)) * 3 * pointLightDensity * pointLightDensity * 4;
-        indexSize = int(sizeof(quint16)) * pointLightDensity * pointLightDensity * 4;
-    } else if (qobject_cast<QQuick3DSpotLight *>(m_light)) {
-        vertexSize = int(sizeof(float)) * 3 * (spotArc * spotCone + 1);
-        indexSize = int(sizeof(quint16)) * (spotArc + 1) * spotCone * 2;
+        vertexSize = int(sizeof(float)) * 3 * (segments + dirLines);
+        indexSize = int(sizeof(quint16)) * (segments + dirLines) * 2;
+    } else if (m_lightType == LightType::Spot) {
+        vertexSize = int(sizeof(float)) * 3 * (segments + 1);
+        indexSize = int(sizeof(quint16)) * (segments + dirLines) * 2;
+    } else if (m_lightType == LightType::Point) {
+        vertexSize = int(sizeof(float)) * 3 * segments;
+        indexSize = int(sizeof(quint16)) * segments * 2;
     }
     vertexData.resize(vertexSize);
     indexData.resize(indexSize);
@@ -128,90 +142,55 @@ void LightGeometry::fillVertexData(QByteArray &vertexData, QByteArray &indexData
     auto dataPtr = reinterpret_cast<float *>(vertexData.data());
     auto indexPtr = reinterpret_cast<quint16 *>(indexData.data());
 
-    if (qobject_cast<QQuick3DAreaLight *>(m_light)) {
+    auto createCircle = [&](quint16 startIndex, float zVal, int xIdx, int yIdx, int zIdx) {
+        for (quint16 i = 0; i < segments; ++i) {
+            float x = float(qCos(i * segment));
+            float y = float(qSin(i * segment));
+            auto vecPtr = reinterpret_cast<QVector3D *>(dataPtr);
+            (*vecPtr)[xIdx] = x;
+            (*vecPtr)[yIdx] = y;
+            (*vecPtr)[zIdx] = zVal;
+            dataPtr += 3;
+            *indexPtr++ = startIndex + i; *indexPtr++ = startIndex + i + 1;
+        }
+        // Adjust the final index to complete the circle
+        *(indexPtr - 1) = startIndex;
+    };
+
+    if (m_lightType == LightType::Area) {
         *dataPtr++ = -1.f; *dataPtr++ = 1.f;  *dataPtr++ = 0.f;
         *dataPtr++ = -1.f; *dataPtr++ = -1.f; *dataPtr++ = 0.f;
         *dataPtr++ = 1.f;  *dataPtr++ = -1.f; *dataPtr++ = 0.f;
         *dataPtr++ = 1.f;  *dataPtr++ = 1.f;  *dataPtr++ = 0.f;
 
-        *dataPtr++ = -1.f; *dataPtr++ = 1.f;  *dataPtr++ = -1.f;
-        *dataPtr++ = -1.f; *dataPtr++ = -1.f; *dataPtr++ = -1.f;
-        *dataPtr++ = 1.f;  *dataPtr++ = -1.f; *dataPtr++ = -1.f;
-        *dataPtr++ = 1.f;  *dataPtr++ = 1.f;  *dataPtr++ = -1.f;
-
         *indexPtr++ = 0; *indexPtr++ = 1;
         *indexPtr++ = 1; *indexPtr++ = 2;
         *indexPtr++ = 2; *indexPtr++ = 3;
         *indexPtr++ = 3; *indexPtr++ = 0;
+    } else if (m_lightType == LightType::Directional) {
+        createCircle(0, 0.f, 0, 1, 2);
 
-        *indexPtr++ = 0; *indexPtr++ = 4;
-        *indexPtr++ = 1; *indexPtr++ = 5;
-        *indexPtr++ = 2; *indexPtr++ = 6;
-        *indexPtr++ = 3; *indexPtr++ = 7;
-    } else if (qobject_cast<QQuick3DDirectionalLight *>(m_light)) {
-        const double segment = M_PI * 2. / double(dirSegments);
-        for (quint16 i = 0; i < dirSegments; ++i) {
-            float x = float(qCos(i * segment));
-            float y = float(qSin(i * segment));
-            *dataPtr++ = x; *dataPtr++ = y; *dataPtr++ = 0.f;
-            *dataPtr++ = x; *dataPtr++ = y; *dataPtr++ = -1.f;
-            const quint16 base = i * 2;
-            *indexPtr++ = base; *indexPtr++ = base + 1;
-            *indexPtr++ = base; *indexPtr++ = base + 2;
+        // Dir lines
+        for (quint16 i = 0; i < dirLines; ++i) {
+            auto circlePtr = reinterpret_cast<float *>(vertexData.data()) + (3 * arc * i);
+            *dataPtr++ = *circlePtr; *dataPtr++ = *(circlePtr + 1); *dataPtr++ = -3.f;
+            *indexPtr++ = i * arc;
+            *indexPtr++ = i + segments;
         }
-        // Adjust the final index to complete the circle
-        *(--indexPtr) = 0;
-    } else if (qobject_cast<QQuick3DPointLight *>(m_light)) {
-        const double innerRad = .3;
-        vertexSize = 0;
-        indexSize = 0;
-        int vertexIndex = 0;
-        for (quint16 i = 0; i < pointLightDensity; ++i) {
-            double latAngle = (((.9 / (pointLightDensity - 1)) * i) + .05) * M_PI;
-            quint16 longPoints = pointLightDensity * 2 * qSin(latAngle);
-            latAngle -= M_PI_2;
-            const double longSegment = M_PI * 2. / double(longPoints);
-            for (quint16 j = 0; j < longPoints; ++j) {
-                double longAngle = longSegment * j;
-                float q = float(qCos(latAngle));
-                float x = float(qCos(longAngle) * q);
-                float y = float(qSin(latAngle));
-                float z = float(qSin(longAngle) * q);
-
-                *dataPtr++ = x * innerRad; *dataPtr++ = y * innerRad; *dataPtr++ = z * innerRad;
-                *dataPtr++ = x; *dataPtr++ = y; *dataPtr++ = z;
-                *indexPtr++ = vertexIndex; *indexPtr++ = vertexIndex + 1;
-
-                vertexIndex += 2;
-                vertexSize += 6 * sizeof(float);
-                indexSize += 2 * sizeof(quint16);
-            }
-        }
-        vertexData.resize(vertexSize);
-        indexData.resize(indexSize);
-    } else if (qobject_cast<QQuick3DSpotLight *>(m_light)) {
-        const quint16 segments = spotArc * spotCone;
-        const double segment = M_PI * 2. / double(segments);
-
-        // Circle
-        for (quint16 i = 0; i < segments; ++i) {
-            float x = float(qCos(i * segment));
-            float y = float(qSin(i * segment));
-            *dataPtr++ = x; *dataPtr++ = y; *dataPtr++ = -2.f;
-            *indexPtr++ = i; *indexPtr++ = i + 1;
-        }
-        // Adjust the final index to complete the circle
-        *(indexPtr - 1) = 0;
+    } else if (m_lightType == LightType::Spot) {
+        createCircle(0, -1.f, 0, 1, 2);
 
         // Cone tip
         *dataPtr++ = 0.f; *dataPtr++ = 0.f; *dataPtr++ = 0.f;
         quint16 tipIndex = segments;
 
         // Cone lines
-        for (quint16 i = 0; i < spotCone; ++i) {
+        for (quint16 i = 0; i < dirLines; ++i) {
             *indexPtr++ = tipIndex;
-            *indexPtr++ = i * spotArc;
+            *indexPtr++ = i * arc;
         }
+    } else if (m_lightType == LightType::Point) {
+        createCircle(0, 0.f, 0, 1, 2);
     }
 
     static const float floatMin = std::numeric_limits<float>::lowest();

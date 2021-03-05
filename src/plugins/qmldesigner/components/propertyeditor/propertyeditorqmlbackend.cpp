@@ -47,6 +47,8 @@
 #include <QApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QVector3D>
+#include <QVector2D>
 
 #include <QLoggingCategory>
 
@@ -166,10 +168,34 @@ QVariant properDefaultAuxiliaryProperties(const QmlObjectNode &qmlObjectNode,
         return 0;
     else if (propertyName == "breakPoint")
         return 50;
+    else if (propertyName == "transitionType")
+        return 0;
+    else if (propertyName == "type")
+        return 0;
+    else if (propertyName == "transitionRadius")
+        return 8;
+    else if (propertyName == "radius")
+        return 8;
+    else if (propertyName == "transitionBezier")
+        return 50;
+    else if (propertyName == "bezier")
+        return 50;
+    else if (propertyName == "labelPosition")
+        return 50.0;
+    else if (propertyName == "labelFlipSide")
+        return false;
     else if (propertyName == "customId")
         return QString();
     else if (propertyName == "joinConnection")
         return false;
+    else if (propertyName == "blockSize")
+        return 200;
+    else if (propertyName == "blockRadius")
+        return 18;
+    else if (propertyName == "showDialogLabel")
+        return false;
+    else if (propertyName == "dialogLabelPosition")
+        return Qt::TopRightCorner;
 
     return {};
 }
@@ -235,17 +261,17 @@ void PropertyEditorQmlBackend::setupAuxiliaryProperties(const QmlObjectNode &qml
     propertyNames.append("customId");
 
     if (itemNode.isFlowTransition()) {
-        propertyNames.append({"color", "width", "inOffset", "outOffset", "dash", "breakPoint"});
+        propertyNames.append({"color", "width", "inOffset", "outOffset", "dash", "breakPoint", "type", "radius", "bezier", "labelPosition", "labelFlipSide"});
     } else if (itemNode.isFlowItem()) {
         propertyNames.append({"color", "width", "inOffset", "outOffset", "joinConnection"});
     } else if (itemNode.isFlowActionArea()) {
         propertyNames.append({"color", "width", "fillColor", "outOffset", "dash"});
     } else if (itemNode.isFlowDecision()) {
-        propertyNames.append({"color", "width", "fillColor", "dash"});
+        propertyNames.append({"color", "width", "fillColor", "dash", "blockSize", "blockRadius", "showDialogLabel", "dialogLabelPosition"});
     } else if (itemNode.isFlowWildcard()) {
-        propertyNames.append({"color", "width", "fillColor", "dash"});
+        propertyNames.append({"color", "width", "fillColor", "dash", "blockSize", "blockRadius"});
     } else if (itemNode.isFlowView()) {
-        propertyNames.append({"transitionColor", "areaColor", "areaFillColor", "blockColor" });
+        propertyNames.append({"transitionColor", "areaColor", "areaFillColor", "blockColor", "transitionType", "transitionRadius", "transitionBezier"});
     }
 
     for (const PropertyName &propertyName : propertyNames) {
@@ -294,11 +320,36 @@ void PropertyEditorQmlBackend::createPropertyEditorValue(const QmlObjectNode &qm
 
 void PropertyEditorQmlBackend::setValue(const QmlObjectNode & , const PropertyName &name, const QVariant &value)
 {
-    PropertyName propertyName = name;
-    propertyName.replace('.', '_');
-    auto propertyValue = qobject_cast<PropertyEditorValue*>(variantToQObject(m_backendValuesPropertyMap.value(QString::fromUtf8(propertyName))));
-    if (propertyValue)
-        propertyValue->setValue(value);
+    // Vector*D values need to be split into their subcomponents
+    if (value.type() == QVariant::Vector2D) {
+        const char *suffix[2] = {"_x", "_y"};
+        auto vecValue = value.value<QVector2D>();
+        for (int i = 0; i < 2; ++i) {
+            PropertyName subPropName(name.size() + 2, '\0');
+            subPropName.replace(0, name.size(), name);
+            subPropName.replace(name.size(), 2, suffix[i]);
+            auto propertyValue = qobject_cast<PropertyEditorValue *>(variantToQObject(m_backendValuesPropertyMap.value(QString::fromUtf8(subPropName))));
+            if (propertyValue)
+                propertyValue->setValue(QVariant(vecValue[i]));
+        }
+    } else if (value.type() == QVariant::Vector3D) {
+        const char *suffix[3] = {"_x", "_y", "_z"};
+        auto vecValue = value.value<QVector3D>();
+        for (int i = 0; i < 3; ++i) {
+            PropertyName subPropName(name.size() + 2, '\0');
+            subPropName.replace(0, name.size(), name);
+            subPropName.replace(name.size(), 2, suffix[i]);
+            auto propertyValue = qobject_cast<PropertyEditorValue *>(variantToQObject(m_backendValuesPropertyMap.value(QString::fromUtf8(subPropName))));
+            if (propertyValue)
+                propertyValue->setValue(QVariant(vecValue[i]));
+        }
+    } else {
+        PropertyName propertyName = name;
+        propertyName.replace('.', '_');
+        auto propertyValue = qobject_cast<PropertyEditorValue *>(variantToQObject(m_backendValuesPropertyMap.value(QString::fromUtf8(propertyName))));
+        if (propertyValue)
+            propertyValue->setValue(value);
+    }
 }
 
 QQmlContext *PropertyEditorQmlBackend::context() {
@@ -491,7 +542,7 @@ inline bool dotPropertyHeuristic(const QmlObjectNode &node, const NodeMetaInfo &
     if (name.count('.') > 1)
         return false;
 
-    QList<QByteArray> list =name.split('.');
+    QList<QByteArray> list = name.split('.');
     const PropertyName parentProperty = list.first();
     const PropertyName itemProperty = list.last();
 
@@ -500,18 +551,14 @@ inline bool dotPropertyHeuristic(const QmlObjectNode &node, const NodeMetaInfo &
     NodeMetaInfo itemInfo = node.view()->model()->metaInfo("QtQuick.Item");
     NodeMetaInfo textInfo = node.view()->model()->metaInfo("QtQuick.Text");
     NodeMetaInfo rectangleInfo = node.view()->model()->metaInfo("QtQuick.Rectangle");
+    NodeMetaInfo imageInfo = node.view()->model()->metaInfo("QtQuick.Image");
 
-    if (itemInfo.hasProperty(itemProperty))
+    if (typeName == "font"
+            || itemInfo.hasProperty(itemProperty)
+            || textInfo.isSubclassOf(typeName)
+            || rectangleInfo.isSubclassOf(typeName)
+            || imageInfo.isSubclassOf(typeName))
         return false;
-
-    if (typeName == "font")
-        return false;
-
-    if (textInfo.isSubclassOf(typeName))
-            return false;
-
-    if (rectangleInfo.isSubclassOf(typeName))
-            return false;
 
     return true;
 }
@@ -525,92 +572,188 @@ QString PropertyEditorQmlBackend::templateGeneration(const NodeMetaInfo &type,
 
     const auto nodes = templateConfiguration()->children();
 
-    QStringList sectorTypes;
+    QStringList allTypes; // all template types
+    QStringList separateSectionTypes; // separate section types only
 
     for (const QmlJS::SimpleReaderNode::Ptr &node : nodes) {
         if (node->propertyNames().contains("separateSection"))
-            sectorTypes.append(variantToStringList(node->property("typeNames")));
+            separateSectionTypes.append(variantToStringList(node->property("typeNames")));
+
+        allTypes.append(variantToStringList(node->property("typeNames")));
     }
 
-    QStringList imports = variantToStringList(templateConfiguration()->property(QStringLiteral("imports")));
+    const QList<PropertyName> allProperties = type.propertyNames();
 
-    QString qmlTemplate = imports.join(QLatin1Char('\n')) + QLatin1Char('\n');
+    QMap<PropertyName, QList<PropertyName>> propertyMap;
+    QList<PropertyName> separateSectionProperties;
 
-    qmlTemplate += "Column {\n";
-    qmlTemplate += "anchors.left: parent.left\n";
-    qmlTemplate += "anchors.right: parent.right\n";
+    // Iterate over all properties and isolate the properties which have their own template
+    for (const PropertyName &propertyName : allProperties) {
+        if (propertyName.startsWith("__"))
+            continue; // private API
 
-    QList<PropertyName> orderedList = type.propertyNames();
-    Utils::sort(orderedList, [type, &sectorTypes](const PropertyName &left, const PropertyName &right){
-        const QString typeNameLeft = QString::fromLatin1(type.propertyTypeName(left));
-        const QString typeNameRight = QString::fromLatin1(type.propertyTypeName(right));
-        if (typeNameLeft == typeNameRight)
-            return left > right;
+        if (!superType.hasProperty(propertyName)
+                && type.propertyIsWritable(propertyName)
+                && dotPropertyHeuristic(node, type, propertyName)) {
+            const QString typeName = QString::fromLatin1(type.propertyTypeName(propertyName));
 
-        if (sectorTypes.contains(typeNameLeft)) {
-            if (sectorTypes.contains(typeNameRight))
-                return left > right;
-            return true;
-        } else if (sectorTypes.contains(typeNameRight)) {
-            return false;
-        }
-        return left > right;
-    });
+            // Check if a template for the type exists
+            if (allTypes.contains(typeName)) {
+                if (separateSectionTypes.contains(typeName)) { // template enforces separate section
+                    separateSectionProperties.append(propertyName);
+                } else {
+                    if (propertyName.contains('.')) {
+                        const PropertyName parentProperty = propertyName.split('.').first();
 
-    bool emptyTemplate = true;
-
-    bool sectionStarted = false;
-
-    foreach (const PropertyName &name, orderedList) {
-
-        if (name.startsWith("__"))
-            continue; //private API
-        PropertyName properName = name;
-
-        properName.replace('.', '_');
-
-        TypeName typeName = type.propertyTypeName(name);
-        //alias resolution only possible with instance
-        if (typeName == "alias" && node.isValid())
-            typeName = node.instanceType(name);
-
-        auto nodes = templateConfiguration()->children();
-
-        if (!superType.hasProperty(name) && type.propertyIsWritable(name) && dotPropertyHeuristic(node, type, name)) {
-
-            for (const QmlJS::SimpleReaderNode::Ptr &node : nodes) {
-                if (variantToStringList(node->property(QStringLiteral("typeNames"))).contains(QString::fromLatin1(typeName))) {
-                    const QString fileName = propertyTemplatesPath() + node->property(QStringLiteral("sourceFile")).toString();
-                    QFile file(fileName);
-                    if (file.open(QIODevice::ReadOnly)) {
-                        QString source = QString::fromUtf8(file.readAll());
-                        file.close();
-                        const bool section = node->propertyNames().contains("separateSection");
-                        if (section) {
-                        } else if (!sectionStarted) {
-                            qmlTemplate += QStringLiteral("Section {\n");
-                            qmlTemplate += QStringLiteral("caption: \"%1\"\n").arg(QString::fromUtf8(type.simplifiedTypeName()));
-                            qmlTemplate += "anchors.left: parent.left\n";
-                            qmlTemplate += "anchors.right: parent.right\n";
-                            qmlTemplate += QStringLiteral("SectionLayout {\n");
-                            sectionStarted = true;
-                        }
-
-                        qmlTemplate += source.arg(QString::fromUtf8(name)).arg(QString::fromUtf8(properName));
-                        emptyTemplate = false;
+                        if (propertyMap.contains(parentProperty))
+                            propertyMap[parentProperty].append(propertyName);
+                        else
+                            propertyMap[parentProperty] = { propertyName };
                     } else {
-                        qWarning().nospace() << "template definition source file not found:" << fileName;
+                        if (!propertyMap.contains(propertyName))
+                            propertyMap[propertyName] = {};
                     }
                 }
             }
         }
     }
-    if (sectionStarted) {
-        qmlTemplate += QStringLiteral("}\n"); //Section
-        qmlTemplate += QStringLiteral("}\n"); //SectionLayout
+
+    // Filter out the properties which have a basic type e.g. int, string, bool
+    QList<PropertyName> basicProperties;
+    for (auto k : propertyMap.keys()) {
+        if (propertyMap.value(k).empty()) {
+            basicProperties.append(k);
+            propertyMap.remove(k);
+        }
     }
 
-    qmlTemplate += "}\n";
+    Utils::sort(basicProperties);
+
+    auto findAndFillTemplate = [&nodes, &node, &type](const PropertyName &label,
+                                                      const PropertyName &property) {
+        PropertyName underscoreProperty = property;
+        underscoreProperty.replace('.', '_');
+
+        TypeName typeName = type.propertyTypeName(property);
+        // alias resolution only possible with instance
+        if (typeName == "alias" && node.isValid())
+            typeName = node.instanceType(property);
+
+        QString filledTemplate;
+        for (const QmlJS::SimpleReaderNode::Ptr &n : nodes) {
+            // Check if we have a template for the type
+            if (variantToStringList(n->property(QStringLiteral("typeNames"))).contains(QString::fromLatin1(typeName))) {
+                const QString fileName = propertyTemplatesPath() + n->property(QStringLiteral("sourceFile")).toString();
+                QFile file(fileName);
+                if (file.open(QIODevice::ReadOnly)) {
+                    QString source = QString::fromUtf8(file.readAll());
+                    file.close();
+                    filledTemplate = source.arg(QString::fromUtf8(label)).arg(QString::fromUtf8(underscoreProperty));
+                } else {
+                    qWarning().nospace() << "template definition source file not found:" << fileName;
+                }
+            }
+        }
+        return filledTemplate;
+    };
+
+    // QML specfics preparation
+    QStringList imports = variantToStringList(templateConfiguration()->property(QStringLiteral("imports")));
+    QString qmlTemplate = imports.join(QLatin1Char('\n')) + QLatin1Char('\n');
+    bool emptyTemplate = true;
+
+    const QString anchorLeftRight = "anchors.left: parent.left\nanchors.right: parent.right\n";
+    const QString paddingLeftTopBottom = "leftPadding: 0\ntopPadding: 0\nbottomPadding: 0\n";
+
+    qmlTemplate += "Column {\n";
+    qmlTemplate += anchorLeftRight;
+
+    if (node.modelNode().isComponent())
+        qmlTemplate += "ComponentButton {}\n";
+
+    qmlTemplate += "Section {\n";
+    qmlTemplate += "caption: \"User added properties\"\n";
+    qmlTemplate += anchorLeftRight;
+    qmlTemplate += paddingLeftTopBottom;
+    qmlTemplate += "Column {\n";
+    qmlTemplate += "width: parent.width\n";
+
+    // First the section containing properties of basic type e.g. int, string, bool
+    if (!basicProperties.empty()) {
+        emptyTemplate = false;
+
+        qmlTemplate += "Column {\n";
+        qmlTemplate += "width: parent.width\n";
+        qmlTemplate += "leftPadding: 8\n";
+        qmlTemplate += "rightPadding: 0\n";
+        qmlTemplate += "topPadding: 4\n";
+        qmlTemplate += "bottomPadding: 4\n";
+        qmlTemplate += "SectionLayout {\n";
+
+        for (const auto &p : qAsConst(basicProperties))
+            qmlTemplate += findAndFillTemplate(p, p);
+
+        qmlTemplate += "}\n"; // SectionLayout
+        qmlTemplate += "}\n"; // Column
+    }
+
+    // Second the section containing properties of complex type for which no specific template exists e.g. Button
+    if (!propertyMap.empty()) {
+        emptyTemplate = false;
+        for (const auto &k : propertyMap.keys()) {
+            TypeName parentTypeName = type.propertyTypeName(k);
+            // alias resolution only possible with instance
+            if (parentTypeName == "alias" && node.isValid())
+                parentTypeName = node.instanceType(k);
+
+            qmlTemplate += "Section {\n";
+            qmlTemplate += QStringLiteral("caption: \"%1 - %2\"\n").arg(QString::fromUtf8(k)).arg(QString::fromUtf8(parentTypeName));
+            qmlTemplate += anchorLeftRight;
+            qmlTemplate += "expanded: false\n";
+            qmlTemplate += "level: 1\n";
+            qmlTemplate += "SectionLayout {\n";
+
+            auto properties = propertyMap.value(k);
+            Utils::sort(properties);
+
+            for (const auto &p : qAsConst(properties)) {
+                const PropertyName shortName = p.contains('.') ? p.split('.').last() : p;
+                qmlTemplate += findAndFillTemplate(shortName, p);
+            }
+
+            qmlTemplate += "}\n"; // SectionLayout
+            qmlTemplate += "}\n"; // Section
+        }
+    }
+
+    // Third the section containing properties of complex type for which a specific template exists e.g. Rectangle, Image
+    if (!separateSectionProperties.empty()) {
+        emptyTemplate = false;
+        Utils::sort(separateSectionProperties);
+        for (const auto &p : qAsConst(separateSectionProperties)) {
+            TypeName parentTypeName = type.propertyTypeName(p);
+            // alias resolution only possible with instance
+            if (parentTypeName == "alias" && node.isValid())
+                parentTypeName = node.instanceType(p);
+
+            qmlTemplate += "Section {\n";
+            qmlTemplate += QStringLiteral("caption: \"%1 - %2\"\n").arg(QString::fromUtf8(p)).arg(QString::fromUtf8(parentTypeName));
+            qmlTemplate += anchorLeftRight;
+            qmlTemplate += paddingLeftTopBottom;
+            qmlTemplate += "level: 1\n";
+            qmlTemplate += "Column {\n";
+            qmlTemplate += "width: parent.width\n";
+
+            qmlTemplate += findAndFillTemplate(p, p);
+
+            qmlTemplate += "}\n"; // Column
+            qmlTemplate += "}\n"; // Section
+        }
+    }
+
+    qmlTemplate += "}\n"; // Column
+    qmlTemplate += "}\n"; // Section
+    qmlTemplate += "}\n"; // Column
 
     if (emptyTemplate)
         return QString();

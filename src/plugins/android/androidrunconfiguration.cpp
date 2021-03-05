@@ -31,6 +31,8 @@
 #include "androidmanager.h"
 #include "adbcommandswidget.h"
 
+#include <app/app_version.h>
+
 #include <projectexplorer/buildsystem.h>
 #include <projectexplorer/kitinformation.h>
 #include <projectexplorer/project.h>
@@ -39,11 +41,11 @@
 #include <qtsupport/qtkitinformation.h>
 
 #include <utils/detailswidget.h>
+#include <utils/layoutbuilder.h>
 #include <utils/qtcassert.h>
 #include <utils/qtcprocess.h>
 #include <utils/utilsicons.h>
 
-#include <QFormLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QSpacerItem>
@@ -55,7 +57,7 @@ using namespace Utils;
 
 namespace Android {
 
-BaseStringListAspect::BaseStringListAspect(const QString &settingsKey, Core::Id id)
+BaseStringListAspect::BaseStringListAspect(const QString &settingsKey, Utils::Id id)
 {
     setSettingsKey(settingsKey);
     setId(id);
@@ -83,7 +85,7 @@ void BaseStringListAspect::fromMap(const QVariantMap &map)
 
 void BaseStringListAspect::toMap(QVariantMap &data) const
 {
-    data.insert(settingsKey(), m_value);
+    saveToMap(data, m_value, QStringList());
 }
 
 QStringList BaseStringListAspect::value() const
@@ -104,24 +106,37 @@ void BaseStringListAspect::setLabel(const QString &label)
 }
 
 
-AndroidRunConfiguration::AndroidRunConfiguration(Target *target, Core::Id id)
+AndroidRunConfiguration::AndroidRunConfiguration(Target *target, Utils::Id id)
     : RunConfiguration(target, id)
 {
     auto envAspect = addAspect<EnvironmentAspect>();
     envAspect->addSupportedBaseEnvironment(tr("Clean Environment"), {});
 
-    addAspect<ArgumentsAspect>();
+    auto extraAppArgsAspect = addAspect<ArgumentsAspect>();
 
-    auto amStartArgsAspect = addAspect<BaseStringAspect>();
+    connect(extraAppArgsAspect, &BaseAspect::changed,
+            this, [target, extraAppArgsAspect]() {
+        if (target->buildConfigurations().first()->buildType() == BuildConfiguration::BuildType::Release) {
+            const QString buildKey = target->activeBuildKey();
+            target->buildSystem()->setExtraData(buildKey,
+                                                Android::Constants::ANDROID_APPLICATION_ARGUMENTS,
+                                                extraAppArgsAspect->arguments(target->macroExpander()));
+        }
+    });
+
+    auto amStartArgsAspect = addAspect<StringAspect>();
     amStartArgsAspect->setId(Constants::ANDROID_AMSTARTARGS);
     amStartArgsAspect->setSettingsKey("Android.AmStartArgsKey");
     amStartArgsAspect->setLabelText(tr("Activity manager start options:"));
-    amStartArgsAspect->setDisplayStyle(BaseStringAspect::LineEditDisplay);
+    amStartArgsAspect->setDisplayStyle(StringAspect::LineEditDisplay);
     amStartArgsAspect->setHistoryCompleter("Android.AmStartArgs.History");
 
-    auto warning = addAspect<BaseStringAspect>();
+    auto warning = addAspect<StringAspect>();
+    warning->setDisplayStyle(StringAspect::LabelDisplay);
     warning->setLabelPixmap(Icons::WARNING.pixmap());
-    warning->setValue(tr("If the \"am start\" options conflict, the application might not start."));
+    warning->setValue(tr("If the \"am start\" options conflict, the application might not start.\n"
+                         "%1 uses: am start -n <package_name>/<Activity_name> [-D].")
+                          .arg(Core::Constants::IDE_DISPLAY_NAME));
 
     auto preStartShellCmdAspect = addAspect<BaseStringListAspect>();
     preStartShellCmdAspect->setId(Constants::ANDROID_PRESTARTSHELLCMDLIST);

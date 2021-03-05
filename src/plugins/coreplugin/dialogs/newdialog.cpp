@@ -45,6 +45,8 @@
 
 Q_DECLARE_METATYPE(Core::IWizardFactory*)
 
+using namespace Utils;
+
 namespace {
 
 const int ICON_SIZE = 48;
@@ -84,7 +86,7 @@ public:
                         Id::fromStringList(ICore::settings()->value(BLACKLISTED_CATEGORIES_KEY).toStringList());
     }
 
-    void setPlatform(Core::Id platform)
+    void setPlatform(Id platform)
     {
         m_platform = platform;
         invalidateFilter();
@@ -114,7 +116,7 @@ public:
                 factoryOfItem(qobject_cast<QStandardItemModel*>(sourceModel())->itemFromIndex(sourceIndex));
 
         if (wizard) {
-            if (m_blacklistedCategories.contains(Core::Id::fromString(wizard->category())))
+            if (m_blacklistedCategories.contains(Id::fromString(wizard->category())))
                 return false;
             return wizard->isAvailable(m_platform);
         }
@@ -122,7 +124,7 @@ public:
         return true;
     }
 private:
-    Core::Id m_platform;
+    Id m_platform;
     QSet<Id> m_blacklistedCategories;
 };
 
@@ -228,8 +230,7 @@ NewDialog::NewDialog(QWidget *parent) :
     connect(m_ui->buttonBox, &QDialogButtonBox::accepted, this, &NewDialog::accept);
     connect(m_ui->buttonBox, &QDialogButtonBox::rejected, this, &NewDialog::reject);
 
-    connect(m_ui->comboBox,
-            QOverload<const QString &>::of(&QComboBox::currentIndexChanged),
+    connect(m_ui->comboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &NewDialog::setSelectedPlatform);
 }
 
@@ -458,9 +459,9 @@ void NewDialog::currentItemChanged(const QModelIndex &index)
             desciption += tr("Platform independent") + QLatin1String("</b>");
         else
             desciption += tr("Supported Platforms")
-                    + QLatin1String("</b>: <tt>")
-                    + displayNamesForSupportedPlatforms.join(QLatin1Char(' '))
-                    + QLatin1String("</tt>");
+                    + QLatin1String("</b>: <ul>")
+                    + "<li>" + displayNamesForSupportedPlatforms.join("</li><li>") + "</li>"
+                    + QLatin1String("</ul>");
 
         m_ui->templateDescription->setHtml(desciption);
 
@@ -519,7 +520,7 @@ void NewDialog::updateOkButton()
     m_okButton->setEnabled(currentWizardFactory() != nullptr);
 }
 
-void NewDialog::setSelectedPlatform(const QString & /*platform*/)
+void NewDialog::setSelectedPlatform(int /*platform*/)
 {
     //The static cast allows us to keep PlatformFilterProxyModel anonymous
     static_cast<PlatformFilterProxyModel*>(m_filterProxyModel)->setPlatform(selectedPlatform());

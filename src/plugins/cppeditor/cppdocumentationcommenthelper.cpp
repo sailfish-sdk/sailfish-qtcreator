@@ -162,13 +162,15 @@ bool handleDoxygenCppStyleContinuation(QTextCursor &cursor)
     // If the line does not start with the comment we don't
     // consider it as a continuation. Handles situations like:
     // void d(); ///<enter>
-    const QStringRef commentMarker = text.midRef(offset, 3);
+    if (offset + 3 > text.size())
+        return false;
+    const QStringView commentMarker = QStringView(text).mid(offset, 3);
     if (commentMarker != QLatin1String("///") && commentMarker != QLatin1String("//!"))
         return false;
 
     QString newLine(QLatin1Char('\n'));
-    newLine.append(text.leftRef(offset)); // indent correctly
-    newLine.append(commentMarker);
+    newLine.append(text.left(offset)); // indent correctly
+    newLine.append(commentMarker.toString());
     newLine.append(QLatin1Char(' '));
 
     cursor.insertText(newLine);
@@ -235,6 +237,7 @@ bool handleDoxygenContinuation(QTextCursor &cursor,
                     newLine.append(QLatin1String(" * "));
                 else
                     newLine.append(QLatin1String("   "));
+                offset += 3;
             } else {
                 // If '*' is not within a comment, skip.
                 QTextCursor cursorOnFirstNonWhiteSpace(cursor);
@@ -249,8 +252,9 @@ bool handleDoxygenContinuation(QTextCursor &cursor,
                     ++offset;
                 const QChar ch = leadingAsterisks ? QLatin1Char('*') : QLatin1Char(' ');
                 newLine.append(QString(offset - start, ch));
-                newLine.append(QLatin1Char(' '));
             }
+            for (; offset < blockPos && currentLine.at(offset) == ' '; ++offset)
+                newLine.append(QLatin1Char(' '));
             cursor.insertText(newLine);
             return true;
         }

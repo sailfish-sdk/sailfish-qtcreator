@@ -15,7 +15,12 @@ Product {
     property string gumboHeaderDir: gumboSrcDir + "/include/gumbo"
     property string litehtmlHeaderDir: path + "/litehtml/include/litehtml"
     property string mainHeaderDir: litehtmlHeaderDir + '/..'
-    property stringList sharedDefines: qbs.targetOS.contains("windows") ? ["LITEHTML_UTF8"] : []
+    property stringList sharedDefines: {
+        var defines = ["QLITEHTML_STATIC_LIBRARY"];
+        if (qbs.targetOS.contains("windows"))
+            defines.push("LITEHTML_UTF8");
+        return defines;
+    }
 
     cpp.defines: sharedDefines
     cpp.includePaths: {
@@ -36,6 +41,7 @@ Product {
             files: [
                 "container_qpainter.cpp",
                 "container_qpainter.h",
+                "container_qpainter_p.h",
                 "qlitehtmlwidget.cpp",
                 "qlitehtmlwidget.h",
             ]
@@ -130,6 +136,7 @@ Product {
             "element.cpp",
             "el_font.cpp",
             "el_image.cpp",
+            "el_li.cpp",
             "el_link.cpp",
             "el_para.cpp",
             "el_script.cpp",
@@ -144,6 +151,7 @@ Product {
             "html_tag.cpp",
             "iterators.cpp",
             "media_query.cpp",
+            "num_cvt.cpp",
             "style.cpp",
             "stylesheet.cpp",
             "table.cpp",
@@ -179,6 +187,7 @@ Product {
             "el_div.h",
             "el_font.h",
             "el_image.h",
+            "el_li.h",
             "el_link.h",
             "el_para.h",
             "el_script.h",
@@ -194,6 +203,7 @@ Product {
             "html_tag.h",
             "iterators.h",
             "media_query.h",
+            "num_cvt.h",
             "os_types.h",
             "style.h",
             "stylesheet.h",

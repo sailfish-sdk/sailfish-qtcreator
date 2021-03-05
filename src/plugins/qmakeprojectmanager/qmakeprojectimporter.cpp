@@ -80,7 +80,7 @@ struct DirectoryData
 namespace QmakeProjectManager {
 namespace Internal {
 
-const Core::Id QT_IS_TEMPORARY("Qmake.TempQt");
+const Utils::Id QT_IS_TEMPORARY("Qmake.TempQt");
 const char IOSQT[] = "Qt4ProjectManager.QtVersion.Ios"; // ugly
 
 QmakeProjectImporter::QmakeProjectImporter(const FilePath &path) :
@@ -126,7 +126,7 @@ QList<void *> QmakeProjectImporter::examineDirectory(const FilePath &importPath)
         qCDebug(logs) << "  Parsing makefile" << file;
         // find interesting makefiles
         QString makefile = importPath.toString() + QLatin1Char('/') + file;
-        MakeFileParse parse(makefile);
+        MakeFileParse parse(makefile, MakeFileParse::Mode::FilterKnownConfigValues);
         if (parse.makeFileState() != MakeFileParse::Okay) {
             qCDebug(logs) << "  Parsing the makefile failed" << makefile;
             continue;
@@ -206,7 +206,7 @@ bool QmakeProjectImporter::matchKit(void *directoryData, const Kit *k) const
 
     BaseQtVersion *kitVersion = QtKitAspect::qtVersion(k);
     QString kitSpec = QmakeKitAspect::mkspec(k);
-    ToolChain *tc = ToolChainKitAspect::toolChain(k, ProjectExplorer::Constants::CXX_LANGUAGE_ID);
+    ToolChain *tc = ToolChainKitAspect::cxxToolChain(k);
     if (kitSpec.isEmpty() && kitVersion)
         kitSpec = kitVersion->mkspecFor(tc);
     QMakeStepConfig::TargetArchConfig kitTargetArch = QMakeStepConfig::NoArch;

@@ -116,7 +116,7 @@ namespace ADS
          */
         bool testConfigFlag(DockManager::eConfigFlag flag) const
         {
-            return DockManager::configFlags().testFlag(flag);
+            return DockManager::testConfigFlag(flag);
         }
 
         /**
@@ -168,12 +168,18 @@ namespace ADS
         m_titleLabel->setText(m_dockWidget->windowTitle());
         m_titleLabel->setObjectName("dockWidgetTabLabel");
         m_titleLabel->setAlignment(Qt::AlignCenter);
-        QObject::connect(m_titleLabel, &ElidingLabel::elidedChanged, q, &DockWidgetTab::elidedChanged);
+        QObject::connect(m_titleLabel,
+                         &ElidingLabel::elidedChanged,
+                         q,
+                         &DockWidgetTab::elidedChanged);
 
         m_closeButton = createCloseButton();
         m_closeButton->setObjectName("tabCloseButton");
-        internal::setButtonIcon(m_closeButton, QStyle::SP_TitleBarCloseButton, TabCloseIcon);
+        internal::setButtonIcon(m_closeButton,
+                                QStyle::SP_TitleBarCloseButton,
+                                TabCloseIcon);
         m_closeButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        m_closeButton->setIconSize(QSize(14, 14));
         q->onDockWidgetFeaturesChanged();
         internal::setToolTip(m_closeButton, QObject::tr("Close Tab"));
         QObject::connect(m_closeButton,
@@ -189,11 +195,14 @@ namespace ADS
         boxLayout->setContentsMargins(2 * spacing, 0, 0, 0);
         boxLayout->setSpacing(0);
         q->setLayout(boxLayout);
-        boxLayout->addWidget(m_titleLabel, 1);
+        boxLayout->addWidget(m_titleLabel, 1, Qt::AlignVCenter);
         boxLayout->addSpacing(spacing);
-        boxLayout->addWidget(m_closeButton);
+        boxLayout->addWidget(m_closeButton, 0, Qt::AlignVCenter);
         boxLayout->addSpacing(qRound(spacing * 4.0 / 3.0));
-        boxLayout->setAlignment(Qt::AlignCenter);
+        boxLayout->setAlignment(Qt::AlignCenter | Qt::AlignVCenter);
+
+        if (DockManager::testConfigFlag(DockManager::FocusHighlighting))
+            m_closeButton->setCheckable(true);
 
         m_titleLabel->setVisible(true);
     }
@@ -226,18 +235,20 @@ namespace ADS
 
         qCInfo(adsLog) << "startFloating";
         m_dragState = draggingState;
-        QSize size = m_dockArea->size();
         AbstractFloatingWidget *floatingWidget = nullptr;
-        bool opaqueUndocking = DockManager::configFlags().testFlag(DockManager::OpaqueUndocking)
+        bool opaqueUndocking = DockManager::testConfigFlag(DockManager::OpaqueUndocking)
                                || (DraggingFloatingWidget != draggingState);
 
         // If section widget has multiple tabs, we take only one tab
         // If it has only one single tab, we can move the complete
         // dock area into floating widget
+        QSize size;
         if (m_dockArea->dockWidgetsCount() > 1) {
             floatingWidget = createFloatingWidget(m_dockWidget, opaqueUndocking);
+            size = m_dockWidget->size();
         } else {
             floatingWidget = createFloatingWidget(m_dockArea, opaqueUndocking);
+            size = m_dockArea->size();
         }
 
         if (DraggingFloatingWidget == draggingState) {
@@ -259,6 +270,8 @@ namespace ADS
         setAttribute(Qt::WA_NoMousePropagation, true);
         d->m_dockWidget = dockWidget;
         d->createLayout();
+        if (DockManager::testConfigFlag(DockManager::FocusHighlighting))
+            setFocusPolicy(Qt::ClickFocus);
     }
 
     DockWidgetTab::~DockWidgetTab()
@@ -352,9 +365,9 @@ namespace ADS
                 // If we undock, we need to restore the initial position of this
                 // tab because it looks strange if it remains on its dragged position
                 if (d->isDraggingState(DraggingTab)
-                    && !DockManager::configFlags().testFlag(DockManager::OpaqueUndocking)) {
+                    && !DockManager::testConfigFlag(DockManager::OpaqueUndocking))
                     parentWidget()->layout()->update();
-                }
+
                 d->startFloating();
             }
             return;
@@ -364,9 +377,9 @@ namespace ADS
         {
             // If we start dragging the tab, we save its initial position to
             // restore it later
-            if (DraggingTab != d->m_dragState) {
+            if (DraggingTab != d->m_dragState)
                 d->m_tabDragStartPosition = this->pos();
-            }
+
             d->m_dragState = DraggingTab;
             return;
         }
@@ -377,9 +390,8 @@ namespace ADS
     void DockWidgetTab::contextMenuEvent(QContextMenuEvent *event)
     {
         event->accept();
-        if (d->isDraggingState(DraggingFloatingWidget)) {
+        if (d->isDraggingState(DraggingFloatingWidget))
             return;
-        }
 
         d->saveDragStartMousePosition(event->globalPos());
         QMenu menu(this);
@@ -407,16 +419,26 @@ namespace ADS
         bool allTabsHaveCloseButton = d->testConfigFlag(DockManager::AllTabsHaveCloseButton);
         bool tabHasCloseButton = (activeTabHasCloseButton && active) | allTabsHaveCloseButton;
         d->m_closeButton->setVisible(dockWidgetClosable && tabHasCloseButton);
-        if (d->m_isActiveTab == active) {
+
+        // Focus related stuff
+        if (DockManager::testConfigFlag(DockManager::FocusHighlighting)
+            && !d->m_dockWidget->dockManager()->isRestoringState()) {
+            bool updateFocusStyle = false;
+            if (active && !hasFocus()) {
+                setFocus(Qt::OtherFocusReason);
+                updateFocusStyle = true;
+            }
+            if (d->m_isActiveTab == active) {
+                if (updateFocusStyle)
+                    updateStyle();
+                return;
+            }
+        } else if (d->m_isActiveTab == active) {
             return;
         }
 
         d->m_isActiveTab = active;
-
-        style()->unpolish(this);
-        style()->polish(this);
-        d->m_titleLabel->style()->unpolish(d->m_titleLabel);
-        d->m_titleLabel->style()->polish(d->m_titleLabel);
+        updateStyle();
         update();
         updateGeometry();
 
@@ -432,9 +454,8 @@ namespace ADS
     void DockWidgetTab::setIcon(const QIcon &icon)
     {
         QBoxLayout *boxLayout = qobject_cast<QBoxLayout *>(layout());
-        if (!d->m_iconLabel && icon.isNull()) {
+        if (!d->m_iconLabel && icon.isNull())
             return;
-        }
 
         if (!d->m_iconLabel) {
             d->m_iconLabel = new QLabel();
@@ -493,9 +514,9 @@ namespace ADS
 
     void DockWidgetTab::detachDockWidget()
     {
-        if (!d->m_dockWidget->features().testFlag(DockWidget::DockWidgetFloatable)) {
+        if (!d->m_dockWidget->features().testFlag(DockWidget::DockWidgetFloatable))
             return;
-        }
+
         d->saveDragStartMousePosition(QCursor::pos());
         d->startFloating(DraggingInactive);
     }
@@ -508,6 +529,7 @@ namespace ADS
             d->m_titleLabel->setToolTip(text);
         }
 #endif
+
         return Super::event(event);
     }
 
@@ -519,6 +541,23 @@ namespace ADS
             features.testFlag(DockWidget::DockWidgetClosable)
             && d->testConfigFlag(DockManager::RetainTabSizeWhenCloseButtonHidden));
         d->m_closeButton->setSizePolicy(sizePolicy);
+    }
+
+    void DockWidgetTab::setElideMode(Qt::TextElideMode mode)
+    {
+        d->m_titleLabel->setElideMode(mode);
+    }
+
+    void DockWidgetTab::updateStyle()
+    {
+        if (DockManager::testConfigFlag(DockManager::FocusHighlighting)) {
+            if (property("focused").toBool())
+                d->m_closeButton->setChecked(true);
+            else
+                d->m_closeButton->setChecked(false);
+        }
+
+        internal::repolishStyle(this, internal::RepolishDirectChildren);
     }
 
 } // namespace ADS

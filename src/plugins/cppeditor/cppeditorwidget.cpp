@@ -45,7 +45,6 @@
 #include <coreplugin/editormanager/documentmodel.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/find/searchresultwindow.h>
-#include <coreplugin/infobar.h>
 
 #include <cpptools/cppcanonicalsymbol.h>
 #include <cpptools/cppchecksymbols.h>
@@ -83,6 +82,7 @@
 #include <cplusplus/ASTPath.h>
 #include <cplusplus/FastPreprocessor.h>
 #include <cplusplus/MatchingText.h>
+#include <utils/infobar.h>
 #include <utils/progressindicator.h>
 #include <utils/qtcassert.h>
 #include <utils/textutils.h>
@@ -91,7 +91,6 @@
 #include <QAction>
 #include <QApplication>
 #include <QElapsedTimer>
-#include <QFutureWatcher>
 #include <QMenu>
 #include <QPointer>
 #include <QTextEdit>
@@ -105,6 +104,7 @@ using namespace Core;
 using namespace CPlusPlus;
 using namespace CppTools;
 using namespace TextEditor;
+using namespace Utils;
 
 namespace CppEditor {
 namespace Internal {
@@ -326,7 +326,8 @@ void CppEditorWidget::onCodeWarningsUpdated(unsigned revision,
     if (revision != documentRevision())
         return;
 
-    setExtraSelections(TextEditorWidget::CodeWarningsSelection, selections);
+    setExtraSelections(TextEditorWidget::CodeWarningsSelection,
+                       unselectLeadingWhitespace(selections));
     setRefactorMarkers(refactorMarkers + RefactorMarker::filterOutType(
             this->refactorMarkers(), CppTools::Constants::CPP_CLANG_FIXIT_AVAILABLE_MARKER_ID));
 }
@@ -386,7 +387,7 @@ static void onReplaceUsagesClicked(const QString &text,
 
 static QTextDocument *getOpenDocument(const QString &path)
 {
-    const IDocument *document = DocumentModel::documentForFilePath(path);
+    const IDocument *document = DocumentModel::documentForFilePath(FilePath::fromString(path));
     if (document)
         return qobject_cast<const TextDocument *>(document)->document();
 
@@ -696,6 +697,7 @@ void CppEditorWidget::switchDeclarationDefinition(bool inNextSplit)
     // Find function declaration or definition under cursor
     Function *functionDefinitionSymbol = nullptr;
     Symbol *functionDeclarationSymbol = nullptr;
+    Symbol *declarationSymbol = nullptr;
 
     ASTPath astPathFinder(d->m_lastSemanticInfo.doc);
     const QList<AST *> astPath = astPathFinder(textCursor());
@@ -707,9 +709,12 @@ void CppEditorWidget::switchDeclarationDefinition(bool inNextSplit)
         } else if (SimpleDeclarationAST *simpleDeclaration = ast->asSimpleDeclaration()) {
             if (List<Symbol *> *symbols = simpleDeclaration->symbols) {
                 if (Symbol *symbol = symbols->value) {
-                    if (symbol->isDeclaration() && symbol->type()->isFunctionType()) {
-                        functionDeclarationSymbol = symbol;
-                        break; // Function declaration found!
+                    if (symbol->isDeclaration()) {
+                        declarationSymbol = symbol;
+                        if (symbol->type()->isFunctionType()) {
+                            functionDeclarationSymbol = symbol;
+                            break; // Function declaration found!
+                        }
                     }
                 }
             }
@@ -721,6 +726,11 @@ void CppEditorWidget::switchDeclarationDefinition(bool inNextSplit)
     if (functionDeclarationSymbol) {
         Symbol *symbol = d->m_modelManager->symbolFinder()
                 ->findMatchingDefinition(functionDeclarationSymbol, d->m_modelManager->snapshot());
+        if (symbol)
+            symbolLink = symbol->toLink();
+    } else if (declarationSymbol) {
+        Symbol *symbol = d->m_modelManager->symbolFinder()
+                ->findMatchingVarDefinition(declarationSymbol, d->m_modelManager->snapshot());
         if (symbol)
             symbolLink = symbol->toLink();
     } else if (functionDefinitionSymbol) {
@@ -860,7 +870,7 @@ protected:
 QMenu *CppEditorWidget::createRefactorMenu(QWidget *parent) const
 {
     auto *menu = new QMenu(tr("&Refactor"), parent);
-    menu->addAction(ActionManager::command(Constants::RENAME_SYMBOL_UNDER_CURSOR)->action());
+    menu->addAction(ActionManager::command(TextEditor::Constants::RENAME_SYMBOL)->action());
 
     // ### enable
     // updateSemanticInfo(m_semanticHighlighter->semanticInfo(currentSource()));
@@ -1006,13 +1016,16 @@ void CppEditorWidget::updateSemanticInfo(const SemanticInfo &semanticInfo,
 
 AssistInterface *CppEditorWidget::createAssistInterface(AssistKind kind, AssistReason reason) const
 {
-    if (kind == Completion) {
-        if (CppCompletionAssistProvider *cap = cppEditorDocument()->completionAssistProvider()) {
+    if (kind == Completion || kind == FunctionHint) {
+        CppCompletionAssistProvider * const cap = kind == Completion
+                ? cppEditorDocument()->completionAssistProvider()
+                : cppEditorDocument()->functionHintAssistProvider();
+        if (cap) {
             LanguageFeatures features = LanguageFeatures::defaultFeatures();
             if (Document::Ptr doc = d->m_lastSemanticInfo.doc)
                 features = doc->languageFeatures();
             features.objCEnabled |= cppEditorDocument()->isObjCEnabled();
-            return cap->createAssistInterface(textDocument()->filePath().toString(),
+            return cap->createAssistInterface(textDocument()->filePath(),
                                               this,
                                               features,
                                               position(),
@@ -1090,7 +1103,7 @@ void CppEditorWidget::onFunctionDeclDefLinkFound(QSharedPointer<FunctionDeclDefL
     abortDeclDefLink();
     d->m_declDefLink = link;
     IDocument *targetDocument = DocumentModel::documentForFilePath(
-        d->m_declDefLink->targetFile->fileName());
+        FilePath::fromString(d->m_declDefLink->targetFile->fileName()));
     if (textDocument() != targetDocument) {
         if (auto textDocument = qobject_cast<BaseTextDocument *>(targetDocument))
             connect(textDocument,
@@ -1123,7 +1136,7 @@ void CppEditorWidget::abortDeclDefLink()
         return;
 
     IDocument *targetDocument = DocumentModel::documentForFilePath(
-        d->m_declDefLink->targetFile->fileName());
+        FilePath::fromString(d->m_declDefLink->targetFile->fileName()));
     if (textDocument() != targetDocument) {
         if (auto textDocument = qobject_cast<BaseTextDocument *>(targetDocument))
             disconnect(textDocument,
@@ -1152,6 +1165,63 @@ void CppEditorWidget::invokeTextEditorWidgetAssist(TextEditor::AssistKind assist
                                                    TextEditor::IAssistProvider *provider)
 {
     invokeAssist(assistKind, provider);
+}
+
+const QList<QTextEdit::ExtraSelection> CppEditorWidget::unselectLeadingWhitespace(
+        const QList<QTextEdit::ExtraSelection> &selections)
+{
+    QList<QTextEdit::ExtraSelection> filtered;
+    for (const QTextEdit::ExtraSelection &sel : selections) {
+        QList<QTextEdit::ExtraSelection> splitSelections;
+        int firstNonWhitespacePos = -1;
+        int lastNonWhitespacePos = -1;
+        bool split = false;
+        const QTextBlock firstBlock = sel.cursor.document()->findBlock(sel.cursor.selectionStart());
+        bool inIndentation = firstBlock.position() == sel.cursor.selectionStart();
+        const auto createSplitSelection = [&] {
+            QTextEdit::ExtraSelection newSelection;
+            newSelection.cursor = QTextCursor(sel.cursor.document());
+            newSelection.cursor.setPosition(firstNonWhitespacePos);
+            newSelection.cursor.setPosition(lastNonWhitespacePos + 1, QTextCursor::KeepAnchor);
+            newSelection.format = sel.format;
+            splitSelections << newSelection;
+        };
+        for (int i = sel.cursor.selectionStart(); i < sel.cursor.selectionEnd(); ++i) {
+            const QChar curChar = sel.cursor.document()->characterAt(i);
+            if (!curChar.isSpace()) {
+                if (firstNonWhitespacePos == -1)
+                    firstNonWhitespacePos = i;
+                lastNonWhitespacePos = i;
+            }
+            if (!inIndentation) {
+                if (curChar == QChar::ParagraphSeparator)
+                    inIndentation = true;
+                continue;
+            }
+            if (curChar == QChar::ParagraphSeparator)
+                continue;
+            if (curChar.isSpace()) {
+                if (firstNonWhitespacePos != -1) {
+                    createSplitSelection();
+                    firstNonWhitespacePos = -1;
+                    lastNonWhitespacePos = -1;
+                }
+                split = true;
+                continue;
+            }
+            inIndentation = false;
+        }
+
+        if (!split) {
+            filtered << sel;
+            continue;
+        }
+
+        if (firstNonWhitespacePos != -1)
+            createSplitSelection();
+        filtered << splitSelections;
+    }
+    return filtered;
 }
 
 } // namespace Internal

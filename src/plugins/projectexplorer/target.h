@@ -32,6 +32,8 @@
 
 QT_FORWARD_DECLARE_CLASS(QIcon)
 
+namespace Utils { class MacroExpander; }
+
 namespace ProjectExplorer {
 class BuildConfiguration;
 class BuildTargetInfo;
@@ -51,9 +53,11 @@ class PROJECTEXPLORER_EXPORT Target : public QObject
     friend class SessionManager; // for setActiveBuild and setActiveDeployConfiguration
     Q_OBJECT
 
-    struct _constructor_tag { explicit _constructor_tag() = default; };
-
 public:
+    struct _constructor_tag
+    {
+        explicit _constructor_tag() = default;
+    };
     Target(Project *parent, Kit *k, _constructor_tag);
     ~Target() override;
 
@@ -63,9 +67,12 @@ public:
     Kit *kit() const;
     BuildSystem *buildSystem() const;
 
-    Core::Id id() const;
+    Utils::Id id() const;
     QString displayName() const;
     QString toolTip() const;
+
+    static QString displayNameKey();
+    static QString deviceTypeKey();
 
     // Build configuration
     void addBuildConfiguration(BuildConfiguration *bc);
@@ -103,7 +110,7 @@ public:
     QVariant namedSettings(const QString &name) const;
     void setNamedSettings(const QString &name, const QVariant &value);
 
-    QVariant additionalData(Core::Id id) const;
+    QVariant additionalData(Utils::Id id) const;
     MakeInstallCommand makeInstallCommand(const QString &installRoot) const;
 
     Utils::MacroExpander *macroExpander() const;
@@ -116,8 +123,9 @@ public:
 
     DeploymentData deploymentData() const;
     DeploymentData buildSystemDeploymentData() const;
-    const QList<BuildTargetInfo> applicationTargets() const;
     BuildTargetInfo buildTarget(const QString &buildKey) const;
+
+    QString activeBuildKey() const; // Build key of active run configuaration
 
 signals:
     void targetEnabled(bool);

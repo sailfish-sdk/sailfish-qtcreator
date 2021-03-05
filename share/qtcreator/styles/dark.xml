@@ -33,6 +33,8 @@
   <style name="AutoComplete" foreground="#a0a0ff" background="#333333"/>
   <style name="Preprocessor" foreground="#5555ff"/>
   <style name="SearchResult" background="#555500"/>
+  <style name="SearchResultAlt1" foreground="#aaaaff" background="#363655"/>
+  <style name="SearchResultAlt2" foreground="#ffaaaa" background="#553636"/>
   <style name="SearchScope" background="#222200"/>
   <style name="Selection" foreground="#000000" background="#aaaaaa"/>
   <style name="Static" foreground="#55ff55" italic="true"/>
@@ -58,4 +60,9 @@
   <style name="DiffDestLine" background="#2d8c2d"/>
   <style name="DiffDestChar" foreground="#000000" background="#41c341"/>
   <style name="LogChangeLine" foreground="#808000"/>
+  <style name="LogAuthorName" foreground="#ceffe5"/>
+  <style name="LogCommitDate" foreground="#00ff00"/>
+  <style name="LogCommitHash" foreground="#ff0000"/>
+  <style name="LogCommitSubject" foreground="#d6cf9a"/>
+  <style name="LogDecoration" foreground="#ff00ff"/>
 </style-scheme>

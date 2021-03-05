@@ -28,9 +28,6 @@
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/task.h>
 
-#include <texteditor/fontsettings.h>
-#include <texteditor/texteditorsettings.h>
-
 #include <QRegularExpression>
 
 using namespace ProjectExplorer;
@@ -59,37 +56,28 @@ SdccParser::SdccParser()
     setObjectName("SdccParser");
 }
 
-Core::Id SdccParser::id()
+Utils::Id SdccParser::id()
 {
     return "BareMetal.OutputParser.Sdcc";
 }
 
 void SdccParser::newTask(const Task &task)
 {
-    doFlush();
+    flush();
     m_lastTask = task;
     m_lines = 1;
 }
 
 void SdccParser::amendDescription(const QString &desc)
 {
-    const int start = m_lastTask.description.count() + 1;
-    m_lastTask.description.append('\n');
-    m_lastTask.description.append(desc);
-
-    QTextLayout::FormatRange fr;
-    fr.start = start;
-    fr.length = m_lastTask.description.count() + 1;
-    fr.format.setFont(TextEditor::TextEditorSettings::fontSettings().font());
-    fr.format.setFontStyleHint(QFont::Monospace);
-    m_lastTask.formats.append(fr);
-
+    m_lastTask.details.append(desc);
     ++m_lines;
 }
 
-void SdccParser::stdError(const QString &line)
+OutputLineParser::Result SdccParser::handleLine(const QString &line, OutputFormat type)
 {
-    IOutputParser::stdError(line);
+    if (type == StdOutFormat)
+        return Status::NotHandled;
 
     const QString lne = rightTrimmed(line);
 
@@ -106,8 +94,11 @@ void SdccParser::stdError(const QString &line)
         const int lineno = match.captured(LineNumberIndex).toInt();
         const Task::TaskType type = taskType(match.captured(MessageTypeIndex));
         const QString descr = match.captured(MessageTextIndex);
-        newTask(CompileTask(type, descr, fileName, lineno));
-        return;
+        newTask(CompileTask(type, descr, absoluteFilePath(fileName), lineno));
+        LinkSpecs linkSpecs;
+        addLinkSpecForAbsoluteFilePath(linkSpecs, m_lastTask.file, m_lastTask.line, match,
+                                       FilePathIndex);
+        return {Status::InProgress, linkSpecs};
     }
 
     re.setPattern("^(.+\\.\\S+):(\\d+): (Error|error|syntax error): (.+)$");
@@ -120,8 +111,11 @@ void SdccParser::stdError(const QString &line)
         const int lineno = match.captured(LineNumberIndex).toInt();
         const Task::TaskType type = taskType(match.captured(MessageTypeIndex));
         const QString descr = match.captured(MessageTextIndex);
-        newTask(CompileTask(type, descr, fileName, lineno));
-        return;
+        newTask(CompileTask(type, descr, absoluteFilePath(fileName), lineno));
+        LinkSpecs linkSpecs;
+        addLinkSpecForAbsoluteFilePath(linkSpecs, m_lastTask.file, m_lastTask.line, match,
+                                       FilePathIndex);
+        return {Status::InProgress, linkSpecs};
     }
 
     re.setPattern("^at (\\d+): (warning|error) \\d+: (.+)$");
@@ -131,7 +125,7 @@ void SdccParser::stdError(const QString &line)
         const Task::TaskType type = taskType(match.captured(MessageTypeIndex));
         const QString descr = match.captured(MessageTextIndex);
         newTask(CompileTask(type, descr));
-        return;
+        return Status::InProgress;
     }
 
     re.setPattern("^\\?ASlink-(Warning|Error)-(.+)$");
@@ -141,30 +135,27 @@ void SdccParser::stdError(const QString &line)
         const Task::TaskType type = taskType(match.captured(MessageTypeIndex));
         const QString descr = match.captured(MessageTextIndex);
         newTask(CompileTask(type, descr));
-        return;
+        return Status::InProgress;
     }
 
     if (!m_lastTask.isNull()) {
         amendDescription(lne);
-        return;
+        return Status::InProgress;
     }
 
-    doFlush();
+    flush();
+    return Status::NotHandled;
 }
 
-void SdccParser::stdOutput(const QString &line)
-{
-    IOutputParser::stdOutput(line);
-}
-
-void SdccParser::doFlush()
+void SdccParser::flush()
 {
     if (m_lastTask.isNull())
         return;
 
+    setDetailsFormat(m_lastTask);
     Task t = m_lastTask;
     m_lastTask.clear();
-    emit addTask(t, m_lines, 1);
+    scheduleTask(t, m_lines, 1);
     m_lines = 0;
 }
 
@@ -207,7 +198,7 @@ void BareMetalPlugin::testSdccOutputParsers_data()
             << QString::fromLatin1("c:\\foo\\main.c:63: Error: Some error")
             << OutputParserTester::STDERR
             << QString()
-            << QString::fromLatin1("c:\\foo\\main.c:63: Error: Some error\n")
+            << QString()
             << (Tasks() << CompileTask(Task::Error,
                                        "Some error",
                                        FilePath::fromUserInput("c:\\foo\\main.c"),
@@ -218,7 +209,7 @@ void BareMetalPlugin::testSdccOutputParsers_data()
             << QString::fromLatin1("c:\\foo\\main.c:63: warning 123: Some warning")
             << OutputParserTester::STDERR
             << QString()
-            << QString::fromLatin1("c:\\foo\\main.c:63: warning 123: Some warning\n")
+            << QString()
             << (Tasks() << CompileTask(Task::Warning,
                                        "Some warning",
                                        FilePath::fromUserInput("c:\\foo\\main.c"),
@@ -231,9 +222,7 @@ void BareMetalPlugin::testSdccOutputParsers_data()
                                    "  details #2")
             << OutputParserTester::STDERR
             << QString()
-            << QString::fromLatin1("c:\\foo\\main.c:63: warning 123: Some warning\n"
-                                   "details #1\n"
-                                   "  details #2\n")
+            << QString()
             << (Tasks() << CompileTask(Task::Warning,
                                        "Some warning\n"
                                        "details #1\n"
@@ -246,7 +235,7 @@ void BareMetalPlugin::testSdccOutputParsers_data()
             << QString::fromLatin1("c:\\foo\\main.c:63: error: Some error")
             << OutputParserTester::STDERR
             << QString()
-            << QString::fromLatin1("c:\\foo\\main.c:63: error: Some error\n")
+            << QString()
             << (Tasks() << CompileTask(Task::Error,
                                        "Some error",
                                        FilePath::fromUserInput("c:\\foo\\main.c"),
@@ -257,7 +246,7 @@ void BareMetalPlugin::testSdccOutputParsers_data()
             << QString::fromLatin1("c:\\foo\\main.c:63: error 123: Some error")
             << OutputParserTester::STDERR
             << QString()
-            << QString::fromLatin1("c:\\foo\\main.c:63: error 123: Some error\n")
+            << QString()
             << (Tasks() << CompileTask(Task::Error,
                                        "Some error",
                                        FilePath::fromUserInput("c:\\foo\\main.c"),
@@ -270,9 +259,7 @@ void BareMetalPlugin::testSdccOutputParsers_data()
                                    "  details #2")
             << OutputParserTester::STDERR
             << QString()
-            << QString::fromLatin1("c:\\foo\\main.c:63: error 123: Some error\n"
-                                   "details #1\n"
-                                   "  details #2\n")
+            << QString()
             << (Tasks() << CompileTask(Task::Error,
                                        "Some error\n"
                                        "details #1\n"
@@ -285,7 +272,7 @@ void BareMetalPlugin::testSdccOutputParsers_data()
             << QString::fromLatin1("c:\\foo\\main.c:63: syntax error: Some error")
             << OutputParserTester::STDERR
             << QString()
-            << QString::fromLatin1("c:\\foo\\main.c:63: syntax error: Some error\n")
+            << QString()
             << (Tasks() << CompileTask(Task::Error,
                                        "Some error",
                                        FilePath::fromUserInput("c:\\foo\\main.c"),
@@ -296,7 +283,7 @@ void BareMetalPlugin::testSdccOutputParsers_data()
             << QString::fromLatin1("at 1: error 123: Some error")
             << OutputParserTester::STDERR
             << QString()
-            << QString::fromLatin1("at 1: error 123: Some error\n")
+            << QString()
             << (Tasks() << CompileTask(Task::Error,
                                        "Some error"))
             << QString();
@@ -305,7 +292,7 @@ void BareMetalPlugin::testSdccOutputParsers_data()
             << QString::fromLatin1("at 1: warning 123: Some warning")
             << OutputParserTester::STDERR
             << QString()
-            << QString::fromLatin1("at 1: warning 123: Some warning\n")
+            << QString()
             << (Tasks() << CompileTask(Task::Warning,
                                        "Some warning"))
             << QString();
@@ -314,7 +301,7 @@ void BareMetalPlugin::testSdccOutputParsers_data()
             << QString::fromLatin1("?ASlink-Warning-Couldn't find library 'foo.lib'")
             << OutputParserTester::STDERR
             << QString()
-            << QString::fromLatin1("?ASlink-Warning-Couldn't find library 'foo.lib'\n")
+            << QString()
             << (Tasks() << CompileTask(Task::Warning,
                                        "Couldn't find library 'foo.lib'"))
             << QString();
@@ -323,7 +310,7 @@ void BareMetalPlugin::testSdccOutputParsers_data()
             << QString::fromLatin1("?ASlink-Error-<cannot open> : \"foo.rel\"")
             << OutputParserTester::STDERR
             << QString()
-            << QString::fromLatin1("?ASlink-Error-<cannot open> : \"foo.rel\"\n")
+            << QString()
             << (Tasks() << CompileTask(Task::Error,
                                        "<cannot open> : \"foo.rel\""))
             << QString();
@@ -332,7 +319,7 @@ void BareMetalPlugin::testSdccOutputParsers_data()
 void BareMetalPlugin::testSdccOutputParsers()
 {
     OutputParserTester testbench;
-    testbench.appendOutputParser(new SdccParser);
+    testbench.addLineParser(new SdccParser);
     QFETCH(QString, input);
     QFETCH(OutputParserTester::Channel, inputChannel);
     QFETCH(Tasks, tasks);

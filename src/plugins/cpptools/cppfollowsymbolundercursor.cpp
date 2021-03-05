@@ -111,8 +111,17 @@ VirtualFunctionHelper::VirtualFunctionHelper(TypeOfExpression &typeOfExpression,
 bool VirtualFunctionHelper::canLookupVirtualFunctionOverrides(Function *function)
 {
     m_function = function;
-    if (!m_function || !m_baseExpressionAST || !m_expressionDocument || !m_document || !m_scope
-            || m_scope->isClass() || m_scope->isFunction() || m_snapshot.isEmpty()) {
+
+    if (!m_document || m_snapshot.isEmpty() || !m_function || !m_scope)
+        return false;
+
+    if (m_scope->isClass() && m_function->isPureVirtual()) {
+        m_staticClassOfFunctionCallExpression = m_scope->asClass();
+        return true;
+    }
+
+    if (!m_baseExpressionAST || !m_expressionDocument
+            || m_scope->isClass() || m_scope->isFunction()) {
         return false;
     }
 
@@ -292,9 +301,9 @@ inline LookupItem skipForwardDeclarations(const QList<LookupItem> &resolvedSymbo
     return result;
 }
 
-Link attemptFuncDeclDef(const QTextCursor &cursor, Snapshot snapshot,
-                        const Document::Ptr &document,
-                        SymbolFinder *symbolFinder)
+Link attemptDeclDef(const QTextCursor &cursor, Snapshot snapshot,
+                    const Document::Ptr &document,
+                    SymbolFinder *symbolFinder)
 {
     Link result;
     QTC_ASSERT(document, return result);
@@ -333,11 +342,6 @@ Link attemptFuncDeclDef(const QTextCursor &cursor, Snapshot snapshot,
     }
     if (!decl || !declParent)
         return result;
-    if (!decl->postfix_declarator_list || !decl->postfix_declarator_list->value)
-        return result;
-    FunctionDeclaratorAST *funcDecl = decl->postfix_declarator_list->value->asFunctionDeclarator();
-    if (!funcDecl)
-        return result;
 
     Symbol *target = nullptr;
     if (FunctionDefinitionAST *funDef = declParent->asFunctionDefinition()) {
@@ -346,8 +350,14 @@ Link attemptFuncDeclDef(const QTextCursor &cursor, Snapshot snapshot,
                                                         funDef->symbol);
         if (!candidates.isEmpty()) // TODO: improve disambiguation
             target = candidates.first();
-    } else if (declParent->asSimpleDeclaration()) {
-        target = symbolFinder->findMatchingDefinition(funcDecl->symbol, snapshot);
+    } else if (const SimpleDeclarationAST * const simpleDecl = declParent->asSimpleDeclaration()) {
+        FunctionDeclaratorAST *funcDecl = nullptr;
+        if (decl->postfix_declarator_list && decl->postfix_declarator_list->value)
+            funcDecl = decl->postfix_declarator_list->value->asFunctionDeclarator();
+        if (funcDecl)
+            target = symbolFinder->findMatchingDefinition(funcDecl->symbol, snapshot);
+        else if (simpleDecl->symbols)
+            target = symbolFinder->findMatchingVarDefinition(simpleDecl->symbols->value, snapshot);
     }
 
     if (target) {
@@ -514,9 +524,9 @@ void FollowSymbolUnderCursor::findLink(
         int pos = tc.position();
         while (document->characterAt(pos).isSpace())
             ++pos;
-        if (document->characterAt(pos) == QLatin1Char('(')) {
-            link = attemptFuncDeclDef(cursor, snapshot, documentFromSemanticInfo,
-                                      symbolFinder);
+        const QChar ch = document->characterAt(pos);
+        if (ch == '(' || ch == ';') {
+            link = attemptDeclDef(cursor, snapshot, documentFromSemanticInfo, symbolFinder);
             if (link.hasValidLinkText())
                 return processLinkCallback(link);
         }
@@ -585,16 +595,15 @@ void FollowSymbolUnderCursor::findLink(
             if (positionInBlock >= tk.utf16charsBegin() && positionInBlock <= tk.utf16charsEnd()) {
                 cursorRegionReached = true;
                 if (tk.is(T_OPERATOR)) {
-                    link = attemptFuncDeclDef(cursor, theSnapshot,
-                                              documentFromSemanticInfo, symbolFinder);
+                    link = attemptDeclDef(cursor, theSnapshot,
+                                          documentFromSemanticInfo, symbolFinder);
                     if (link.hasValidLinkText())
                         return processLinkCallback(link);
                 } else if (tk.isPunctuationOrOperator() && i > 0 && tokens.at(i - 1).is(T_OPERATOR)) {
                     QTextCursor c = cursor;
                     c.movePosition(QTextCursor::Left, QTextCursor::MoveAnchor,
                                    positionInBlock - tokens.at(i - 1).utf16charsBegin());
-                    link = attemptFuncDeclDef(c, theSnapshot, documentFromSemanticInfo,
-                                              symbolFinder);
+                    link = attemptDeclDef(c, theSnapshot, documentFromSemanticInfo, symbolFinder);
                     if (link.hasValidLinkText())
                         return processLinkCallback(link);
                 }

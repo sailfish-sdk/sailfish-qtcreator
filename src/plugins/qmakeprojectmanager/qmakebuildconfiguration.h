@@ -27,9 +27,10 @@
 
 #include "qmakeprojectmanager_global.h"
 
-#include <projectexplorer/projectconfigurationaspects.h>
 #include <projectexplorer/buildconfiguration.h>
 #include <qtsupport/baseqtversion.h>
+
+#include <utils/aspects.h>
 
 namespace ProjectExplorer { class FileNode; }
 
@@ -44,11 +45,8 @@ class QMAKEPROJECTMANAGER_EXPORT QmakeBuildConfiguration : public ProjectExplore
 {
     Q_OBJECT
 
-    // used in DebuggerRunConfigurationAspect
-    Q_PROPERTY(bool linkQmlDebuggingLibrary READ linkQmlDebuggingLibrary NOTIFY qmlDebuggingChanged)
-
 public:
-    QmakeBuildConfiguration(ProjectExplorer::Target *target, Core::Id id);
+    QmakeBuildConfiguration(ProjectExplorer::Target *target, Utils::Id id);
     ~QmakeBuildConfiguration() override;
 
     ProjectExplorer::BuildSystem *buildSystem() const final;
@@ -99,15 +97,16 @@ public:
     static bool isBuildDirAtSafeLocation(const QString &sourceDir, const QString &buildDir);
     bool isBuildDirAtSafeLocation() const;
 
-    ProjectExplorer::TriState separateDebugInfo() const;
+    Utils::TriState separateDebugInfo() const;
     void forceSeparateDebugInfo(bool sepDebugInfo);
 
-    ProjectExplorer::TriState qmlDebugging() const;
-    bool linkQmlDebuggingLibrary() const;
+    Utils::TriState qmlDebugging() const;
     void forceQmlDebugging(bool enable);
 
-    ProjectExplorer::TriState useQtQuickCompiler() const;
+    Utils::TriState useQtQuickCompiler() const;
     void forceQtQuickCompiler(bool enable);
+
+    bool runSystemFunction() const;
 
 signals:
     /// emitted for setQMakeBuildConfig, not emitted for Qt version changes, even

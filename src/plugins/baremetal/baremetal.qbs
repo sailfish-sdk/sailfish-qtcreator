@@ -42,6 +42,7 @@ QtcPlugin {
         prefix: "debugservers/gdb/"
         files: [
             "gdbserverprovider.cpp", "gdbserverprovider.h",
+            "genericgdbserverprovider.cpp", "genericgdbserverprovider.h",
             "openocdgdbserverprovider.cpp", "openocdgdbserverprovider.h",
             "stlinkutilgdbserverprovider.cpp", "stlinkutilgdbserverprovider.h",
             "jlinkgdbserverprovider.cpp", "jlinkgdbserverprovider.h",
@@ -55,6 +56,7 @@ QtcPlugin {
         files: [
             "simulatoruvscserverprovider.cpp", "simulatoruvscserverprovider.h",
             "stlinkuvscserverprovider.cpp", "stlinkuvscserverprovider.h",
+            "jlinkuvscserverprovider.cpp", "jlinkuvscserverprovider.h",
             "uvproject.cpp", "uvproject.h",
             "uvprojectwriter.cpp", "uvprojectwriter.h",
             "uvscserverprovider.cpp", "uvscserverprovider.h",

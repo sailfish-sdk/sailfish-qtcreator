@@ -27,12 +27,14 @@
 
 #include "projectexplorer_export.h"
 
-#include <QScrollArea>
+#include <QWidget>
 
 QT_BEGIN_NAMESPACE
 class QGridLayout;
 class QIcon;
 QT_END_NAMESPACE
+
+namespace Core { class MiniSplitter; }
 
 namespace ProjectExplorer {
 
@@ -49,9 +51,12 @@ public:
     void addPropertiesPanel(const QString &displayName, const QIcon &icon,
                             QWidget *widget);
 
+    QByteArray saveSplitterState() const;
+    void loadSplitterState(const QByteArray &state);
+
 private:
     QGridLayout *m_layout;
-    QScrollArea *m_scroller;
+    Core::MiniSplitter * const m_splitter;
     QWidget *m_root;
 };
 

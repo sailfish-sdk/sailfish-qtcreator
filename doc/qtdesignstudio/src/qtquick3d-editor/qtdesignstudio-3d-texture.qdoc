@@ -28,7 +28,7 @@
 /*!
     \page studio-3d-texture.html
     \previouspage studio-3d-materials.html
-    \nextpage studio-3d-lights.html
+    \nextpage studio-3d-materials-types.html
 
     \title Attaching Textures to Materials
 
@@ -108,13 +108,16 @@
     rotation.
 
     For more information about rotating and pivoting components in the local
-    coordinate space, see \l {Setting Transform Properties}.
+    coordinate space, see \l {Managing 3D Transformations}.
 
     \section1 Applying Textures to Materials
 
-    You drag and drop an image from \uicontrol Library > \uicontrol Assets
-    on a material to create and set the texture automatically, or you can use
-    a Texture component.
+    Drag and drop an image from \uicontrol Library > \uicontrol Assets
+    on a material to create a texture component. Dragging an image
+    to a default or principled material opens a
+    \uicontrol {Select Texture Property} dialog. You can select the
+    property to attach the texture to in the \uicontrol {Set texture to property}
+    field. For a custom material, you must assign the texture to a map.
 
     To use Texture components to apply textures to materials:
 

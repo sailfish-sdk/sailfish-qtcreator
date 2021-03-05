@@ -312,7 +312,7 @@ void BaseFileFind::runSearch(SearchResult *search)
         search->finishSearch(watcher->isCanceled());
     });
     watcher->setFuture(executeSearch(parameters));
-    FutureProgress *progress = ProgressManager::addTask(watcher->future(),
+    FutureProgress *progress = ProgressManager::addTask(QFuture<void>(watcher->future()),
                                                         tr("Searching"),
                                                         Constants::TASK_SEARCH);
     connect(search, &SearchResult::countChanged, progress, [progress](int c) {
@@ -345,7 +345,7 @@ void BaseFileFind::doReplace(const QString &text,
 {
     const QStringList files = replaceAll(text, items, preserveCase);
     if (!files.isEmpty()) {
-        Utils::FadingIndicator::showText(ICore::mainWindow(),
+        Utils::FadingIndicator::showText(ICore::dialogParent(),
             tr("%n occurrences replaced.", nullptr, items.size()),
             Utils::FadingIndicator::SmallText);
         DocumentManager::notifyFilesChangedInternally(files);
@@ -450,7 +450,7 @@ void BaseFileFind::openEditor(SearchResult *result, const SearchResultItem &item
     IEditor *openedEditor =
             d->m_searchEngines[parameters.searchEngineIndex]->openEditor(item, parameters);
     if (!openedEditor)
-        EditorManager::openEditorAtSearchResult(item, EditorManager::DoNotSwitchToDesignMode);
+        EditorManager::openEditorAtSearchResult(item, Id(), EditorManager::DoNotSwitchToDesignMode);
     if (d->m_currentFindSupport)
         d->m_currentFindSupport->clearHighlights();
     d->m_currentFindSupport = nullptr;
@@ -505,7 +505,7 @@ QStringList BaseFileFind::replaceAll(const QString &text,
 
     // Query the user for permissions
     if (!roFiles.isEmpty()) {
-        ReadOnlyFilesDialog roDialog(Utils::toList(roFiles), ICore::mainWindow());
+        ReadOnlyFilesDialog roDialog(Utils::toList(roFiles), ICore::dialogParent());
         roDialog.setShowFailWarning(true, tr("Aborting replace."));
         if (roDialog.exec() == ReadOnlyFilesDialog::RO_Cancel)
             return QStringList();
@@ -529,7 +529,7 @@ QStringList BaseFileFind::replaceAll(const QString &text,
             if (item.userData.canConvert<QStringList>() && !item.userData.toStringList().isEmpty()) {
                 replacement = Utils::expandRegExpReplacement(text, item.userData.toStringList());
             } else if (preserveCase) {
-                const QString originalText = (item.mainRange.length() == 0)
+                const QString originalText = (item.mainRange.length(item.text) == 0)
                                                  ? item.text
                                                  : item.mainRange.mid(item.text);
                 replacement = Utils::matchCaseReplacement(originalText, text);

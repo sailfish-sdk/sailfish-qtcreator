@@ -30,7 +30,7 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
-#include <QRegExp>
+#include <QRegularExpression>
 
 #include <set>
 
@@ -137,16 +137,16 @@ QString BuildableHelperLibrary::qtVersionForQMake(const QString &qmakePath)
     }
 
     const QString output = response.allOutput();
-    static QRegExp regexp(QLatin1String("(QMake version|QMake version:)[\\s]*([\\d.]*)"),
-                          Qt::CaseInsensitive);
-    regexp.indexIn(output);
-    const QString qmakeVersion = regexp.cap(2);
+    static const QRegularExpression regexp("(QMake version:?)[\\s]*([\\d.]*)",
+                                           QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch match = regexp.match(output);
+    const QString qmakeVersion = match.captured(2);
     if (qmakeVersion.startsWith(QLatin1String("2."))
             || qmakeVersion.startsWith(QLatin1String("3."))) {
-        static QRegExp regexp2(QLatin1String("Using Qt version[\\s]*([\\d\\.]*)"),
-                               Qt::CaseInsensitive);
-        regexp2.indexIn(output);
-        const QString version = regexp2.cap(1);
+        static const QRegularExpression regexp2("Using Qt version[\\s]*([\\d\\.]*)",
+                                                QRegularExpression::CaseInsensitiveOption);
+        const QRegularExpressionMatch match2 = regexp2.match(output);
+        const QString version = match2.captured(1);
         return version;
     }
     return QString();
@@ -179,7 +179,13 @@ QStringList BuildableHelperLibrary::possibleQMakeCommands()
     // On Unix some distributions renamed qmake with a postfix to avoid clashes
     // On OS X, Qt 4 binary packages also has renamed qmake. There are also symbolic links that are
     // named "qmake", but the file dialog always checks against resolved links (native Cocoa issue)
-    return QStringList(HostOsInfo::withExecutableSuffix("qmake*"));
+    QStringList commands(HostOsInfo::withExecutableSuffix("qmake*"));
+
+    // Qt 6 CMake built targets, such as Android, are dependent on the host installation
+    // and use a script wrapper around the host qmake executable
+    if (HostOsInfo::isWindowsHost())
+        commands.append("qmake*.bat");
+    return commands;
 }
 
 // Copy helper source files to a target directory, replacing older files.
@@ -195,7 +201,7 @@ bool BuildableHelperLibrary::copyFiles(const QString &sourcePath,
         *errorMessage = QCoreApplication::translate("ProjectExplorer::DebuggingHelperLibrary", "The target directory %1 could not be created.").arg(targetDirectory);
         return false;
     }
-    foreach (const QString &file, files) {
+    for (const QString &file : files) {
         const QString source = sourcePath + file;
         const QString dest = targetDirectory + file;
         const QFileInfo destInfo(dest);
@@ -347,7 +353,7 @@ bool BuildableHelperLibrary::getHelperFileInfoFor(const QStringList &validBinary
     if (!info)
         return false;
 
-    foreach (const QString &binaryFilename, validBinaryFilenames) {
+    for (const QString &binaryFilename : validBinaryFilenames) {
         info->setFile(directory + binaryFilename);
         if (info->exists())
             return true;
@@ -365,7 +371,7 @@ QString BuildableHelperLibrary::byInstallDataHelper(const QString &sourcePath,
     // find the latest change to the sources
     QDateTime sourcesModified;
     if (!acceptOutdatedHelper) {
-        foreach (const QString &sourceFileName, sourceFileNames) {
+        for (const QString &sourceFileName : sourceFileNames) {
             const QDateTime fileModified = QFileInfo(sourcePath + sourceFileName).lastModified();
             if (fileModified.isValid() && (!sourcesModified.isValid() || fileModified > sourcesModified))
                 sourcesModified = fileModified;
@@ -383,7 +389,7 @@ QString BuildableHelperLibrary::byInstallDataHelper(const QString &sourcePath,
     QString newestHelper;
     QDateTime newestHelperModified = sourcesModified; // prevent using one that's older than the sources
     QFileInfo fileInfo;
-    foreach (const QString &installDirectory, installDirectories) {
+    for (const QString &installDirectory : installDirectories) {
         if (getHelperFileInfoFor(validBinaryFilenames, installDirectory, &fileInfo)) {
             if (!newestHelperModified.isValid()
                     || (fileInfo.lastModified() > newestHelperModified)) {

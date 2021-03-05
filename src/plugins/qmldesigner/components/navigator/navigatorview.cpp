@@ -40,6 +40,8 @@
 #include <variantproperty.h>
 #include <qmlitemnode.h>
 #include <rewritingexception.h>
+#include <nodeinstanceview.h>
+#include <theme.h>
 
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/icore.h>
@@ -47,10 +49,11 @@
 #include <utils/algorithm.h>
 #include <utils/icon.h>
 #include <utils/utilsicons.h>
+#include <utils/stylehelper.h>
 
 #include <QHeaderView>
 #include <QTimer>
-
+#include <QPixmap>
 
 static inline void setScenePos(const QmlDesigner::ModelNode &modelNode,const QPointF &pos)
 {
@@ -64,6 +67,36 @@ static inline void setScenePos(const QmlDesigner::ModelNode &modelNode,const QPo
         } else { //Items in Layouts do not have a position
             modelNode.removeProperty("x");
             modelNode.removeProperty("y");
+        }
+    }
+}
+
+static inline void moveNodesUp(const QList<QmlDesigner::ModelNode> &nodes)
+{
+    for (const auto &node : nodes) {
+        if (!node.isRootNode() && node.parentProperty().isNodeListProperty()) {
+            int oldIndex = node.parentProperty().indexOf(node);
+            int index = oldIndex;
+            index--;
+            if (index < 0)
+                index = node.parentProperty().count() - 1; //wrap around
+            if (oldIndex != index)
+                node.parentProperty().toNodeListProperty().slide(oldIndex, index);
+        }
+    }
+}
+
+static inline void moveNodesDown(const QList<QmlDesigner::ModelNode> &nodes)
+{
+    for (const auto &node : nodes) {
+        if (!node.isRootNode() && node.parentProperty().isNodeListProperty()) {
+            int oldIndex = node.parentProperty().indexOf(node);
+            int index = oldIndex;
+            index++;
+            if (index >= node.parentProperty().count())
+                index = 0; //wrap around
+            if (oldIndex != index)
+                node.parentProperty().toNodeListProperty().slide(oldIndex, index);
         }
     }
 }
@@ -107,26 +140,65 @@ void NavigatorView::modelAttached(Model *model)
 
     QTreeView *treeView = treeWidget();
 
-    treeView->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-    treeView->header()->resizeSection(1,26);
+    treeView->header()->setSectionResizeMode(NavigatorTreeModel::ColumnType::Name, QHeaderView::Stretch);
+    treeView->header()->resizeSection(NavigatorTreeModel::ColumnType::Alias, 26);
+    treeView->header()->resizeSection(NavigatorTreeModel::ColumnType::Visibility, 26);
+    treeView->header()->resizeSection(NavigatorTreeModel::ColumnType::Lock, 26);
     treeView->setIndentation(20);
 
     m_currentModelInterface->setFilter(false);
 
-
     QTimer::singleShot(0, this, [this, treeView]() {
         m_currentModelInterface->setFilter(
                     DesignerSettings::getValue(DesignerSettingsKey::NAVIGATOR_SHOW_ONLY_VISIBLE_ITEMS).toBool());
-        treeView->expandAll();
-    });
 
-#ifdef _LOCK_ITEMS_
-    treeView->header()->resizeSection(2,20);
-#endif
+        m_currentModelInterface->setOrder(
+                    DesignerSettings::getValue(DesignerSettingsKey::NAVIGATOR_REVERSE_ITEM_ORDER).toBool());
+
+        // Expand everything to begin with to ensure model node to index cache is populated
+        treeView->expandAll();
+
+        if (AbstractView::model() && m_expandMap.contains(AbstractView::model()->fileUrl())) {
+            const QHash<QString, bool> localExpandMap = m_expandMap[AbstractView::model()->fileUrl()];
+            auto it = localExpandMap.constBegin();
+            while (it != localExpandMap.constEnd()) {
+                const QModelIndex index = indexForModelNode(modelNodeForId(it.key()));
+                if (index.isValid())
+                    treeWidget()->setExpanded(index, it.value());
+                ++it;
+            }
+        }
+    });
 }
 
 void NavigatorView::modelAboutToBeDetached(Model *model)
 {
+    m_expandMap.remove(model->fileUrl());
+
+    if (currentModel()) {
+        // Store expand state of the navigator tree
+        QHash<QString, bool> localExpandMap;
+        const ModelNode rootNode = rootModelNode();
+        const QModelIndex rootIndex = indexForModelNode(rootNode);
+
+        std::function<void(const QModelIndex &)> gatherExpandedState;
+        gatherExpandedState = [&](const QModelIndex &index) {
+            if (index.isValid()) {
+                const int rowCount = currentModel()->rowCount(index);
+                for (int i = 0; i < rowCount; ++i) {
+                    const QModelIndex childIndex = currentModel()->index(i, 0, index);
+                    const ModelNode node = modelNodeForIndex(childIndex);
+                    // Just store collapsed states as everything is expanded by default
+                    if (node.isValid() && !treeWidget()->isExpanded(childIndex))
+                        localExpandMap.insert(node.id(), false);
+                    gatherExpandedState(childIndex);
+                }
+            }
+        };
+        gatherExpandedState(rootIndex);
+        m_expandMap[model->fileUrl()] = localExpandMap;
+    }
+
     AbstractView::modelAboutToBeDetached(model);
 }
 
@@ -147,6 +219,17 @@ void NavigatorView::bindingPropertiesChanged(const QList<BindingProperty> & prop
     }
 }
 
+void NavigatorView::customNotification(const AbstractView *view, const QString &identifier,
+                                       const QList<ModelNode> &nodeList, const QList<QVariant> &data)
+{
+    Q_UNUSED(view)
+    Q_UNUSED(nodeList)
+    Q_UNUSED(data)
+
+    if (identifier == "asset_import_update")
+        m_currentModelInterface->notifyIconsChanged();
+}
+
 void NavigatorView::handleChangedExport(const ModelNode &modelNode, bool exported)
 {
     const ModelNode rootNode = rootModelNode();
@@ -155,7 +238,7 @@ void NavigatorView::handleChangedExport(const ModelNode &modelNode, bool exporte
     if (rootNode.hasProperty(modelNodeId))
         rootNode.removeProperty(modelNodeId);
     if (exported) {
-        executeInTransaction("NavigatorTreeModel:exportItem", [this, modelNode](){
+        executeInTransaction("NavigatorTreeModel:exportItem", [modelNode](){
             QmlObjectNode qmlObjectNode(modelNode);
             qmlObjectNode.ensureAliasExport();
         });
@@ -177,6 +260,11 @@ void NavigatorView::enableWidget()
 {
     if (m_widget)
         m_widget->enableNavigator();
+}
+
+void NavigatorView::modelNodePreviewPixmapChanged(const ModelNode &node, const QPixmap &pixmap)
+{
+    m_treeModel->updateToolTipPixmap(node, pixmap);
 }
 
 ModelNode NavigatorView::modelNodeForIndex(const QModelIndex &modelIndex) const
@@ -215,7 +303,7 @@ void NavigatorView::nodeIdChanged(const ModelNode& modelNode, const QString & /*
     m_currentModelInterface->notifyDataChanged(modelNode);
 }
 
-void NavigatorView::propertiesAboutToBeRemoved(const QList<AbstractProperty>& /*propertyList*/)
+void NavigatorView::propertiesAboutToBeRemoved(const QList<AbstractProperty> &/*propertyList*/)
 {
 }
 
@@ -232,7 +320,7 @@ void NavigatorView::propertiesRemoved(const QList<AbstractProperty> &propertyLis
     m_currentModelInterface->notifyModelNodesRemoved(modelNodes);
 }
 
-void NavigatorView::rootNodeTypeChanged(const QString & /*type*/, int /*majorVersion*/, int /*minorVersion*/)
+void NavigatorView::rootNodeTypeChanged(const QString &/*type*/, int /*majorVersion*/, int /*minorVersion*/)
 {
     m_currentModelInterface->notifyDataChanged(rootModelNode());
 }
@@ -243,20 +331,23 @@ void NavigatorView::nodeTypeChanged(const ModelNode &modelNode, const TypeName &
 }
 
 void NavigatorView::auxiliaryDataChanged(const ModelNode &modelNode,
-                                         const PropertyName & /*name*/,
-                                         const QVariant & /*data*/)
+                                         const PropertyName &name,
+                                         const QVariant &data)
 {
+    Q_UNUSED(name)
+    Q_UNUSED(data)
+
     m_currentModelInterface->notifyDataChanged(modelNode);
 }
 
 void NavigatorView::instanceErrorChanged(const QVector<ModelNode> &errorNodeList)
 {
-    foreach (const ModelNode &modelNode, errorNodeList)
+    for (const ModelNode &modelNode : errorNodeList)
         m_currentModelInterface->notifyDataChanged(modelNode);
 }
 
-void NavigatorView::nodeOrderChanged(const NodeListProperty & listProperty,
-                                     const ModelNode & /*node*/,
+void NavigatorView::nodeOrderChanged(const NodeListProperty &listProperty,
+                                     const ModelNode &/*node*/,
                                      int /*oldIndex*/)
 {
     m_currentModelInterface->notifyModelNodesMoved(listProperty.directSubNodes());
@@ -271,7 +362,7 @@ void NavigatorView::changeToComponent(const QModelIndex &index)
         const ModelNode doubleClickNode = modelNodeForIndex(index);
         if (doubleClickNode.metaInfo().isFileComponent())
             Core::EditorManager::openEditor(doubleClickNode.metaInfo().componentFileName(),
-                                            Core::Id(), Core::EditorManager::DoNotMakeVisible);
+                                            Utils::Id(), Core::EditorManager::DoNotMakeVisible);
     }
 }
 
@@ -292,7 +383,7 @@ void NavigatorView::leftButtonClicked()
 
     bool blocked = blockSelectionChangedSignal(true);
 
-    foreach (const ModelNode &node, selectedModelNodes()) {
+    for (const ModelNode &node : selectedModelNodes()) {
         if (!node.isRootNode() && !node.parentProperty().parentModelNode().isRootNode()) {
             if (QmlItemNode::isValidQmlItemNode(node)) {
                 QPointF scenePos = QmlItemNode(node).instanceScenePosition();
@@ -315,11 +406,23 @@ void NavigatorView::rightButtonClicked()
         return; //Semantics are unclear for multi selection.
 
     bool blocked = blockSelectionChangedSignal(true);
-    foreach (const ModelNode &node, selectedModelNodes()) {
+    bool reverse = DesignerSettings::getValue(DesignerSettingsKey::NAVIGATOR_REVERSE_ITEM_ORDER).toBool();
+
+    for (const ModelNode &node : selectedModelNodes()) {
         if (!node.isRootNode() && node.parentProperty().isNodeListProperty() && node.parentProperty().count() > 1) {
             int index = node.parentProperty().indexOf(node);
-            index--;
-            if (index >= 0) { //for the first node the semantics are not clear enough. Wrapping would be irritating.
+
+            bool indexOk = false;
+
+            if (reverse) {
+                index++;
+                indexOk = (index < node.parentProperty().count());
+            } else {
+                index--;
+                indexOk = (index >= 0);
+            }
+
+            if (indexOk) { //for the first node the semantics are not clear enough. Wrapping would be irritating.
                 ModelNode newParent = node.parentProperty().toNodeListProperty().at(index);
 
                 if (QmlItemNode::isValidQmlItemNode(node)
@@ -343,17 +446,13 @@ void NavigatorView::rightButtonClicked()
 void NavigatorView::upButtonClicked()
 {
     bool blocked = blockSelectionChangedSignal(true);
-    foreach (const ModelNode &node, selectedModelNodes()) {
-        if (!node.isRootNode() && node.parentProperty().isNodeListProperty()) {
-            int oldIndex = node.parentProperty().indexOf(node);
-            int index = oldIndex;
-            index--;
-            if (index < 0)
-                index = node.parentProperty().count() - 1; //wrap around
-            if (oldIndex != index)
-                node.parentProperty().toNodeListProperty().slide(oldIndex, index);
-        }
-    }
+    bool reverse = DesignerSettings::getValue(DesignerSettingsKey::NAVIGATOR_REVERSE_ITEM_ORDER).toBool();
+
+    if (reverse)
+        moveNodesDown(selectedModelNodes());
+    else
+        moveNodesUp(selectedModelNodes());
+
     updateItemSelection();
     blockSelectionChangedSignal(blocked);
 }
@@ -361,17 +460,13 @@ void NavigatorView::upButtonClicked()
 void NavigatorView::downButtonClicked()
 {
     bool blocked = blockSelectionChangedSignal(true);
-    foreach (const ModelNode &node, selectedModelNodes()) {
-        if (!node.isRootNode() && node.parentProperty().isNodeListProperty()) {
-            int oldIndex = node.parentProperty().indexOf(node);
-            int index = oldIndex;
-            index++;
-            if (index >= node.parentProperty().count())
-                index = 0; //wrap around
-            if (oldIndex != index)
-                node.parentProperty().toNodeListProperty().slide(oldIndex, index);
-        }
-    }
+    bool reverse = DesignerSettings::getValue(DesignerSettingsKey::NAVIGATOR_REVERSE_ITEM_ORDER).toBool();
+
+    if (reverse)
+        moveNodesUp(selectedModelNodes());
+    else
+        moveNodesDown(selectedModelNodes());
+
     updateItemSelection();
     blockSelectionChangedSignal(blocked);
 }
@@ -383,6 +478,13 @@ void NavigatorView::filterToggled(bool flag)
     DesignerSettings::setValue(DesignerSettingsKey::NAVIGATOR_SHOW_ONLY_VISIBLE_ITEMS, flag);
 }
 
+void NavigatorView::reverseOrderToggled(bool flag)
+{
+    m_currentModelInterface->setOrder(flag);
+    treeWidget()->expandAll();
+    DesignerSettings::setValue(DesignerSettingsKey::NAVIGATOR_REVERSE_ITEM_ORDER, flag);
+}
+
 void NavigatorView::changeSelection(const QItemSelection & /*newSelection*/, const QItemSelection &/*deselected*/)
 {
     if (m_blockSelectionChangedSignal)
@@ -391,7 +493,6 @@ void NavigatorView::changeSelection(const QItemSelection & /*newSelection*/, con
     QSet<ModelNode> nodeSet;
 
     for (const QModelIndex &index : treeWidget()->selectionModel()->selectedIndexes()) {
-
         const ModelNode modelNode = modelNodeForIndex(index);
         if (modelNode.isValid())
             nodeSet.insert(modelNode);
@@ -414,27 +515,39 @@ void NavigatorView::updateItemSelection()
         return;
 
     QItemSelection itemSelection;
-    foreach (const ModelNode &node, selectedModelNodes()) {
+    for (const ModelNode &node : selectedModelNodes()) {
         const QModelIndex index = indexForModelNode(node);
+
         if (index.isValid()) {
             const QModelIndex beginIndex(currentModel()->index(index.row(), 0, index.parent()));
             const QModelIndex endIndex(currentModel()->index(index.row(), currentModel()->columnCount(index.parent()) - 1, index.parent()));
             if (beginIndex.isValid() && endIndex.isValid())
                 itemSelection.select(beginIndex, endIndex);
-        }
+        } else {
+            // if the node index is invalid expand ancestors manually if they are valid.
+            ModelNode parentNode = node;
+            while (parentNode.hasParentProperty()) {
+                parentNode = parentNode.parentProperty().parentQmlObjectNode();
+                QModelIndex parentIndex = indexForModelNode(parentNode);
+                if (parentIndex.isValid())
+                    treeWidget()->expand(parentIndex);
+                else
+                    break;
+            }
+         }
     }
 
     bool blocked = blockSelectionChangedSignal(true);
-    treeWidget()->selectionModel()->select(itemSelection, QItemSelectionModel::ClearAndSelect);
+    treeWidget()->selectionModel()->select(itemSelection, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
     blockSelectionChangedSignal(blocked);
 
     if (!selectedModelNodes().isEmpty())
         treeWidget()->scrollTo(indexForModelNode(selectedModelNodes().constFirst()));
 
-    // make sure selected nodes a visible
-    foreach (const QModelIndex &selectedIndex, itemSelection.indexes()) {
+    // make sure selected nodes are visible
+    for (const QModelIndex &selectedIndex : itemSelection.indexes()) {
         if (selectedIndex.column() == 0)
-            expandRecursively(selectedIndex);
+            expandAncestors(selectedIndex);
     }
 }
 
@@ -458,9 +571,9 @@ bool NavigatorView::blockSelectionChangedSignal(bool block)
     return oldValue;
 }
 
-void NavigatorView::expandRecursively(const QModelIndex &index)
+void NavigatorView::expandAncestors(const QModelIndex &index)
 {
-    QModelIndex currentIndex = index;
+    QModelIndex currentIndex = index.parent();
     while (currentIndex.isValid()) {
         if (!treeWidget()->isExpanded(currentIndex))
             treeWidget()->expand(currentIndex);
@@ -472,7 +585,7 @@ void NavigatorView::reparentAndCatch(NodeAbstractProperty property, const ModelN
 {
     try {
         property.reparentHere(modelNode);
-    }  catch (Exception &exception) {
+    } catch (Exception &exception) {
         exception.showException();
     }
 }
@@ -498,35 +611,53 @@ void NavigatorView::setupWidget()
     connect(m_widget.data(), &NavigatorWidget::downButtonClicked, this, &NavigatorView::downButtonClicked);
     connect(m_widget.data(), &NavigatorWidget::upButtonClicked, this, &NavigatorView::upButtonClicked);
     connect(m_widget.data(), &NavigatorWidget::filterToggled, this, &NavigatorView::filterToggled);
+    connect(m_widget.data(), &NavigatorWidget::reverseOrderToggled, this, &NavigatorView::reverseOrderToggled);
 
 #ifndef QMLDESIGNER_TEST
+    const QString fontName = "qtds_propertyIconFont.ttf";
+
+    const QIcon visibilityOnIcon =
+            Utils::StyleHelper::getIconFromIconFont(fontName,
+                                                    Theme::getIconUnicode(Theme::Icon::visibilityOn),
+                                                    20, 20, QColor(Qt::white));
+    const QIcon visibilityOffIcon =
+            Utils::StyleHelper::getIconFromIconFont(fontName,
+                                                    Theme::getIconUnicode(Theme::Icon::visibilityOff),
+                                                    20, 20, QColor(Qt::white));
+
+    const QIcon aliasOnIcon =
+            Utils::StyleHelper::getIconFromIconFont(fontName,
+                                                    Theme::getIconUnicode(Theme::Icon::idAliasOn),
+                                                    20, 20, QColor(Qt::red));
+    const QIcon aliasOffIcon =
+            Utils::StyleHelper::getIconFromIconFont(fontName,
+                                                    Theme::getIconUnicode(Theme::Icon::idAliasOff),
+                                                    20, 20, QColor(Qt::white));
+
+    const QIcon lockOnIcon =
+            Utils::StyleHelper::getIconFromIconFont(fontName,
+                                                    Theme::getIconUnicode(Theme::Icon::lockOn),
+                                                    20, 20, QColor(Qt::white));
+    const QIcon lockOffIcon =
+            Utils::StyleHelper::getIconFromIconFont(fontName,
+                                                    Theme::getIconUnicode(Theme::Icon::lockOff),
+                                                    20, 20, QColor(Qt::white));
+
     auto idDelegate = new NameItemDelegate(this);
-    IconCheckboxItemDelegate *showDelegate =
-            new IconCheckboxItemDelegate(this,
-                                         Utils::Icons::EYE_OPEN_TOOLBAR.icon(),
-                                         Utils::Icons::EYE_CLOSED_TOOLBAR.icon());
 
-    IconCheckboxItemDelegate *exportDelegate =
-            new IconCheckboxItemDelegate(this,
-                                         Icons::EXPORT_CHECKED.icon(),
-                                         Icons::EXPORT_UNCHECKED.icon());
+    IconCheckboxItemDelegate *visibilityDelegate =
+            new IconCheckboxItemDelegate(this, visibilityOnIcon, visibilityOffIcon);
 
-#ifdef _LOCK_ITEMS_
+    IconCheckboxItemDelegate *aliasDelegate =
+            new IconCheckboxItemDelegate(this, aliasOnIcon, aliasOffIcon);
+
     IconCheckboxItemDelegate *lockDelegate =
-            new IconCheckboxItemDelegate(this,
-                                         Utils::Icons::LOCKED_TOOLBAR.icon(),
-                                         Utils::Icons::UNLOCKED_TOOLBAR.icon());
-#endif
+            new IconCheckboxItemDelegate(this, lockOnIcon, lockOffIcon);
 
-
-    treeWidget()->setItemDelegateForColumn(0, idDelegate);
-#ifdef _LOCK_ITEMS_
-    treeWidget()->setItemDelegateForColumn(1,lockDelegate);
-    treeWidget()->setItemDelegateForColumn(2,showDelegate);
-#else
-    treeWidget()->setItemDelegateForColumn(1, exportDelegate);
-    treeWidget()->setItemDelegateForColumn(2, showDelegate);
-#endif
+    treeWidget()->setItemDelegateForColumn(NavigatorTreeModel::ColumnType::Name, idDelegate);
+    treeWidget()->setItemDelegateForColumn(NavigatorTreeModel::ColumnType::Alias, aliasDelegate);
+    treeWidget()->setItemDelegateForColumn(NavigatorTreeModel::ColumnType::Visibility, visibilityDelegate);
+    treeWidget()->setItemDelegateForColumn(NavigatorTreeModel::ColumnType::Lock, lockDelegate);
 
 #endif //QMLDESIGNER_TEST
 }

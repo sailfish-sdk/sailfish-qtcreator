@@ -74,9 +74,9 @@ void Qt5RenderNodeInstanceServer::collectItemChangesAndSendChangeCommands()
     if (!inFunction) {
         inFunction = true;
 
-        DesignerSupport::polishItems(quickView());
+        DesignerSupport::polishItems(quickWindow());
 
-        if (quickView() && nodeInstanceClient()->bytesToWrite() < 10000) {
+        if (quickWindow() && nodeInstanceClient()->bytesToWrite() < 10000) {
             foreach (QQuickItem *item, allItems()) {
                 if (item) {
                     if (hasInstanceForObject(item)) {
@@ -87,16 +87,26 @@ void Qt5RenderNodeInstanceServer::collectItemChangesAndSendChangeCommands()
                         if (ancestorInstance.isValid())
                             m_dirtyInstanceSet.insert(ancestorInstance);
                     }
-                    DesignerSupport::updateDirtyNode(item);
+                    Internal::QuickItemNodeInstance::updateDirtyNode(item);
                 }
             }
 
             clearChangedPropertyList();
 
-            if (!m_dirtyInstanceSet.isEmpty()) {
-                nodeInstanceClient()->pixmapChanged(createPixmapChangedCommand(QtHelpers::toList(m_dirtyInstanceSet)));
-                m_dirtyInstanceSet.clear();
+            if (Internal::QuickItemNodeInstance::unifiedRenderPath()) {
+                /* QQuickItem::grabToImage render path */
+                /* TODO implement QQuickItem::grabToImage based rendering */
+                /* sheduleRootItemRender(); */
+                nodeInstanceClient()->pixmapChanged(createPixmapChangedCommand({rootNodeInstance()}));
+            } else {
+                if (!m_dirtyInstanceSet.isEmpty()) {
+                    nodeInstanceClient()->pixmapChanged(
+                        createPixmapChangedCommand(QtHelpers::toList(m_dirtyInstanceSet)));
+                    m_dirtyInstanceSet.clear();
+                }
             }
+
+            m_dirtyInstanceSet.clear();
 
             resetAllItems();
 
@@ -127,7 +137,7 @@ void Qt5RenderNodeInstanceServer::createScene(const CreateSceneCommand &command)
     Qt5NodeInstanceServer::createScene(command);
 
     QList<ServerNodeInstance> instanceList;
-    foreach (const InstanceContainer &container, command.instances()) {
+    for (const InstanceContainer &container : std::as_const(command.instances)) {
         if (hasInstanceForId(container.instanceId())) {
             ServerNodeInstance instance = instanceForId(container.instanceId());
             if (instance.isValid()) {

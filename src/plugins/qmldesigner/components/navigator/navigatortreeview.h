@@ -29,6 +29,8 @@
 
 namespace QmlDesigner {
 
+class PreviewToolTip;
+
 class NavigatorTreeView : public QTreeView
 {
     Q_OBJECT
@@ -36,5 +38,10 @@ class NavigatorTreeView : public QTreeView
 public:
     NavigatorTreeView(QWidget *parent = nullptr);
     static void drawSelectionBackground(QPainter *painter, const QStyleOption &option);
+    bool viewportEvent(QEvent *event) override;
+
+private:
+    PreviewToolTip *m_previewToolTip = nullptr;
+    qint32 m_previewToolTipNodeId = -1;
 };
 }

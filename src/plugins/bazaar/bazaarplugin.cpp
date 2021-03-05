@@ -44,7 +44,6 @@
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/actionmanager/command.h>
-#include <coreplugin/id.h>
 #include <coreplugin/coreconstants.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/idocument.h>
@@ -54,6 +53,7 @@
 
 #include <utils/parameteraction.h>
 #include <utils/qtcassert.h>
+#include <utils/stringutils.h>
 
 #include <vcsbase/basevcseditorfactory.h>
 #include <vcsbase/basevcssubmiteditorfactory.h>
@@ -146,7 +146,7 @@ public:
     BazaarPluginPrivate();
 
     QString displayName() const final;
-    Core::Id id() const final;
+    Utils::Id id() const final;
 
     bool isVcsFileOrDirectory(const Utils::FilePath &fileName) const final;
 
@@ -159,7 +159,8 @@ public:
     bool vcsDelete(const QString &filename) final;
     bool vcsMove(const QString &from, const QString &to) final;
     bool vcsCreateRepository(const QString &directory) final;
-    bool vcsAnnotate(const QString &file, int line) final;
+    void vcsAnnotate(const QString &file, int line) final;
+    void vcsDescribe(const QString &source, const QString &id) final { m_client.view(source, id); }
 
     Core::ShellCommand *createInitialCheckoutCommand(const QString &url,
                                                      const Utils::FilePath &baseDirectory,
@@ -202,8 +203,6 @@ public:
     void createDirectoryActions(const Core::Context &context);
     void createRepositoryActions(const Core::Context &context);
 
-    void describe(const QString &source, const QString &id) { m_client.view(source, id); }
-
     // Variables
     BazaarSettings m_settings;
     BazaarClient m_client{&m_settings};
@@ -237,19 +236,19 @@ public:
     VcsEditorFactory logEditorFactory {
         &logEditorParameters,
         [] { return new BazaarEditorWidget; },
-        std::bind(&BazaarPluginPrivate::describe, this, _1, _2)
+        std::bind(&BazaarPluginPrivate::vcsDescribe, this, _1, _2)
     };
 
     VcsEditorFactory annotateEditorFactory {
         &annotateEditorParameters,
         [] { return new BazaarEditorWidget; },
-        std::bind(&BazaarPluginPrivate::describe, this, _1, _2)
+        std::bind(&BazaarPluginPrivate::vcsDescribe, this, _1, _2)
     };
 
     VcsEditorFactory diffEditorFactory {
         &diffEditorParameters,
         [] { return new BazaarEditorWidget; },
-        std::bind(&BazaarPluginPrivate::describe, this, _1, _2)
+        std::bind(&BazaarPluginPrivate::vcsDescribe, this, _1, _2)
     };
 };
 
@@ -748,7 +747,7 @@ void BazaarPluginPrivate::commitFromEditor()
     // Close the submit editor
     m_submitActionTriggered = true;
     QTC_ASSERT(submitEditor(), return);
-    EditorManager::closeDocument(submitEditor()->document());
+    EditorManager::closeDocuments({submitEditor()->document()});
 }
 
 void BazaarPluginPrivate::uncommit()
@@ -790,7 +789,7 @@ bool BazaarPluginPrivate::submitEditorAboutToClose()
         //rewrite entries of the form 'file => newfile' to 'newfile' because
         //this would mess the commit command
         for (QStringList::iterator iFile = files.begin(); iFile != files.end(); ++iFile) {
-            const QStringList parts = iFile->split(QLatin1String(" => "), QString::SkipEmptyParts);
+            const QStringList parts = iFile->split(QLatin1String(" => "), Qt::SkipEmptyParts);
             if (!parts.isEmpty())
                 *iFile = parts.last();
         }
@@ -840,9 +839,9 @@ QString BazaarPluginPrivate::displayName() const
     return tr("Bazaar");
 }
 
-Core::Id BazaarPluginPrivate::id() const
+Utils::Id BazaarPluginPrivate::id() const
 {
-    return Core::Id(VcsBase::Constants::VCS_ID_BAZAAR);
+    return Utils::Id(VcsBase::Constants::VCS_ID_BAZAAR);
 }
 
 bool BazaarPluginPrivate::isVcsFileOrDirectory(const Utils::FilePath &fileName) const
@@ -924,11 +923,10 @@ bool BazaarPluginPrivate::vcsCreateRepository(const QString &directory)
     return m_client.synchronousCreateRepository(directory);
 }
 
-bool BazaarPluginPrivate::vcsAnnotate(const QString &file, int line)
+void BazaarPluginPrivate::vcsAnnotate(const QString &file, int line)
 {
     const QFileInfo fi(file);
     m_client.annotate(fi.absolutePath(), fi.fileName(), QString(), line);
-    return true;
 }
 
 Core::ShellCommand *BazaarPluginPrivate::createInitialCheckoutCommand(const QString &url,

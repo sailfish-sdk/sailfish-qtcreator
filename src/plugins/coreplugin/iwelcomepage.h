@@ -27,7 +27,8 @@
 
 #include "core_global.h"
 
-#include "id.h"
+#include <utils/id.h>
+#include <utils/porting.h>
 
 #include <QWidget>
 #include <QObject>
@@ -53,7 +54,7 @@ public:
 
     virtual QString title() const = 0;
     virtual int priority() const { return 0; }
-    virtual Core::Id id() const = 0;
+    virtual Utils::Id id() const = 0;
     virtual QWidget *createWidget() const = 0;
 
     static const QList<IWelcomePage *> allWelcomePages();
@@ -76,7 +77,7 @@ public:
     ~WelcomePageButton() override;
 
     void mousePressEvent(QMouseEvent *) override;
-    void enterEvent(QEvent *) override;
+    void enterEvent(Utils::EnterEvent *) override;
     void leaveEvent(QEvent *) override;
 
     void setText(const QString &text);

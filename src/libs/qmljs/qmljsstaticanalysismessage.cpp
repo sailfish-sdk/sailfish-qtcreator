@@ -31,7 +31,7 @@
 #include <utils/qtcassert.h>
 
 #include <QCoreApplication>
-#include <QRegExp>
+#include <QRegularExpression>
 
 using namespace QmlJS;
 using namespace QmlJS::StaticAnalysis;
@@ -245,6 +245,8 @@ StaticAnalysisMessages::StaticAnalysisMessages()
            tr("Duplicate import (%1)."), 1);
     newMsg(ErrHitMaximumRecursion, Error,
            tr("Hit maximum recursion limit when visiting AST."));
+    newMsg(ErrTypeIsInstantiatedRecursively, Error,
+            tr("Type cannot be instantiated recursively (%1)."), 1);
 }
 
 } // anonymous namespace
@@ -315,9 +317,9 @@ QString Message::suppressionString() const
     return QString::fromLatin1("@disable-check M%1").arg(QString::number(type));
 }
 
-QRegExp Message::suppressionPattern()
+QRegularExpression Message::suppressionPattern()
 {
-    return QRegExp(QLatin1String("@disable-check M(\\d+)"));
+    return QRegularExpression("@disable-check M(\\d+)");
 }
 
 const PrototypeMessageData Message::prototypeForMessageType(Type type)

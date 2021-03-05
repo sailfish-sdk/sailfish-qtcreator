@@ -26,8 +26,8 @@
 #pragma once
 
 #include "core_global.h"
-#include "id.h"
 
+#include <utils/id.h>
 #include <utils/fileutils.h>
 
 #include <QDateTime>
@@ -92,7 +92,7 @@ public:
     ~IVersionControl() override;
 
     virtual QString displayName() const = 0;
-    virtual Id id() const = 0;
+    virtual Utils::Id id() const = 0;
 
     /*!
      * \brief isVcsFileOrDirectory
@@ -128,11 +128,9 @@ public:
     /*!
      * Returns the subset of \a filePaths that is not managed by this version control.
      *
-     * \a workingDirectory is assumed to be part of a valid repository (not necessarily its
-     * top level). The \a filePaths are expected to be absolute paths.
+     * The \a filePaths are expected to be absolute paths.
      */
-    virtual QStringList unmanagedFiles(const QString &workingDir,
-                                       const QStringList &filePaths) const;
+    virtual QStringList unmanagedFiles(const QStringList &filePaths) const;
 
     /*!
      * Returns true is the VCS is configured to run.
@@ -199,7 +197,7 @@ public:
     /*!
      * Display annotation for a file and scroll to line
      */
-    virtual bool vcsAnnotate(const QString &file, int line) = 0;
+    virtual void vcsAnnotate(const QString &file, int line) = 0;
 
     /*!
      * Display text for Open operation
@@ -210,6 +208,11 @@ public:
      * Display text for Make Writable
      */
     virtual QString vcsMakeWritableText() const;
+
+    /*!
+     * Display details of reference
+     */
+    virtual void vcsDescribe(const QString &workingDirectory, const QString &reference) = 0;
 
     /*!
      * Return a list of paths where tools that came with the VCS may be installed.
@@ -231,6 +234,8 @@ public:
     virtual void fillLinkContextMenu(QMenu *menu,
                                      const QString &workingDirectory,
                                      const QString &reference);
+
+    virtual bool handleLink(const QString &workingDirectory, const QString &reference);
 
     class CORE_EXPORT RepoUrl {
     public:
@@ -270,7 +275,7 @@ class CORE_EXPORT TestVersionControl : public IVersionControl
 {
     Q_OBJECT
 public:
-    TestVersionControl(Id id, const QString &name) :
+    TestVersionControl(Utils::Id id, const QString &name) :
         m_id(id), m_displayName(name)
     { }
     ~TestVersionControl() override;
@@ -286,7 +291,7 @@ public:
 
     // IVersionControl interface
     QString displayName() const override { return m_displayName; }
-    Id id() const override { return m_id; }
+    Utils::Id id() const override { return m_id; }
     bool managesDirectory(const QString &filename, QString *topLevel) const override;
     bool managesFile(const QString &workingDirectory, const QString &fileName) const override;
     bool isConfigured() const override { return true; }
@@ -296,10 +301,11 @@ public:
     bool vcsDelete(const QString &) override { return false; }
     bool vcsMove(const QString &, const QString &) override { return false; }
     bool vcsCreateRepository(const QString &) override { return false; }
-    bool vcsAnnotate(const QString &, int) override { return false; }
+    void vcsAnnotate(const QString &, int) override {}
+    void vcsDescribe(const QString &, const QString &) override {}
 
 private:
-    Id m_id;
+    Utils::Id m_id;
     QString m_displayName;
     QHash<QString, QString> m_managedDirs;
     QSet<QString> m_managedFiles;
@@ -308,4 +314,5 @@ private:
 };
 
 } // namespace Core
+
 #endif

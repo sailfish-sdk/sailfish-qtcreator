@@ -31,6 +31,7 @@
 #include "pluginmanager.h"
 
 #include <utils/algorithm.h>
+#include <utils/hostosinfo.h>
 #include <utils/qtcassert.h>
 #include <utils/stringutils.h>
 
@@ -44,11 +45,12 @@
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QPluginLoader>
-#include <QRegExp>
 
 /*!
     \class ExtensionSystem::PluginDependency
+    \inheaderfile extensionsystem/pluginspec.h
     \inmodule QtCreator
+
     \brief The PluginDependency class contains the name and required compatible
     version number of a plugin's dependency.
 
@@ -92,7 +94,9 @@
 
 /*!
     \class ExtensionSystem::PluginSpec
+    \inheaderfile extensionsystem/pluginspec.h
     \inmodule QtCreator
+
     \brief The PluginSpec class contains the information of the plugin's embedded meta data
     and information about the plugin's current state.
 
@@ -135,7 +139,9 @@
 
 /*!
     \class ExtensionSystem::PluginArgumentDescription
+    \inheaderfile extensionsystem/pluginspec.h
     \inmodule QtCreator
+
     \brief The PluginArgumentDescriptions class holds a list of descriptions of
     command line arguments that a plugin processes.
 
@@ -282,13 +288,21 @@ QString PluginSpec::category() const
     return d->category;
 }
 
+QString PluginSpec::revision() const
+{
+    const QJsonValue revision = metaData().value("Revision");
+    if (revision.isString())
+        return revision.toString();
+    return QString();
+}
+
 /*!
-    Returns a QRegExp matching the platforms this plugin works on. An empty
-    pattern implies all platforms.
+    Returns a QRegularExpression matching the platforms this plugin works on.
+    An empty pattern implies all platforms.
     \since 3.0
 */
 
-QRegExp PluginSpec::platformSpecification() const
+QRegularExpression PluginSpec::platformSpecification() const
 {
     return d->platformSpecification;
 }
@@ -298,8 +312,8 @@ QRegExp PluginSpec::platformSpecification() const
 */
 bool PluginSpec::isAvailableForHostPlatform() const
 {
-    return d->platformSpecification.isEmpty()
-            || d->platformSpecification.indexIn(PluginManager::platformName()) >= 0;
+    return d->platformSpecification.pattern().isEmpty()
+            || d->platformSpecification.match(PluginManager::platformName()).hasMatch();
 }
 
 /*!
@@ -308,14 +322,6 @@ bool PluginSpec::isAvailableForHostPlatform() const
 bool PluginSpec::isRequired() const
 {
     return d->required;
-}
-
-/*!
-    Returns whether the plugin is hidden by default.
-*/
-bool PluginSpec::isHiddenByDefault() const
-{
-    return d->hiddenByDefault;
 }
 
 /*!
@@ -541,6 +547,16 @@ void PluginSpec::setEnabledBySettings(bool value)
     d->setEnabledBySettings(value);
 }
 
+PluginSpec *PluginSpec::read(const QString &filePath)
+{
+    auto spec = new PluginSpec;
+    if (!spec->d->read(filePath)) { // not a Qt Creator plugin
+        delete spec;
+        return nullptr;
+    }
+    return spec;
+}
+
 //==========PluginSpecPrivate==================
 
 namespace {
@@ -549,7 +565,6 @@ namespace {
     const char PLUGIN_VERSION[] = "Version";
     const char PLUGIN_COMPATVERSION[] = "CompatVersion";
     const char PLUGIN_REQUIRED[] = "Required";
-    const char PLUGIN_HIDDEN_BY_DEFAULT[] = "HiddenByDefault";
     const char PLUGIN_EXPERIMENTAL[] = "Experimental";
     const char PLUGIN_DISABLED_BY_DEFAULT[] = "DisabledByDefault";
     const char VENDOR[] = "Vendor";
@@ -577,6 +592,8 @@ namespace {
 PluginSpecPrivate::PluginSpecPrivate(PluginSpec *spec)
     : q(spec)
 {
+    if (Utils::HostOsInfo::isMacHost())
+        loader.setLoadHints(QLibrary::ExportExternalSymbolsHint);
 }
 
 /*!
@@ -738,12 +755,6 @@ bool PluginSpecPrivate::readMetaData(const QJsonObject &pluginMetaData)
     required = value.toBool(false);
     qCDebug(pluginLog) << "required =" << required;
 
-    value = metaData.value(QLatin1String(PLUGIN_HIDDEN_BY_DEFAULT));
-    if (!value.isUndefined() && !value.isBool())
-        return reportError(msgValueIsNotABool(PLUGIN_HIDDEN_BY_DEFAULT));
-    hiddenByDefault = value.toBool(false);
-    qCDebug(pluginLog) << "hiddenByDefault =" << hiddenByDefault;
-
     value = metaData.value(QLatin1String(PLUGIN_EXPERIMENTAL));
     if (!value.isUndefined() && !value.isBool())
         return reportError(msgValueIsNotABool(PLUGIN_EXPERIMENTAL));
@@ -894,9 +905,9 @@ bool PluginSpecPrivate::provides(const QString &pluginName, const QString &plugi
 /*!
     \internal
 */
-const QRegExp &PluginSpecPrivate::versionRegExp()
+const QRegularExpression &PluginSpecPrivate::versionRegExp()
 {
-    static const QRegExp reg(QLatin1String("([0-9]+)(?:[.]([0-9]+))?(?:[.]([0-9]+))?(?:_([0-9]+))?"));
+    static const QRegularExpression reg("^([0-9]+)(?:[.]([0-9]+))?(?:[.]([0-9]+))?(?:_([0-9]+))?$");
     return reg;
 }
 /*!
@@ -904,7 +915,7 @@ const QRegExp &PluginSpecPrivate::versionRegExp()
 */
 bool PluginSpecPrivate::isValidVersion(const QString &version)
 {
-    return versionRegExp().exactMatch(version);
+    return versionRegExp().match(version).hasMatch();
 }
 
 /*!
@@ -912,17 +923,15 @@ bool PluginSpecPrivate::isValidVersion(const QString &version)
 */
 int PluginSpecPrivate::versionCompare(const QString &version1, const QString &version2)
 {
-    QRegExp reg1 = versionRegExp();
-    QRegExp reg2 = versionRegExp();
-    if (!reg1.exactMatch(version1))
+    const QRegularExpressionMatch match1 = versionRegExp().match(version1);
+    const QRegularExpressionMatch match2 = versionRegExp().match(version2);
+    if (!match1.hasMatch())
         return 0;
-    if (!reg2.exactMatch(version2))
+    if (!match2.hasMatch())
         return 0;
-    int number1;
-    int number2;
     for (int i = 0; i < 4; ++i) {
-        number1 = reg1.cap(i+1).toInt();
-        number2 = reg2.cap(i+1).toInt();
+        const int number1 = match1.captured(i + 1).toInt();
+        const int number2 = match2.captured(i + 1).toInt();
         if (number1 < number2)
             return -1;
         if (number1 > number2)

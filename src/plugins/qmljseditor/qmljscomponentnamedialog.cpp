@@ -87,7 +87,7 @@ bool ComponentNameDialog::go(QString *proposedName,
 
     if (QDialog::Accepted == d.exec()) {
         *proposedName = d.ui->componentNameEdit->text();
-        *proposedPath = d.ui->pathEdit->path();
+        *proposedPath = d.ui->pathEdit->filePath().toString();
 
         if (d.ui->checkBox->isChecked())
             *proposedSuffix = "ui.qml";
@@ -167,6 +167,9 @@ QString ComponentNameDialog::isValid() const
 
     if (!ui->pathEdit->isValid())
         return tr("Invalid path");
+
+    if (QDir(ui->pathEdit->path()).exists(compName + u".qml"))
+        return tr("Component exists already");
 
     return QString();
 }

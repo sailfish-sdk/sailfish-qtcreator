@@ -44,6 +44,9 @@ private slots:
 
     void testCompleteGlobals();
     void testCompleteMembers();
+    void testCompleteMembersFromInside();
+    void testCompleteMembersFromOutside();
+    void testCompleteMembersFromFriend();
     void testCompleteFunctions();
     void testCompleteConstructor();
     void testCompleteClassAndConstructor();
@@ -54,6 +57,9 @@ private slots:
     void testCompleteProjectDependingCode();
     void testCompleteProjectDependingCodeAfterChangingProject();
     void testCompleteProjectDependingCodeInGeneratedUiFile();
+
+    void testSignalCompletion_data();
+    void testSignalCompletion();
 };
 
 } // namespace Tests

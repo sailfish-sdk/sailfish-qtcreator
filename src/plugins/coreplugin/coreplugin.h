@@ -76,6 +76,8 @@ private slots:
     // Locator:
     void test_basefilefilter();
     void test_basefilefilter_data();
+
+    void testOutputFormatter();
 #endif
 
 private:
@@ -85,7 +87,7 @@ private:
     MainWindow *m_mainWindow = nullptr;
     EditMode *m_editMode = nullptr;
     Locator *m_locator = nullptr;
-    ReaperPrivate m_reaper;
+    ProcessReapers m_reaper;
 };
 
 } // namespace Internal

@@ -34,7 +34,6 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QRegExp>
 #include <QVariant>
 
 #include <QMenu>
@@ -42,17 +41,17 @@
 #include <QMessageBox>
 #include <QHBoxLayout>
 #include <QLineEdit>
-#include <QRegExpValidator>
+#include <QRegularExpressionValidator>
 #include <QToolBar>
 
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/coreconstants.h>
-#include <coreplugin/id.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/editormanager/ieditor.h>
 #include <coreplugin/find/ifindsupport.h>
 #include <coreplugin/idocument.h>
 #include <extensionsystem/pluginmanager.h>
+
 #include <utils/reloadpromptutils.h>
 #include <utils/qtcassert.h>
 
@@ -261,7 +260,7 @@ public:
                 if (errorString)
                     *errorString = msg;
                 else
-                    QMessageBox::critical(ICore::mainWindow(), tr("File Error"), msg);
+                    QMessageBox::critical(ICore::dialogParent(), tr("File Error"), msg);
                 return OpenResult::CannotHandle;
             }
             if (size / 16 >= qint64(1) << 31) {
@@ -270,7 +269,7 @@ public:
                 if (errorString)
                     *errorString = msg;
                 else
-                    QMessageBox::critical(ICore::mainWindow(), tr("File Error"), msg);
+                    QMessageBox::critical(ICore::dialogParent(), tr("File Error"), msg);
                 return OpenResult::CannotHandle;
             }
             if (offset >= size)
@@ -284,7 +283,7 @@ public:
         if (errorString)
             *errorString = errStr;
         else
-            QMessageBox::critical(ICore::mainWindow(), tr("File Error"), errStr);
+            QMessageBox::critical(ICore::dialogParent(), tr("File Error"), errStr);
         return OpenResult::ReadError;
     }
 
@@ -304,7 +303,7 @@ public:
                 data += QByteArray(blockSize - dataSize, 0);
             m_widget->addData(address, data);
         } else {
-            QMessageBox::critical(ICore::mainWindow(), tr("File Error"),
+            QMessageBox::critical(ICore::dialogParent(), tr("File Error"),
                                   tr("Cannot open %1: %2").arg(
                                         fn.toUserOutput(), file.errorString()));
         }
@@ -363,7 +362,7 @@ public:
         setWidget(widget);
         m_file = new BinEditorDocument(widget);
         m_addressEdit = new QLineEdit;
-        auto addressValidator = new QRegExpValidator(QRegExp("[0-9a-fA-F]{1,16}"), m_addressEdit);
+        auto addressValidator = new QRegularExpressionValidator(QRegularExpression("[0-9a-fA-F]{1,16}"), m_addressEdit);
         m_addressEdit->setValidator(addressValidator);
 
         auto l = new QHBoxLayout;

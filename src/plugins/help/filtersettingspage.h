@@ -25,10 +25,17 @@
 
 #pragma once
 
-#include "ui_filtersettingspage.h"
 #include <coreplugin/dialogs/ioptionspage.h>
 
 #include <QPointer>
+
+#ifndef HELP_NEW_FILTER_ENGINE
+#include "ui_filtersettingspage.h"
+#else
+QT_BEGIN_NAMESPACE
+class QHelpFilterSettingsWidget;
+QT_END_NAMESPACE
+#endif
 
 namespace Help {
 namespace Internal {
@@ -48,9 +55,11 @@ signals:
     void filtersChanged();
 
 private:
+
+    void updateFilterPage();
+#ifndef HELP_NEW_FILTER_ENGINE
     void updateAttributes(QListWidgetItem *item);
     void updateFilterMap();
-    void updateFilterPage();
     void addFilter();
     void removeFilter();
     void updateFilterDescription(const QString &filter);
@@ -64,6 +73,10 @@ private:
     FilterMap m_filterMapBackup;
 
     QStringList m_removedFilters;
+#else
+    QPointer<QHelpFilterSettingsWidget> m_widget;
+#endif
+
 };
 
 } // namespace Help

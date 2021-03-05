@@ -64,6 +64,7 @@
 #include <utils/qtcassert.h>
 #include <utils/qtcprocess.h>
 #include <utils/savedaction.h>
+#include <utils/stringutils.h>
 #include <utils/synchronousprocess.h>
 #include <utils/temporaryfile.h>
 
@@ -95,19 +96,19 @@ static int &currentToken()
     return token;
 }
 
-static bool isMostlyHarmlessMessage(const QStringRef &msg)
+static bool isMostlyHarmlessMessage(const QStringView msg)
 {
-    return msg == "warning: GDB: Failed to set controlling terminal: "
-                  "Inappropriate ioctl for device\\n"
-        || msg == "warning: GDB: Failed to set controlling terminal: "
-                  "Invalid argument\\n";
+    return msg == u"warning: GDB: Failed to set controlling terminal: "
+                   "Inappropriate ioctl for device\\n"
+        || msg == u"warning: GDB: Failed to set controlling terminal: "
+                   "Invalid argument\\n";
 }
 
 static QMessageBox *showMessageBox(QMessageBox::Icon icon,
                                    const QString &title, const QString &text,
                                    QMessageBox::StandardButtons buttons)
 {
-    auto mb = new QMessageBox(icon, title, text, buttons, ICore::mainWindow());
+    auto mb = new QMessageBox(icon, title, text, buttons, ICore::dialogParent());
     mb->setAttribute(Qt::WA_DeleteOnClose);
     mb->setTextInteractionFlags(Qt::TextSelectableByMouse);
     mb->show();
@@ -134,7 +135,7 @@ GdbEngine::GdbEngine()
 
     connect(action(AutoDerefPointers), &SavedAction::valueChanged,
             this, &GdbEngine::reloadLocals);
-    connect(action(CreateFullBacktrace), &QAction::triggered,
+    connect(action(CreateFullBacktrace)->action(), &QAction::triggered,
             this, &GdbEngine::createFullBacktrace);
     connect(action(UseDebuggingHelpers), &SavedAction::valueChanged,
             this, &GdbEngine::reloadLocals);
@@ -177,7 +178,7 @@ static QString msgWinException(const QString &data, unsigned *exCodeIn = nullptr
     const int addressPos = blankPos != -1 ? data.indexOf("0x", blankPos + 1) : -1;
     if (addressPos < 0)
         return GdbEngine::tr("An exception was triggered.");
-    const unsigned exCode = data.midRef(exCodePos, blankPos - exCodePos).toUInt(nullptr, 0);
+    const unsigned exCode = data.mid(exCodePos, blankPos - exCodePos).toUInt(nullptr, 0);
     if (exCodeIn)
         *exCodeIn = exCode;
     const quint64 address = data.mid(addressPos).trimmed().toULongLong(nullptr, 0);
@@ -607,7 +608,7 @@ void GdbEngine::readDebuggeeOutput(const QByteArray &ba)
     const QString msg = m_inferiorOutputCodec->toUnicode(ba.constData(), ba.size(),
                                                          &m_inferiorOutputCodecState);
 
-    if (msg.startsWith("&\"") && isMostlyHarmlessMessage(msg.midRef(2, msg.size() - 4)))
+    if (msg.startsWith("&\"") && isMostlyHarmlessMessage(QStringView{msg}.mid(2, msg.size() - 4)))
         showMessage("Mostly harmless terminal warning suppressed.", LogWarning);
     else
         showMessage(msg, AppStuff);
@@ -766,8 +767,7 @@ void GdbEngine::runCommand(const DebuggerCommand &command)
         m_scheduledTestResponses.remove(token);
         showMessage(QString("FAKING TEST RESPONSE (TOKEN: %2, RESPONSE: %3)")
                     .arg(token).arg(buffer));
-        QMetaObject::invokeMethod(this, "handleResponse",
-            Q_ARG(QString, buffer));
+        QMetaObject::invokeMethod(this, [this, buffer] { handleResponse(buffer); });
     } else {
         m_gdbProc.write(cmd.function.toUtf8() + "\r\n");
         if (command.flags & NeedsFlush)
@@ -1389,7 +1389,7 @@ void GdbEngine::handleStop2(const GdbMi &data)
         const GdbMi wpt = data["wpt"];
         const QString rid = wpt["number"].data();
         const Breakpoint bp = breakHandler()->findBreakpointByResponseId(rid);
-        const quint64 bpAddress = wpt["exp"].data().midRef(1).toULongLong(nullptr, 0);
+        const quint64 bpAddress = wpt["exp"].data().mid(1).toULongLong(nullptr, 0);
         QString msg;
         if (bp) {
             if (bp->type() == WatchpointAtExpression)
@@ -1631,7 +1631,7 @@ QString GdbEngine::cleanupFullName(const QString &fileName)
     cleanFilePath.clear();
     const QString base = FilePath::fromString(fileName).fileName();
 
-    QMap<QString, QString>::const_iterator jt = m_baseNameToFullName.constFind(base);
+    QMultiMap<QString, QString>::const_iterator jt = m_baseNameToFullName.constFind(base);
     while (jt != m_baseNameToFullName.constEnd() && jt.key() == base) {
         // FIXME: Use some heuristics to find the "best" match.
         return jt.value();
@@ -2152,7 +2152,7 @@ void GdbEngine::handleWatchInsert(const DebuggerResponse &response, const Breakp
             bp->setResponseId(wpt["number"].data());
             QString exp = wpt["exp"].data();
             if (exp.startsWith('*'))
-                bp->setAddress(exp.midRef(1).toULongLong(nullptr, 0));
+                bp->setAddress(exp.mid(1).toULongLong(nullptr, 0));
             QTC_CHECK(!bp->needsChange());
             notifyBreakpointInsertOk(bp);
         } else if (ba.startsWith("Hardware watchpoint ")
@@ -2163,7 +2163,7 @@ void GdbEngine::handleWatchInsert(const DebuggerResponse &response, const Breakp
             const QString address = ba.mid(end + 2).trimmed();
             bp->setResponseId(ba.mid(begin, end - begin));
             if (address.startsWith('*'))
-                bp->setAddress(address.midRef(1).toULongLong(nullptr, 0));
+                bp->setAddress(address.mid(1).toULongLong(nullptr, 0));
             QTC_CHECK(!bp->needsChange());
             notifyBreakpointInsertOk(bp);
         } else {
@@ -2703,7 +2703,7 @@ void GdbEngine::handleShowModuleSections(const DebuggerResponse &response,
                     active = true;
             } else {
                 if (active) {
-                    QStringList items = line.split(' ', QString::SkipEmptyParts);
+                    QStringList items = line.split(' ', Qt::SkipEmptyParts);
                     QString fromTo = items.value(0, QString());
                     const int pos = fromTo.indexOf('-');
                     QTC_ASSERT(pos >= 0, continue);
@@ -3192,14 +3192,14 @@ void GdbEngine::handleRegisterListing(const DebuggerResponse &response)
     m_registers.clear();
     QStringList lines = response.consoleStreamOutput.split('\n');
     for (int i = 1; i < lines.size(); ++i) {
-        const QVector<QStringRef> parts = lines.at(i).splitRef(' ', QString::SkipEmptyParts);
+        const QStringList parts = lines.at(i).split(' ', Qt::SkipEmptyParts);
         if (parts.size() < 7)
             continue;
         int gdbRegisterNumber = parts.at(1).toInt();
         Register reg;
-        reg.name = parts.at(0).toString();
+        reg.name = parts.at(0);
         reg.size = parts.at(4).toInt();
-        reg.reportedType = parts.at(5).toString();
+        reg.reportedType = parts.at(5);
         m_registers[gdbRegisterNumber] = reg;
     }
 }
@@ -3590,7 +3590,7 @@ void GdbEngine::setupEngine()
     }
 
     const QString tests = QString::fromLocal8Bit(qgetenv("QTC_DEBUGGER_TESTS"));
-    foreach (const QStringRef &test, tests.splitRef(','))
+    foreach (const QString &test, tests.split(','))
         m_testCases.insert(test.toInt());
     foreach (int test, m_testCases)
         showMessage("ENABLING TEST CASE: " + QString::number(test));
@@ -3641,7 +3641,6 @@ void GdbEngine::setupEngine()
     //runCommand("define hookpost-stop\nprint 5\nend");
     //runCommand("define hook-call\nprint 6\nend");
     //runCommand("define hookpost-call\nprint 7\nend");
-    runCommand({"set print object on"});
     //runCommand("set step-mode on");  // we can't work with that yes
     //runCommand("set exec-done-display on");
     //runCommand("set print pretty on");
@@ -3805,10 +3804,12 @@ void GdbEngine::setEnvironmentVariables()
         // imitate the weird windows gdb behavior of setting the case of the path environment
         // variable name to an all uppercase PATH
         const QString name = isWindowsPath(item.name) ? "PATH" : item.name;
-        if (item.operation == EnvironmentItem::Unset)
+        if (item.operation == EnvironmentItem::Unset
+                || item.operation == EnvironmentItem::SetDisabled) {
             runCommand({"unset environment " + name});
-        else
+        } else {
             runCommand({"-gdb-set environment " + name + '=' + item.value});
+        }
     }
 }
 
@@ -4164,10 +4165,7 @@ void GdbEngine::setupInferior()
         if (symbolFile.isEmpty()) {
             showMessage(tr("No symbol file given."), StatusBar);
             callTargetRemote();
-            return;
-        }
-
-        if (!symbolFile.isEmpty()) {
+        } else {
             runCommand({"-file-exec-and-symbols \"" + symbolFile + '"',
                         CB(handleFileExecAndSymbols)});
         }
@@ -4200,7 +4198,10 @@ void GdbEngine::setupInferior()
         // Do that first, otherwise no symbols are loaded.
         QFileInfo fi = executable.toFileInfo();
         QString path = fi.absoluteFilePath();
-        runCommand({"-file-exec-and-symbols \"" + path + '"',
+        // This is *not* equivalent to -file-exec-and-symbols. If the file is not executable
+        // (contains only debugging symbols), this should still work.
+        runCommand({"-file-exec-file \"" + path + '"'});
+        runCommand({"-file-symbol-file \"" + path + '"',
                     CB(handleFileExecAndSymbols)});
 
     } else if (isTermEngine()) {

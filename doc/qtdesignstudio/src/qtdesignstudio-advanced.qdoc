@@ -61,10 +61,12 @@
             just as plain text. This enables it to provide you with useful
             features, such as semantic highlighting, checking code syntax,
             code completion, and refactoring actions.
-        \li \l{Simulating Application Logic}
+        \li \l{Simulating Data Input}
 
-            You can use JavaScript to simulate application logic to bring your
-            UI to life.
+            \QDS enables you to connect UIs to different forms of data from various
+            sources, such as QML-based data models, JavaScript files, and backend
+            services. You can also connect your UI to Simulink to load live data from a
+            Simulink simulation.
         \li \l{Debugging and Profiling}
 
             \QDS comes with a JavaScript debugger. In the Debug mode, you
@@ -85,5 +87,18 @@
             editor for your system, and the \c sort tool are preconfigured for
             use. You can change their default configurations and configure new
             tools.
+        \li \l{Managing Data Collection Settings}
+
+            \if defined (qtcreator)
+            You can enable \QC to report crashes automatically. If you agreed to
+            pseudonymous user statistics collection during the \QC installation,
+            you can turn it on and determine what type of data is collected and
+            transmitted to the backend storage.
+            \else
+            You can enable \QDS to report crashes automatically. If you enable
+            the telemetry plugin, you can turn on the pseudonymous user
+            statistics collection and determine what type of data is collected
+            and transmitted to the backend storage.
+            \endif
     \endlist
 */

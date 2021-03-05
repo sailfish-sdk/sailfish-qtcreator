@@ -151,6 +151,8 @@ static bool isOverlayCategory(TextStyle category)
     return category == C_OCCURRENCES
            || category == C_OCCURRENCES_RENAME
            || category == C_SEARCH_RESULT
+           || category == C_SEARCH_RESULT_ALT1
+           || category == C_SEARCH_RESULT_ALT2
            || category == C_PARENTHESES_MISMATCH;
 }
 
@@ -440,7 +442,7 @@ bool FontSettings::loadColorScheme(const QString &fileName,
 
 bool FontSettings::saveColorScheme(const QString &fileName)
 {
-    const bool saved = m_scheme.save(fileName, Core::ICore::mainWindow());
+    const bool saved = m_scheme.save(fileName, Core::ICore::dialogParent());
     if (saved)
         m_schemeFileName = fileName;
     return saved;

@@ -45,7 +45,7 @@
 #include <texteditor/texteditorsettings.h>
 #include <texteditor/textindenter.h>
 #include <utils/mimetypes/mimedatabase.h>
-#
+
 #include <QPointer>
 #include <QDebug>
 #include <QFileInfo>
@@ -55,6 +55,7 @@
 
 using namespace TextEditor;
 using namespace Core;
+using namespace Utils;
 
 /*!
     \class ProjectExplorer::Internal::ProjectFileWizardExtension
@@ -189,7 +190,7 @@ bool ProjectFileWizardExtension::processFiles(
             errorMessage->clear();
         }
         message.append(tr("Open project anyway?"));
-        if (QMessageBox::question(ICore::mainWindow(), tr("Version Control Failure"), message,
+        if (QMessageBox::question(ICore::dialogParent(), tr("Version Control Failure"), message,
                                   QMessageBox::Yes, QMessageBox::No) == QMessageBox::No)
             return false;
     }

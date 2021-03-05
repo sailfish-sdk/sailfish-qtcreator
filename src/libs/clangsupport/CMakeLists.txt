@@ -5,8 +5,8 @@ add_qtc_library(ClangSupport
   PUBLIC_DEPENDS Utils Sqlite Qt5::Core Qt5::Network
   PUBLIC_DEFINES
     CLANG_VERSION="${CLANG_VERSION}"
-    CLANG_RESOURCE_DIR="${IDE_LIBEXEC_PATH}/clang/lib/clang/${CLANG_VERSION}/include"
-    CLANG_BINDIR="${IDE_LIBEXEC_PATH}/clang/bin"
+    CLANG_INCLUDE_DIR="${LLVM_LIBRARY_DIR}/clang/${CLANG_VERSION}/include"
+    CLANG_BINDIR="${LLVM_TOOLS_BINARY_DIR}"
   DEFINES CLANGSUPPORT_BUILD_LIB
   PUBLIC_INCLUDES
     "${CMAKE_CURRENT_LIST_DIR}"
@@ -146,55 +146,3 @@ add_qtc_library(ClangSupport
 if (NOT TARGET libclang)
   return()
 endif()
-
-add_custom_target(copy_clang_to_builddir ALL
-  COMMENT Copy Clang files into build directory
-)
-
-# For the developer build directory
-add_custom_command(TARGET copy_clang_to_builddir POST_BUILD
-  COMMAND "${CMAKE_COMMAND}"
-    -E copy_directory
-      "${LLVM_LIBRARY_DIR}/clang/${CLANG_VERSION}/include"
-      "${PROJECT_BINARY_DIR}/${IDE_LIBEXEC_PATH}/clang/lib/clang/${CLANG_VERSION}/include"
-  VERBATIM
-)
-
-foreach(executable clang clang-cl clangd clang-tidy clazy-standalone)
-  if (EXISTS "${LLVM_TOOLS_BINARY_DIR}/${executable}${CMAKE_EXECUTABLE_SUFFIX}")
-    add_custom_command(TARGET copy_clang_to_builddir PRE_BUILD
-      COMMAND "${CMAKE_COMMAND}"
-        -E make_directory
-          "${PROJECT_BINARY_DIR}/${IDE_LIBEXEC_PATH}/clang/bin/"
-      COMMAND "${CMAKE_COMMAND}"
-        -E copy
-          "${LLVM_TOOLS_BINARY_DIR}/${executable}${CMAKE_EXECUTABLE_SUFFIX}"
-          "${PROJECT_BINARY_DIR}/${IDE_LIBEXEC_PATH}/clang/bin/"
-      VERBATIM
-    )
-
-    # For the install directory
-    install(PROGRAMS
-      "${LLVM_TOOLS_BINARY_DIR}/${executable}${CMAKE_EXECUTABLE_SUFFIX}"
-      DESTINATION "${IDE_LIBEXEC_PATH}/clang/bin"
-      COMPONENT Dependencies
-      EXCLUDE_FROM_ALL
-    )
-    if (IS_SYMLINK "${LLVM_TOOLS_BINARY_DIR}/${executable}${CMAKE_EXECUTABLE_SUFFIX}")
-      file(READ_SYMLINK
-        "${LLVM_TOOLS_BINARY_DIR}/${executable}${CMAKE_EXECUTABLE_SUFFIX}" real_executable)
-      install(PROGRAMS
-        "${LLVM_TOOLS_BINARY_DIR}/${real_executable}${CMAKE_EXECUTABLE_SUFFIX}"
-        DESTINATION "${IDE_LIBEXEC_PATH}/clang/bin"
-        COMPONENT Dependencies
-        EXCLUDE_FROM_ALL
-      )
-    endif()
-  endif()
-endforeach()
-
-install(DIRECTORY ${LLVM_LIBRARY_DIR}/clang/${CLANG_VERSION}/include
-  DESTINATION "${IDE_LIBEXEC_PATH}/clang/lib/clang/${CLANG_VERSION}"
-  COMPONENT Dependencies
-  EXCLUDE_FROM_ALL
-)

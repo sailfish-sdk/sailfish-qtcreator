@@ -64,8 +64,8 @@ void HighlighterSettingsPage::HighlighterSettingsPagePrivate::migrateGenericHigh
     QDir userDefinitionPath(m_settings.definitionFilesPath());
     if (userDefinitionPath.mkdir("syntax")) {
         const auto link = Utils::HostOsInfo::isAnyUnixHost()
-                              ? QOverload<const QString &, const QString &>::of(&QFile::link)
-                              : QOverload<const QString &, const QString &>::of(&QFile::copy);
+                              ? static_cast<bool(*)(const QString &, const QString &)>(&QFile::link)
+                              : static_cast<bool(*)(const QString &, const QString &)>(&QFile::copy);
 
         for (const QFileInfo &file : userDefinitionPath.entryInfoList({"*.xml"}, QDir::Files))
             link(file.filePath(), file.absolutePath() + "/syntax/" + file.fileName());
@@ -116,7 +116,7 @@ QWidget *HighlighterSettingsPage::widget()
             Highlighter::reload();
         });
         connect(m_d->m_page->resetCache, &QPushButton::clicked, []() {
-            Highlighter::clearDefintionForDocumentCache();
+            Highlighter::clearDefinitionForDocumentCache();
         });
 
         settingsToUI();
@@ -150,7 +150,7 @@ const HighlighterSettings &HighlighterSettingsPage::highlighterSettings() const
 void HighlighterSettingsPage::settingsFromUI()
 {
     m_d->ensureInitialized();
-    m_d->m_settings.setDefinitionFilesPath(m_d->m_page->definitionFilesPath->path());
+    m_d->m_settings.setDefinitionFilesPath(m_d->m_page->definitionFilesPath->filePath().toString());
     m_d->m_settings.setIgnoredFilesPatterns(m_d->m_page->ignoreEdit->text());
     m_d->m_settings.toSettings(m_d->m_settingsPrefix, Core::ICore::settings());
 }
@@ -165,6 +165,6 @@ void HighlighterSettingsPage::settingsToUI()
 bool HighlighterSettingsPage::settingsChanged() const
 {
     m_d->ensureInitialized();
-    return (m_d->m_settings.definitionFilesPath() != m_d->m_page->definitionFilesPath->path())
+    return (m_d->m_settings.definitionFilesPath() != m_d->m_page->definitionFilesPath->filePath().toString())
             || (m_d->m_settings.ignoredFilesPatterns() != m_d->m_page->ignoreEdit->text());
 }

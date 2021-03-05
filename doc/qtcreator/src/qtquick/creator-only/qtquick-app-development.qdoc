@@ -104,6 +104,11 @@
             {https://doc.qt.io/QtAutomotiveSuite/qtas-overview.html}{Qt
             Automotive Suite}.
 
+        \li \l {Exporting QML}
+
+            \l{Qt Quick UI Forms}{UI forms} (ui.qml files) can be exported to
+            JSON metadata format and PNG assets.
+
     \endlist
 
 */

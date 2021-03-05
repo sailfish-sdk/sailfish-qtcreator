@@ -32,7 +32,7 @@
 
 #include <QFileInfo>
 #include <QProcess>
-#include <QRegExp>
+#include <QRegularExpression>
 
 using namespace ProjectExplorer;
 using namespace Utils;
@@ -43,13 +43,13 @@ NimToolChain::NimToolChain()
     : NimToolChain(Constants::C_NIMTOOLCHAIN_TYPEID)
 {}
 
-NimToolChain::NimToolChain(Core::Id typeId)
+NimToolChain::NimToolChain(Utils::Id typeId)
     : ToolChain(typeId)
     , m_compilerCommand(FilePath())
     , m_version(std::make_tuple(-1,-1,-1))
 {
     setLanguage(Constants::C_NIMLANGUAGE_ID);
-    setTypeDisplayName(NimToolChainFactory::tr("Nim"));
+    setTypeDisplayName(tr("Nim"));
 }
 
 Abi NimToolChain::targetAbi() const
@@ -70,11 +70,6 @@ ToolChain::MacroInspectionRunner NimToolChain::createMacroInspectionRunner() con
     return ToolChain::MacroInspectionRunner();
 }
 
-Macros NimToolChain::predefinedMacros(const QStringList &) const
-{
-    return Macros();
-}
-
 LanguageExtensions NimToolChain::languageExtensions(const QStringList &) const
 {
     return LanguageExtension::None;
@@ -89,12 +84,6 @@ ToolChain::BuiltInHeaderPathsRunner NimToolChain::createBuiltInHeaderPathsRunner
         const Environment &) const
 {
     return ToolChain::BuiltInHeaderPathsRunner();
-}
-
-HeaderPaths NimToolChain::builtInHeaderPaths(const QStringList &, const FilePath &,
-                                             const Environment &) const
-{
-    return {};
 }
 
 void NimToolChain::addToEnvironment(Environment &env) const
@@ -120,9 +109,9 @@ void NimToolChain::setCompilerCommand(const FilePath &compilerCommand)
     parseVersion(compilerCommand, m_version);
 }
 
-IOutputParser *NimToolChain::outputParser() const
+QList<Utils::OutputLineParser *> NimToolChain::createOutputParsers() const
 {
-    return nullptr;
+    return {};
 }
 
 std::unique_ptr<ProjectExplorer::ToolChainConfigWidget> NimToolChain::createConfigurationWidget()
@@ -164,10 +153,11 @@ bool NimToolChain::parseVersion(const FilePath &path, std::tuple<int, int, int> 
     const QString version = QString::fromUtf8(process.readLine());
     if (version.isEmpty())
         return false;
-    const QRegExp regex("(\\d+)\\.(\\d+)\\.(\\d+)");
-    if (regex.indexIn(version) == -1)
+    const QRegularExpression regex("(\\d+)\\.(\\d+)\\.(\\d+)");
+    const QRegularExpressionMatch match = regex.match(version);
+    if (!match.hasMatch())
         return false;
-    const QStringList text = regex.capturedTexts();
+    const QStringList text = match.capturedTexts();
     if (text.length() != 4)
         return false;
     result = std::make_tuple(text[1].toInt(), text[2].toInt(), text[3].toInt());

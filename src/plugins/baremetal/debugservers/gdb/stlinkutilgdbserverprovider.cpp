@@ -28,11 +28,10 @@
 #include <baremetal/baremetalconstants.h>
 #include <baremetal/debugserverprovidermanager.h>
 
-#include <coreplugin/variablechooser.h>
-
 #include <utils/fileutils.h>
 #include <utils/pathchooser.h>
 #include <utils/qtcassert.h>
+#include <utils/variablechooser.h>
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -45,11 +44,11 @@ using namespace Utils;
 namespace BareMetal {
 namespace Internal {
 
-const char executableFileKeyC[] = "BareMetal.StLinkUtilGdbServerProvider.ExecutableFile";
-const char verboseLevelKeyC[] = "BareMetal.StLinkUtilGdbServerProvider.VerboseLevel";
-const char extendedModeKeyC[] = "BareMetal.StLinkUtilGdbServerProvider.ExtendedMode";
-const char resetBoardKeyC[] = "BareMetal.StLinkUtilGdbServerProvider.ResetBoard";
-const char transportLayerKeyC[] = "BareMetal.StLinkUtilGdbServerProvider.TransportLayer";
+const char executableFileKeyC[] = "ExecutableFile";
+const char verboseLevelKeyC[] = "VerboseLevel";
+const char extendedModeKeyC[] = "ExtendedMode";
+const char resetBoardKeyC[] = "ResetBoard";
+const char transportLayerKeyC[] = "TransportLayer";
 
 // StLinkUtilGdbServerProvider
 
@@ -59,7 +58,6 @@ StLinkUtilGdbServerProvider::StLinkUtilGdbServerProvider()
     setInitCommands(defaultInitCommands());
     setResetCommands(defaultResetCommands());
     setChannel("localhost", 4242);
-    setSettingsKeyBase("BareMetal.StLinkUtilGdbServerProvider");
     setTypeDisplayName(GdbServerProvider::tr("ST-LINK Utility"));
     setConfigurationWidgetCreator([this] { return new StLinkUtilGdbServerProviderConfigWidget(this); });
 }
@@ -222,7 +220,7 @@ StLinkUtilGdbServerProviderConfigWidget::StLinkUtilGdbServerProviderConfigWidget
     addErrorLabel();
     setFromProvider();
 
-    const auto chooser = new Core::VariableChooser(this);
+    const auto chooser = new VariableChooser(this);
     chooser->addSupportedWidget(m_initCommandsTextEdit);
     chooser->addSupportedWidget(m_resetCommandsTextEdit);
 
@@ -254,7 +252,7 @@ void StLinkUtilGdbServerProviderConfigWidget::apply()
     Q_ASSERT(p);
 
     p->setChannel(m_hostWidget->channel());
-    p->m_executableFile = m_executableFileChooser->fileName();
+    p->m_executableFile = m_executableFileChooser->filePath();
     p->m_verboseLevel = m_verboseLevelSpinBox->value();
     p->m_extendedMode = m_extendedModeCheckBox->isChecked();
     p->m_resetBoard = m_resetBoardCheckBox->isChecked();
@@ -312,7 +310,7 @@ void StLinkUtilGdbServerProviderConfigWidget::setFromProvider()
 
     const QSignalBlocker blocker(this);
     m_hostWidget->setChannel(p->channel());
-    m_executableFileChooser->setFileName(p->m_executableFile);
+    m_executableFileChooser->setFilePath(p->m_executableFile);
     m_verboseLevelSpinBox->setValue(p->m_verboseLevel);
     m_extendedModeCheckBox->setChecked(p->m_extendedMode);
     m_resetBoardCheckBox->setChecked(p->m_resetBoard);

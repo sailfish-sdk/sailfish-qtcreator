@@ -4,9 +4,6 @@ include(../../shared/clang/clang_defines.pri)
 
 requires(!isEmpty(LLVM_VERSION))
 
-LIBS += $$LIBCLANG_LIBS
-INCLUDEPATH += $$LLVM_INCLUDEPATH
-
 include(../../shared/yaml-cpp/yaml-cpp_installation.pri)
 isEmpty(EXTERNAL_YAML_CPP_FOUND) {
     DEFINES += YAML_CPP_DLL
@@ -32,10 +29,14 @@ SOURCES += \
     clangtoolssettings.cpp \
     clangtoolsutils.cpp \
     diagnosticconfigswidget.cpp \
+    diagnosticmark.cpp \
+    documentclangtoolrunner.cpp \
+    documentquickfixfactory.cpp \
     executableinfo.cpp \
     filterdialog.cpp \
     runsettingswidget.cpp \
     settingswidget.cpp \
+    virtualfilesystemoverlay.cpp \
 
 HEADERS += \
     clangfileinfo.h \
@@ -57,10 +58,14 @@ HEADERS += \
     clangtoolssettings.h \
     clangtoolsutils.h \
     diagnosticconfigswidget.h \
+    diagnosticmark.h \
+    documentclangtoolrunner.h \
+    documentquickfixfactory.h \
     executableinfo.h \
     filterdialog.h \
     runsettingswidget.h \
     settingswidget.h \
+    virtualfilesystemoverlay.h \
 
 FORMS += \
     clangselectablefilesdialog.ui \

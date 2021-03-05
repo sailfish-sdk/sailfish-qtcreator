@@ -31,12 +31,13 @@
 #include "cmakespecificsettings.h"
 #include "cmaketoolmanager.h"
 
-#include <projectexplorer/kit.h>
 #include <projectexplorer/kitinformation.h>
-#include <projectexplorer/projectexplorerconstants.h>
+#include <projectexplorer/project.h>
 #include <projectexplorer/target.h>
+#include <projectexplorer/toolchain.h>
 
-#include <utils/hostosinfo.h>
+#include <utils/algorithm.h>
+#include <utils/qtcassert.h>
 
 using namespace ProjectExplorer;
 
@@ -47,13 +48,26 @@ BuildDirParameters::BuildDirParameters() = default;
 
 BuildDirParameters::BuildDirParameters(CMakeBuildConfiguration *bc)
 {
-    initialized = bc != nullptr;
+    QTC_ASSERT(bc, return );
 
-    const Kit *k = bc->target()->kit();
+    const Utils::MacroExpander *expander = bc->macroExpander();
 
-    projectName = bc->target()->project()->displayName();
+    initialCMakeArguments = Utils::transform(bc->initialCMakeArguments(),
+                                             [expander](const QString &s) {
+                                                 return expander->expand(s);
+                                             });
+    extraCMakeArguments = Utils::transform(bc->extraCMakeArguments(),
+                                             [expander](const QString &s) {
+                                                 return expander->expand(s);
+                                             });
 
-    sourceDirectory = bc->target()->project()->projectDirectory();
+    const Target *t = bc->target();
+    const Kit *k = t->kit();
+    const Project *p = t->project();
+
+    projectName = p->displayName();
+
+    sourceDirectory = p->projectDirectory();
     buildDirectory = bc->buildDirectory();
 
     environment = bc->environment();
@@ -64,31 +78,19 @@ BuildDirParameters::BuildDirParameters(CMakeBuildConfiguration *bc)
         environment.set("ICECC", "no");
 
     CMakeSpecificSettings *settings = CMakeProjectPlugin::projectTypeSpecificSettings();
-    if (!settings->ninjaPath().isEmpty())
-        environment.appendOrSetPath(settings->ninjaPath().toString());
+    if (!settings->ninjaPath().isEmpty()) {
+        const Utils::FilePath setting = settings->ninjaPath();
+        const Utils::FilePath path = setting.toFileInfo().isFile() ? setting.parentDir() : setting;
+        environment.appendOrSetPath(path.toString());
+    }
 
     cmakeToolId = CMakeKitAspect::cmakeToolId(k);
-
-    auto tc = ToolChainKitAspect::toolChain(k, Constants::CXX_LANGUAGE_ID);
-    if (tc)
-        cxxToolChainId = tc->id();
-    tc = ToolChainKitAspect::toolChain(k, Constants::C_LANGUAGE_ID);
-    if (tc)
-        cToolChainId = tc->id();
-    sysRoot = SysRootKitAspect::sysRoot(k);
-
-    expander = k->macroExpander();
-
-    configuration = bc->configurationForCMake();
-
-    generator = CMakeGeneratorKitAspect::generator(k);
-    extraGenerator = CMakeGeneratorKitAspect::extraGenerator(k);
-    platform = CMakeGeneratorKitAspect::platform(k);
-    toolset = CMakeGeneratorKitAspect::toolset(k);
-    generatorArguments = CMakeGeneratorKitAspect::generatorArguments(k);
 }
 
-bool BuildDirParameters::isValid() const { return initialized && cmakeTool(); }
+bool BuildDirParameters::isValid() const
+{
+    return cmakeTool();
+}
 
 CMakeTool *BuildDirParameters::cmakeTool() const
 {

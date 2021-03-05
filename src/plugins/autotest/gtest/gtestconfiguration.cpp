@@ -28,10 +28,11 @@
 #include "gtestoutputreader.h"
 #include "gtestsettings.h"
 #include "../autotestplugin.h"
-#include "../testframeworkmanager.h"
+#include "../itestframework.h"
 #include "../testsettings.h"
 
 #include <utils/algorithm.h>
+#include <utils/stringutils.h>
 
 namespace Autotest {
 namespace Internal {
@@ -73,22 +74,18 @@ QStringList filterInterfering(const QStringList &provided, QStringList *omitted)
 
 QStringList GTestConfiguration::argumentsForTestRunner(QStringList *omitted) const
 {
-    static const Core::Id id
-            = Core::Id(Constants::FRAMEWORK_PREFIX).withSuffix(GTest::Constants::FRAMEWORK_NAME);
-
     QStringList arguments;
     if (AutotestPlugin::settings()->processArgs) {
         arguments << filterInterfering(runnable().commandLineArguments.split(
-                                           ' ', QString::SkipEmptyParts), omitted);
+                                           ' ', Qt::SkipEmptyParts), omitted);
     }
 
     const QStringList &testSets = testCases();
     if (!testSets.isEmpty())
         arguments << "--gtest_filter=" + testSets.join(':');
 
-    TestFrameworkManager *manager = TestFrameworkManager::instance();
-    auto gSettings = qSharedPointerCast<GTestSettings>(manager->settingsForTestFramework(id));
-    if (gSettings.isNull())
+    auto gSettings = dynamic_cast<GTestSettings *>(framework()->frameworkSettings());
+    if (!gSettings)
         return arguments;
 
     if (gSettings->runDisabled)

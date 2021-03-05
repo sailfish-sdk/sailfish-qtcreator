@@ -49,24 +49,10 @@ static void setupPathChooser(Utils::PathChooser *const chooser,
                              const QString &historyCompleterId)
 {
     chooser->setPromptDialogTitle(promptDiaglogTitle);
-    chooser->lineEdit()->setPlaceholderText(placeHolderText);
+    chooser->setDefaultValue(placeHolderText);
     chooser->setPath(pathFromSettings);
     chooser->setExpectedKind(Utils::PathChooser::ExistingCommand);
     chooser->setHistoryCompleter(historyCompleterId);
-    chooser->setValidationFunction([chooser](Utils::FancyLineEdit *edit, QString *errorMessage) {
-        const QString currentFilePath = chooser->fileName().toString();
-        Utils::PathChooser pc;
-        Utils::PathChooser *helperPathChooser;
-        if (currentFilePath.isEmpty()) {
-            pc.setExpectedKind(chooser->expectedKind());
-            pc.setPath(edit->placeholderText());
-            helperPathChooser = &pc;
-        } else {
-            helperPathChooser = chooser;
-        }
-
-        return chooser->defaultValidationFunction()(helperPathChooser->lineEdit(), errorMessage);
-    });
 }
 
 SettingsWidget *SettingsWidget::instance()
@@ -95,20 +81,15 @@ SettingsWidget::SettingsWidget()
                      path,
                      "ClangTools.ClangTidyExecutable.History");
 
-    if (qEnvironmentVariable("QTC_USE_CLAZY_STANDALONE_PATH").isEmpty()) {
-        m_ui->clazyStandalonePathChooser->setVisible(false);
-        m_ui->clazyStandaloneLabel->setVisible(false);
-    } else {
-        placeHolderText = shippedClazyStandaloneExecutable();
-        path = m_settings->clazyStandaloneExecutable();
-        if (path.isEmpty() && placeHolderText.isEmpty())
-            path = Constants::CLAZY_STANDALONE_EXECUTABLE_NAME;
-        setupPathChooser(m_ui->clazyStandalonePathChooser,
-                         tr("Clazy Executable"),
-                         placeHolderText,
-                         path,
-                         "ClangTools.ClazyStandaloneExecutable.History");
-    }
+    placeHolderText = shippedClazyStandaloneExecutable();
+    path = m_settings->clazyStandaloneExecutable();
+    if (path.isEmpty() && placeHolderText.isEmpty())
+        path = Constants::CLAZY_STANDALONE_EXECUTABLE_NAME;
+    setupPathChooser(m_ui->clazyStandalonePathChooser,
+                     tr("Clazy Executable"),
+                     placeHolderText,
+                     path,
+                     "ClangTools.ClazyStandaloneExecutable.History");
 
     //
     // Group box "Run Options"

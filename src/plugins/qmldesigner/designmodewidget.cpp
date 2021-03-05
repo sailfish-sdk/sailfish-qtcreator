@@ -24,7 +24,6 @@
 ****************************************************************************/
 
 #include "designmodewidget.h"
-#include "switchsplittabwidget.h"
 
 #include <designeractionmanager.h>
 
@@ -60,16 +59,19 @@
 #include <utils/algorithm.h>
 #include <utils/fileutils.h>
 #include <utils/qtcassert.h>
+#include <utils/stylehelper.h>
 
+#include <QActionGroup>
+#include <QBoxLayout>
+#include <QComboBox>
+#include <QDir>
+#include <QLayout>
 #include <QSettings>
 #include <QToolBar>
-#include <QLayout>
-#include <QBoxLayout>
-#include <QDir>
-#include <QComboBox>
 
 #include <advanceddockingsystem/dockareawidget.h>
 #include <advanceddockingsystem/docksplitter.h>
+#include <advanceddockingsystem/iconprovider.h>
 
 using Core::MiniSplitter;
 using Core::IEditor;
@@ -210,31 +212,73 @@ void DesignModeWidget::disableWidgets()
     m_isDisabled = true;
 }
 
+static void addSpacerToToolBar(QToolBar *toolBar)
+{
+    QWidget* empty = new QWidget();
+    empty->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Preferred);
+    toolBar->addWidget(empty);
+}
+
 void DesignModeWidget::setup()
 {
     auto &actionManager = viewManager().designerActionManager();
     actionManager.createDefaultDesignerActions();
     actionManager.createDefaultAddResourceHandler();
+    actionManager.createDefaultModelNodePreviewImageHandlers();
     actionManager.polishActions();
 
     auto settings = Core::ICore::settings(QSettings::UserScope);
 
+    ADS::DockManager::setConfigFlags(ADS::DockManager::DefaultNonOpaqueConfig);
+    ADS::DockManager::setConfigFlag(ADS::DockManager::FocusHighlighting, true);
     m_dockManager = new ADS::DockManager(this);
-    m_dockManager->setConfigFlags(ADS::DockManager::DefaultNonOpaqueConfig);
     m_dockManager->setSettings(settings);
     m_dockManager->setWorkspacePresetsPath(Core::ICore::resourcePath() + QLatin1String("/qmldesigner/workspacePresets/"));
 
     QString sheet = QString::fromUtf8(Utils::FileReader::fetchQrc(":/qmldesigner/dockwidgets.css"));
     m_dockManager->setStyleSheet(Theme::replaceCssColors(sheet));
 
+    // Setup icons
+    const QColor buttonColor(Theme::getColor(Theme::QmlDesigner_TabLight)); // TODO Use correct color roles
+    const QColor tabColor(Theme::getColor(Theme::QmlDesigner_TabDark));
+
+    const QString closeUnicode = Theme::getIconUnicode(Theme::Icon::adsClose);
+    const QString menuUnicode = Theme::getIconUnicode(Theme::Icon::adsDropDown);
+    const QString undockUnicode = Theme::getIconUnicode(Theme::Icon::adsDetach);
+
+    const QString fontName = "qtds_propertyIconFont.ttf";
+    const QIcon closeIcon = Utils::StyleHelper::getIconFromIconFont(fontName, closeUnicode, 28, 28, buttonColor);
+    const QIcon menuIcon = Utils::StyleHelper::getIconFromIconFont(fontName, menuUnicode, 28, 28, buttonColor);
+    const QIcon undockIcon = Utils::StyleHelper::getIconFromIconFont(fontName, undockUnicode, 28, 28, buttonColor);
+
+    auto closeIconNormal = Utils::StyleHelper::IconFontHelper(closeUnicode,
+                                                              tabColor,
+                                                              QSize(28, 28),
+                                                              QIcon::Normal,
+                                                              QIcon::Off);
+
+    auto closeIconFocused = Utils::StyleHelper::IconFontHelper(closeUnicode,
+                                                               Theme::getColor(Theme::DStextColor),
+                                                               QSize(28, 28),
+                                                               QIcon::Normal,
+                                                               QIcon::On);
+
+    const QIcon tabsCloseIcon = Utils::StyleHelper::getIconFromIconFont(fontName, {closeIconNormal, closeIconFocused});
+
+    m_dockManager->iconProvider().registerCustomIcon(ADS::TabCloseIcon, tabsCloseIcon);
+    m_dockManager->iconProvider().registerCustomIcon(ADS::DockAreaMenuIcon, menuIcon);
+    m_dockManager->iconProvider().registerCustomIcon(ADS::DockAreaUndockIcon, undockIcon);
+    m_dockManager->iconProvider().registerCustomIcon(ADS::DockAreaCloseIcon, closeIcon);
+    m_dockManager->iconProvider().registerCustomIcon(ADS::FloatingWidgetCloseIcon, closeIcon);
+
     // Setup Actions and Menus
-    Core::ActionContainer *mwindow = Core::ActionManager::actionContainer(Core::Constants::M_WINDOW);
-    // Window > Views
-    Core::ActionContainer *mviews = Core::ActionManager::actionContainer(Core::Constants::M_WINDOW_VIEWS);
+    Core::ActionContainer *mview = Core::ActionManager::actionContainer(Core::Constants::M_VIEW);
+    // View > Views
+    Core::ActionContainer *mviews = Core::ActionManager::createMenu(Core::Constants::M_VIEW_VIEWS);
     mviews->menu()->addSeparator();
-    // Window > Workspaces
-    Core::ActionContainer *mworkspaces = Core::ActionManager::createMenu(QmlDesigner::Constants::M_WINDOW_WORKSPACES);
-    mwindow->addMenu(mworkspaces, Core::Constants::G_WINDOW_VIEWS);
+    // View > Workspaces
+    Core::ActionContainer *mworkspaces = Core::ActionManager::createMenu(QmlDesigner::Constants::M_VIEW_WORKSPACES);
+    mview->addMenu(mworkspaces, Core::Constants::G_VIEW_VIEWS);
     mworkspaces->menu()->setTitle(tr("&Workspaces"));
     mworkspaces->setOnAllDisabledBehavior(Core::ActionContainer::Show);
     // Connect opening of the 'workspaces' menu with creation of the workspaces menu
@@ -250,7 +294,7 @@ void DesignModeWidget::setup()
 
     // Create a DockWidget for each QWidget and add them to the DockManager
     const Core::Context designContext(Core::Constants::C_DESIGN_MODE);
-    static const Core::Id actionToggle("QmlDesigner.Toggle");
+    static const Utils::Id actionToggle("QmlDesigner.Toggle");
 
     // First get all navigation views
     QList<Core::INavigationWidgetFactory *> factories = Core::INavigationWidgetFactory::allNavigationFactories();
@@ -296,6 +340,9 @@ void DesignModeWidget::setup()
             dockWidget->setWindowTitle(title);
             m_dockManager->addDockWidget(ADS::NoDockWidgetArea, dockWidget);
 
+            // Set unique id as object name
+            navigationView.widget->setObjectName(uniqueId);
+
             // Create menu action
             auto command = Core::ActionManager::registerAction(dockWidget->toggleViewAction(),
                                                                actionToggle.withSuffix(uniqueId + "Widget"),
@@ -316,6 +363,9 @@ void DesignModeWidget::setup()
         // Add to view widgets
         m_viewWidgets.append(widgetInfo.widget);
 
+        // Set unique id as object name
+        widgetInfo.widget->setObjectName(widgetInfo.uniqueId);
+
         // Create menu action
         auto command = Core::ActionManager::registerAction(dockWidget->toggleViewAction(),
                                                            actionToggle.withSuffix(widgetInfo.uniqueId + "Widget"),
@@ -326,11 +376,16 @@ void DesignModeWidget::setup()
 
     // Finally the output pane
     {
+        const QString uniqueId = "OutputPane";
         auto outputPanePlaceholder = new Core::OutputPanePlaceHolder(Core::Constants::MODE_DESIGN);
-        m_outputPaneDockWidget = new ADS::DockWidget("OutputPane");
+        m_outputPaneDockWidget = new ADS::DockWidget(uniqueId);
         m_outputPaneDockWidget->setWidget(outputPanePlaceholder);
         m_outputPaneDockWidget->setWindowTitle("Output Pane");
         m_dockManager->addDockWidget(ADS::NoDockWidgetArea, m_outputPaneDockWidget);
+
+        // Set unique id as object name
+        outputPanePlaceholder->setObjectName(uniqueId);
+
         // Create menu action
         auto command = Core::ActionManager::registerAction(m_outputPaneDockWidget->toggleViewAction(),
                                                            actionToggle.withSuffix("OutputPaneWidget"),
@@ -344,6 +399,7 @@ void DesignModeWidget::setup()
 
     // Create toolbars
     auto toolBar = new QToolBar();
+
     toolBar->addAction(viewManager().componentViewAction());
     toolBar->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::MinimumExpanding);
     DesignerActionToolBar *designerToolBar = QmlDesignerPlugin::instance()->viewManager().designerActionManager().createToolBar(m_toolBar);
@@ -369,21 +425,24 @@ void DesignModeWidget::setup()
 
     m_dockManager->initialize();
 
-    connect(Core::ModeManager::instance(), &Core::ModeManager::currentModeChanged,
-            this, [this](Core::Id mode, Core::Id oldMode) {
-        if (mode == Core::Constants::MODE_DESIGN) {
-            m_dockManager->reloadActiveWorkspace();
-            m_dockManager->setModeChangeState(false);
-        }
+    connect(Core::ModeManager::instance(),
+            &Core::ModeManager::currentModeChanged,
+            this,
+            [this](Utils::Id mode, Utils::Id oldMode) {
+                if (mode == Core::Constants::MODE_DESIGN) {
+                    m_dockManager->reloadActiveWorkspace();
+                    m_dockManager->setModeChangeState(false);
+                }
 
-        if (oldMode == Core::Constants::MODE_DESIGN
-            && mode != Core::Constants::MODE_DESIGN) {
-            m_dockManager->save();
-            m_dockManager->setModeChangeState(true);
-            for (auto floatingWidget : m_dockManager->floatingWidgets())
-                floatingWidget->hide();
-        }
-    });
+                if (oldMode == Core::Constants::MODE_DESIGN && mode != Core::Constants::MODE_DESIGN) {
+                    m_dockManager->save();
+                    m_dockManager->setModeChangeState(true);
+                    for (auto floatingWidget : m_dockManager->floatingWidgets())
+                        floatingWidget->hide();
+                }
+            });
+
+    addSpacerToToolBar(toolBar);
 
     auto workspaceComboBox = new QComboBox();
     workspaceComboBox->setMinimumWidth(120);
@@ -409,6 +468,19 @@ void DesignModeWidget::setup()
             m_dockManager->openWorkspace(workspaceComboBox->currentText());
     });
 
+    const QIcon gaIcon = Utils::StyleHelper::getIconFromIconFont(fontName,
+                                                                 Theme::getIconUnicode(Theme::Icon::annotationBubble), 36, 36);
+    toolBar->addAction(gaIcon, tr("Edit global annotation for current file."), [&](){
+        ModelNode node = currentDesignDocument()->rewriterView()->rootModelNode();
+
+        if (node.isValid()) {
+            m_globalAnnotationEditor.setModelNode(node);
+            m_globalAnnotationEditor.showWidget();
+        }
+    });
+
+
+
     viewManager().enableWidgets();
     readSettings();
     show();
@@ -416,7 +488,7 @@ void DesignModeWidget::setup()
 
 void DesignModeWidget::aboutToShowWorkspaces()
 {
-    Core::ActionContainer *aci = Core::ActionManager::actionContainer(QmlDesigner::Constants::M_WINDOW_WORKSPACES);
+    Core::ActionContainer *aci = Core::ActionManager::actionContainer(QmlDesigner::Constants::M_VIEW_WORKSPACES);
     QMenu *menu = aci->menu();
     menu->clear();
 
@@ -454,7 +526,8 @@ void DesignModeWidget::toolBarOnGoBackClicked()
         --m_navigatorHistoryCounter;
         m_keepNavigatorHistory = true;
         Core::EditorManager::openEditor(m_navigatorHistory.at(m_navigatorHistoryCounter),
-                                        Core::Id(), Core::EditorManager::DoNotMakeVisible);
+                                        Utils::Id(),
+                                        Core::EditorManager::DoNotMakeVisible);
         m_keepNavigatorHistory = false;
     }
 }
@@ -465,7 +538,8 @@ void DesignModeWidget::toolBarOnGoForwardClicked()
         ++m_navigatorHistoryCounter;
         m_keepNavigatorHistory = true;
         Core::EditorManager::openEditor(m_navigatorHistory.at(m_navigatorHistoryCounter),
-                                        Core::Id(), Core::EditorManager::DoNotMakeVisible);
+                                        Utils::Id(),
+                                        Core::EditorManager::DoNotMakeVisible);
         m_keepNavigatorHistory = false;
     }
 }

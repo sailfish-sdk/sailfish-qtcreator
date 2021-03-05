@@ -174,13 +174,19 @@ public:
     ViewerContext defaultVContext(Dialect language = Dialect::Qml,
                                   const Document::Ptr &doc = Document::Ptr(nullptr),
                                   bool autoComplete = true) const;
+    ViewerContext projectVContext(Dialect language, const Document::Ptr &doc) const;
+
     void setDefaultVContext(const ViewerContext &vContext);
     virtual ProjectInfo defaultProjectInfo() const;
     virtual ProjectInfo defaultProjectInfoForProject(ProjectExplorer::Project *project) const;
 
 
-    // Blocks until all parsing threads are done. Used for testing.
-    void joinAllThreads();
+    // Blocks until all parsing threads are done. Use for testing only!
+    void test_joinAllThreads();
+
+    template <typename T>
+    void addFuture(const QFuture<T> &future) { addFuture(QFuture<void>(future)); }
+    void addFuture(const QFuture<void> &future);
 
     QmlJS::Document::Ptr ensuredGetDocumentForPath(const QString &filePath);
     static void importScan(QFutureInterface<void> &future, const WorkingCopy& workingCopyInternal,
@@ -240,6 +246,7 @@ private:
     void iterateQrcFiles(ProjectExplorer::Project *project,
                          QrcResourceSelector resources,
                          const std::function<void(Utils::QrcParser::ConstPtr)> &callback);
+    ViewerContext getVContext(const ViewerContext &vCtx, const Document::Ptr &doc, bool limitToProject) const;
 
     mutable QMutex m_mutex;
     QmlJS::Snapshot m_validSnapshot;
@@ -271,7 +278,9 @@ private:
 
     PluginDumper *m_pluginDumper = nullptr;
 
+    mutable QMutex m_futuresMutex;
     QList<QFuture<void>> m_futures;
+
     bool m_indexerDisabled = false;
 };
 

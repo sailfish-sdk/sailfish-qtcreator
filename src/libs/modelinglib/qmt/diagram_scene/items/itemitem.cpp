@@ -130,17 +130,28 @@ void ItemItem::update()
 
 bool ItemItem::intersectShapeWithLine(const QLineF &line, QPointF *intersectionPoint, QLineF *intersectionLine) const
 {
-    QPolygonF polygon;
     if (m_customIcon) {
-        // TODO use customIcon path as shape
-        QRectF rect = object()->rect();
-        rect.translate(object()->pos());
-        polygon << rect.topLeft() << rect.topRight() << rect.bottomRight() << rect.bottomLeft() << rect.topLeft();
-    } else {
-        QRectF rect = object()->rect();
-        rect.translate(object()->pos());
-        polygon << rect.topLeft() << rect.topRight() << rect.bottomRight() << rect.bottomLeft() << rect.topLeft();
+        QList<QPolygonF> polygons = m_customIcon->outline();
+        for (int i = 0; i < polygons.size(); ++i)
+            polygons[i].translate(object()->pos() + object()->rect().topLeft());
+        if (shapeIcon().textAlignment() == qmt::StereotypeIcon::TextalignBelow) {
+            if (nameItem()) {
+                QPolygonF polygon(nameItem()->boundingRect());
+                polygon.translate(object()->pos() + nameItem()->pos());
+                polygons.append(polygon);
+            }
+            if (m_contextLabel) {
+                QPolygonF polygon(m_contextLabel->boundingRect());
+                polygon.translate(object()->pos() + m_contextLabel->pos());
+                polygons.append(polygon);
+            }
+        }
+        return GeometryUtilities::intersect(polygons, line, nullptr, intersectionPoint, intersectionLine);
     }
+    QRectF rect = object()->rect();
+    rect.translate(object()->pos());
+    QPolygonF polygon;
+    polygon << rect.topLeft() << rect.topRight() << rect.bottomRight() << rect.bottomLeft() << rect.topLeft();
     return GeometryUtilities::intersect(polygon, line, intersectionPoint, intersectionLine);
 }
 

@@ -27,6 +27,7 @@
 
 #include "qmljseditor_global.h"
 
+#include <qmljs/parser/qmljsast_p.h>
 #include <qmljs/qmljsscanner.h>
 #include <qmljstools/qmljssemanticinfo.h>
 #include <texteditor/texteditor.h>
@@ -41,10 +42,7 @@ QT_BEGIN_NAMESPACE
 class QComboBox;
 QT_END_NAMESPACE
 
-namespace QmlJS {
-    class ModelManagerInterface;
-namespace AST { class UiObjectMember; }
-}
+namespace QmlJS { class ModelManagerInterface; }
 
 namespace QmlJSEditor {
 
@@ -60,7 +58,7 @@ public:
     QmlJSEditorWidget();
 
     void finalizeInitialization() override;
-    bool restoreState(const QByteArray &state) override;
+    void restoreState(const QByteArray &state) override;
 
     QmlJSEditorDocument *qmlJsEditorDocument() const;
 
@@ -74,7 +72,7 @@ public:
     void inspectElementUnderCursor() const;
 
     void findUsages() override;
-    void renameUsages();
+    void renameSymbolUnderCursor() override;
     void showContextPane();
 
 signals:
@@ -82,7 +80,7 @@ signals:
     void selectedElementsChanged(QList<QmlJS::AST::UiObjectMember*> offsets,
                                  const QString &wordAtCursor);
 private:
-    void modificationChanged(bool);
+    void updateModificationChange(bool);
 
     void jumpToOutlineElement(int index);
     void updateContextPane();
@@ -146,7 +144,7 @@ class QMLJSEDITOR_EXPORT QmlJSEditorFactory : public TextEditor::TextEditorFacto
 {
 public:
     QmlJSEditorFactory();
-    QmlJSEditorFactory(Core::Id id);
+    QmlJSEditorFactory(Utils::Id id);
 
     static void decorateEditor(TextEditor::TextEditorWidget *editor);
 };

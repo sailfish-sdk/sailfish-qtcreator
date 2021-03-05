@@ -139,8 +139,13 @@ void ClangEditorDocumentProcessor::recalculateSemanticInfoDetached(bool force)
 
 void ClangEditorDocumentProcessor::semanticRehighlight()
 {
-    m_semanticHighlighter.updateFormatMapFromFontSettings();
+    const auto matchesEditor = [this](const Core::IEditor *editor) {
+        return editor->document()->filePath() == m_document.filePath();
+    };
+    if (!Utils::contains(Core::EditorManager::visibleEditors(), matchesEditor))
+        return;
 
+    m_semanticHighlighter.updateFormatMapFromFontSettings();
     if (m_projectPart)
         requestAnnotationsFromBackend();
 }
@@ -167,7 +172,7 @@ bool ClangEditorDocumentProcessor::isParserRunning() const
 
 bool ClangEditorDocumentProcessor::hasProjectPart() const
 {
-    return m_projectPart;
+    return !m_projectPart.isNull();
 }
 
 CppTools::ProjectPart::Ptr ClangEditorDocumentProcessor::projectPart() const
@@ -180,7 +185,7 @@ void ClangEditorDocumentProcessor::clearProjectPart()
     m_projectPart.clear();
 }
 
-Core::Id ClangEditorDocumentProcessor::diagnosticConfigId() const
+::Utils::Id ClangEditorDocumentProcessor::diagnosticConfigId() const
 {
     return m_diagnosticConfigId;
 }
@@ -191,6 +196,8 @@ void ClangEditorDocumentProcessor::updateCodeWarnings(
         uint documentRevision)
 {
     if (documentRevision == revision()) {
+        if (m_invalidationState == InvalidationState::Scheduled)
+            m_invalidationState = InvalidationState::Canceled;
         m_diagnosticManager.processNewDiagnostics(diagnostics, m_isProjectFile);
         const auto codeWarnings = m_diagnosticManager.takeExtraSelections();
         const auto fixitAvailableMarkers = m_diagnosticManager.takeFixItAvailableMarkers();
@@ -287,17 +294,20 @@ TextEditor::QuickFixOperations ClangEditorDocumentProcessor::extraRefactoringOpe
 {
     ClangFixItOperationsExtractor extractor(m_diagnosticManager.diagnosticsWithFixIts());
 
-    return extractor.extract(assistInterface.fileName(), currentLine(assistInterface));
+    return extractor.extract(assistInterface.filePath().toString(), currentLine(assistInterface));
 }
 
 void ClangEditorDocumentProcessor::editorDocumentTimerRestarted()
 {
     m_updateBackendDocumentTimer.stop(); // Wait for the next call to run().
+    m_invalidationState = InvalidationState::Scheduled;
 }
 
 void ClangEditorDocumentProcessor::invalidateDiagnostics()
 {
-    m_diagnosticManager.invalidateDiagnostics();
+    if (m_invalidationState != InvalidationState::Canceled)
+        m_diagnosticManager.invalidateDiagnostics();
+    m_invalidationState = InvalidationState::Off;
 }
 
 TextEditor::TextMarks ClangEditorDocumentProcessor::diagnosticTextMarksAt(uint line,
@@ -347,7 +357,7 @@ ClangEditorDocumentProcessor::cursorInfo(const CppTools::CursorInfoParams &param
     if (!isCursorOnIdentifier(params.textCursor))
         return defaultCursorInfoFuture();
 
-    column = Utils::clangColumn(params.textCursor.document()->findBlockByNumber(line - 1), column);
+    column = clangColumn(params.textCursor.document()->findBlockByNumber(line - 1), column);
     const CppTools::SemanticInfo::LocalUseMap localUses
         = CppTools::BuiltinCursorInfo::findLocalUses(params.semanticInfo.doc, line, column);
 
@@ -405,7 +415,7 @@ ClangEditorDocumentProcessor *ClangEditorDocumentProcessor::get(const QString &f
 static bool isProjectPartLoadedOrIsFallback(CppTools::ProjectPart::Ptr projectPart)
 {
     return projectPart
-        && (projectPart->id().isEmpty() || ClangCodeModel::Utils::isProjectPartLoaded(projectPart));
+        && (projectPart->id().isEmpty() || isProjectPartLoaded(projectPart));
 }
 
 void ClangEditorDocumentProcessor::updateBackendProjectPartAndDocument()
@@ -451,7 +461,7 @@ public:
     }
 
     const QStringList &options() const { return m_options; }
-    const Core::Id &diagnosticConfigId() const { return m_diagnosticConfigId; }
+    const ::Utils::Id &diagnosticConfigId() const { return m_diagnosticConfigId; }
     CppTools::UseBuildSystemWarnings useBuildSystemWarnings() const
     {
         return m_useBuildSystemWarnings;
@@ -479,7 +489,7 @@ private:
         if (m_projectPart.project) {
             ClangProjectSettings &projectSettings = getProjectSettings(m_projectPart.project);
             if (!projectSettings.useGlobalConfig()) {
-                const Core::Id warningConfigId = projectSettings.warningConfigId();
+                const ::Utils::Id warningConfigId = projectSettings.warningConfigId();
                 const CppTools::ClangDiagnosticConfigsModel configsModel
                     = CppTools::diagnosticConfigsModel();
                 if (configsModel.hasConfigWithId(warningConfigId)) {
@@ -538,7 +548,7 @@ private:
     const QString &m_filePath;
     const CppTools::ProjectPart &m_projectPart;
 
-    Core::Id m_diagnosticConfigId;
+    ::Utils::Id m_diagnosticConfigId;
     CppTools::UseBuildSystemWarnings m_useBuildSystemWarnings = CppTools::UseBuildSystemWarnings::No;
     CppTools::CompilerOptionsBuilder m_builder;
     bool m_isClMode = false;
@@ -565,7 +575,7 @@ void ClangEditorDocumentProcessor::updateBackendDocument(CppTools::ProjectPart &
     const FileOptionsBuilder fileOptions(filePath(), projectPart);
     m_diagnosticConfigId = fileOptions.diagnosticConfigId();
 
-    const QStringList projectPartOptions = ClangCodeModel::Utils::createClangOptions(
+    const QStringList projectPartOptions = createClangOptions(
         projectPart, fileOptions.useBuildSystemWarnings(),
         CppTools::ProjectFile::Unsupported); // No language option as FileOptionsBuilder adds it.
 
@@ -573,7 +583,7 @@ void ClangEditorDocumentProcessor::updateBackendDocument(CppTools::ProjectPart &
 
     m_communicator.documentsOpened(
         {fileContainerWithOptionsAndDocumentContent(compilationArguments, projectPart.headerPaths)});
-    ClangCodeModel::Utils::setLastSentDocumentRevision(filePath(), revision());
+    setLastSentDocumentRevision(filePath(), revision());
 }
 
 void ClangEditorDocumentProcessor::closeBackendDocument()

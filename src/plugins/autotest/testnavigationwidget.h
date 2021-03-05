@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include "itemdatacache.h"
 #include "testrunner.h"
 
 #include <coreplugin/inavigationwidgetfactory.h>
@@ -64,7 +65,7 @@ public:
     void contextMenuEvent(QContextMenuEvent *event) override;
     QList<QToolButton *> createToolButtons();
 
-signals:
+    void updateExpandedStateCache();
 
 private:
     void onItemActivated(const QModelIndex &index);
@@ -74,6 +75,7 @@ private:
     void onParsingFinished();
     void initializeFilterMenu();
     void onRunThisTestTriggered(TestRunMode runMode);
+    void reapplyCachedExpandedState();
 
     TestTreeModel *m_model;
     TestTreeSortFilterModel *m_sortFilterModel;
@@ -85,6 +87,7 @@ private:
     Utils::ProgressIndicator *m_progressIndicator;
     QTimer *m_progressTimer;
     QFrame *m_missingFrameworksWidget;
+    ItemDataCache<bool> m_expandedStateCache;
 };
 
 class TestNavigationWidgetFactory : public Core::INavigationWidgetFactory

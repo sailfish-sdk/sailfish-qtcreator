@@ -24,6 +24,7 @@
 ****************************************************************************/
 
 #include "kitmanagerconfigwidget.h"
+#include "projectconfiguration.h"
 
 #include "devicesupport/idevicefactory.h"
 #include "kit.h"
@@ -32,74 +33,62 @@
 #include "projectexplorerconstants.h"
 #include "task.h"
 
-#include <coreplugin/variablechooser.h>
-
 #include <utils/algorithm.h>
 #include <utils/detailswidget.h>
+#include <utils/layoutbuilder.h>
 #include <utils/macroexpander.h>
 #include <utils/pathchooser.h>
 #include <utils/qtcassert.h>
 #include <utils/utilsicons.h>
+#include <utils/variablechooser.h>
 
 #include <QAction>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
 #include <QFileDialog>
-#include <QGridLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
-#include <QPainter>
-#include <QPushButton>
 #include <QToolButton>
-#include <QScrollArea>
 #include <QSizePolicy>
-#include <QStyle>
 
 static const char WORKING_COPY_KIT_ID[] = "modified kit";
+
+using namespace Utils;
 
 namespace ProjectExplorer {
 namespace Internal {
 
 KitManagerConfigWidget::KitManagerConfigWidget(Kit *k) :
-    m_layout(new QGridLayout),
     m_iconButton(new QToolButton),
     m_nameEdit(new QLineEdit),
     m_fileSystemFriendlyNameLineEdit(new QLineEdit),
     m_kit(k),
-    m_modifiedKit(std::make_unique<Kit>(Core::Id(WORKING_COPY_KIT_ID)))
+    m_modifiedKit(std::make_unique<Kit>(Utils::Id(WORKING_COPY_KIT_ID)))
 {
-    static auto alignment
-            = static_cast<const Qt::Alignment>(style()->styleHint(QStyle::SH_FormLayoutLabelAlignment));
-
-    m_layout->addWidget(m_nameEdit, 0, WidgetColumn);
-    m_layout->addWidget(m_iconButton, 0, ButtonColumn);
     setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+
+    LayoutBuilder builder(this, LayoutBuilder::GridLayout);
+    QLabel *label = new QLabel(tr("Name:"));
+    label->setToolTip(tr("Kit name and icon."));
+    builder.addRow({{label, 1, LayoutBuilder::AlignAsFormLabel}, m_nameEdit, m_iconButton});
 
     QString toolTip =
         tr("<html><head/><body><p>The name of the kit suitable for generating "
            "directory names. This value is used for the variable <i>%1</i>, "
            "which for example determines the name of the shadow build directory."
-           "</p></body></html>").arg(QLatin1String(Constants::VAR_CURRENTKIT_FILESYSTEMNAME));
-    QLabel *label = createLabel(tr("File system name:"), toolTip);
-    m_layout->addWidget(label, 1, LabelColumn, alignment);
+           "</p></body></html>").arg(QLatin1String("Kit:FileSystemName"));
     m_fileSystemFriendlyNameLineEdit->setToolTip(toolTip);
     QRegularExpression fileSystemFriendlyNameRegexp(QLatin1String("^[A-Za-z0-9_-]*$"));
     Q_ASSERT(fileSystemFriendlyNameRegexp.isValid());
     m_fileSystemFriendlyNameLineEdit->setValidator(new QRegularExpressionValidator(fileSystemFriendlyNameRegexp, m_fileSystemFriendlyNameLineEdit));
-    m_layout->addWidget(m_fileSystemFriendlyNameLineEdit, 1, WidgetColumn);
+
+    label = new QLabel(tr("File system name:"));
+    label->setToolTip(toolTip);
+    builder.addRow({{label, 1, LayoutBuilder::AlignAsFormLabel}, m_fileSystemFriendlyNameLineEdit});
     connect(m_fileSystemFriendlyNameLineEdit, &QLineEdit::textChanged,
             this, &KitManagerConfigWidget::setFileSystemFriendlyName);
 
-    auto inner = new QWidget;
-    inner->setLayout(m_layout);
-
-    auto mainLayout = new QGridLayout(this);
-    mainLayout->setContentsMargins(1, 1, 1, 1);
-    mainLayout->addWidget(inner, 0, 0);
-
-    label = createLabel(tr("Name:"), tr("Kit name and icon."));
-    m_layout->addWidget(label, 0, LabelColumn, alignment);
     m_iconButton->setToolTip(tr("Kit icon."));
     auto setIconAction = new QAction(tr("Select Icon..."), this);
     m_iconButton->addAction(setIconAction);
@@ -123,7 +112,7 @@ KitManagerConfigWidget::KitManagerConfigWidget(Kit *k) :
     connect(km, &KitManager::kitUpdated,
             this, &KitManagerConfigWidget::kitWasUpdated);
 
-    auto chooser = new Core::VariableChooser(this);
+    auto chooser = new VariableChooser(this);
     chooser->addSupportedWidget(m_nameEdit);
     chooser->addMacroExpanderProvider([this]() { return m_modifiedKit->macroExpander(); });
 
@@ -146,7 +135,7 @@ KitManagerConfigWidget::~KitManagerConfigWidget()
 
     // Make sure our workingCopy did not get registered somehow:
     QTC_CHECK(!Utils::contains(KitManager::kits(),
-                               Utils::equal(&Kit::id, Core::Id(WORKING_COPY_KIT_ID))));
+                               Utils::equal(&Kit::id, Utils::Id(WORKING_COPY_KIT_ID))));
 }
 
 QString KitManagerConfigWidget::displayName() const
@@ -227,9 +216,6 @@ void KitManagerConfigWidget::addAspectToWorkingCopy(KitAspect *aspect)
     QTC_ASSERT(widget, return);
     QTC_ASSERT(!m_widgets.contains(widget), return);
 
-    const QString name = aspect->displayName() + ':';
-    QString toolTip = aspect->description();
-
     auto action = new QAction(tr("Mark as Mutable"), nullptr);
     action->setCheckable(true);
     action->setChecked(workingCopy()->isMutable(aspect->id()));
@@ -244,17 +230,9 @@ void KitManagerConfigWidget::addAspectToWorkingCopy(KitAspect *aspect)
 
     m_actions << action;
 
-    int row = m_layout->rowCount();
-    m_layout->addWidget(widget->mainWidget(), row, WidgetColumn);
-    if (QWidget *button = widget->buttonWidget())
-        m_layout->addWidget(button, row, ButtonColumn);
-
-    static auto alignment
-        = static_cast<const Qt::Alignment>(style()->styleHint(QStyle::SH_FormLayoutLabelAlignment));
-    QLabel *label = createLabel(name, toolTip);
-    m_layout->addWidget(label, row, LabelColumn, alignment);
+    LayoutBuilder builder(layout());
+    widget->addToLayout(builder);
     m_widgets.append(widget);
-    m_labels.append(label);
 }
 
 void KitManagerConfigWidget::updateVisibility()
@@ -264,10 +242,7 @@ void KitManagerConfigWidget::updateVisibility()
         KitAspectWidget *widget = m_widgets.at(i);
         const bool visible = widget->visibleInKit()
                 && !m_modifiedKit->irrelevantAspects().contains(widget->kitInformationId());
-        widget->mainWidget()->setVisible(visible);
-        if (widget->buttonWidget())
-            widget->buttonWidget()->setVisible(visible);
-        m_labels.at(i)->setVisible(visible);
+        widget->setVisible(visible);
     }
 }
 
@@ -316,7 +291,7 @@ void KitManagerConfigWidget::removeKit()
 
 void KitManagerConfigWidget::setIcon()
 {
-    const Core::Id deviceType = DeviceTypeKitAspect::deviceTypeId(m_modifiedKit.get());
+    const Utils::Id deviceType = DeviceTypeKitAspect::deviceTypeId(m_modifiedKit.get());
     QList<IDeviceFactory *> allDeviceFactories = IDeviceFactory::allDeviceFactories();
     if (deviceType.isValid()) {
         const auto less = [deviceType](const IDeviceFactory *f1, const IDeviceFactory *f2) {
@@ -416,13 +391,6 @@ void KitManagerConfigWidget::showEvent(QShowEvent *event)
     Q_UNUSED(event)
     foreach (KitAspectWidget *widget, m_widgets)
         widget->refresh();
-}
-
-QLabel *KitManagerConfigWidget::createLabel(const QString &name, const QString &toolTip)
-{
-    auto label = new QLabel(name);
-    label->setToolTip(toolTip);
-    return label;
 }
 
 } // namespace Internal

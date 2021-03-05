@@ -508,7 +508,7 @@ public:
     virtual void processMembers(MemberProcessor *processor) const;
 
     virtual void setMember(const QString &name, const Value *value);
-    virtual void setMember(const QStringRef &name, const Value *value);
+    virtual void setMember(const QStringView &name, const Value *value);
     virtual void setPropertyInfo(const QString &name, const PropertyInfo &propertyInfo);
     virtual void removeMember(const QString &name);
 
@@ -525,10 +525,6 @@ public:
     void accept(ValueVisitor *visitor) const override;
     QString originId() const
     { return m_originId; }
-
-
-private:
-    bool checkPrototype(const ObjectValue *prototype, QSet<const ObjectValue *> *processed) const;
 
 private:
     ValueOwner *m_valueOwner;

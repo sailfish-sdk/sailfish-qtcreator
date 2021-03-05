@@ -37,7 +37,6 @@
 QT_BEGIN_NAMESPACE
 class QChar;
 class QFileInfo;
-class QStringRef;
 class QTextCursor;
 QT_END_NAMESPACE
 
@@ -52,7 +51,7 @@ namespace CppTools {
 void CPPTOOLS_EXPORT moveCursorToEndOfIdentifier(QTextCursor *tc);
 void CPPTOOLS_EXPORT moveCursorToStartOfIdentifier(QTextCursor *tc);
 
-bool CPPTOOLS_EXPORT isQtKeyword(const QStringRef &text);
+bool CPPTOOLS_EXPORT isQtKeyword(QStringView text);
 
 bool CPPTOOLS_EXPORT isValidAsciiIdentifierChar(const QChar &ch);
 bool CPPTOOLS_EXPORT isValidFirstIdentifierChar(const QChar &ch);

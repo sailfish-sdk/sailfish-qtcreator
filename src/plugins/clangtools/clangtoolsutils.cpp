@@ -35,6 +35,7 @@
 #include <cpptools/cpptoolsreuse.h>
 #include <projectexplorer/projectexplorerconstants.h>
 
+#include <utils/qtcprocess.h>
 #include <utils/checkablemessagebox.h>
 #include <utils/environment.h>
 #include <utils/hostosinfo.h>
@@ -43,12 +44,101 @@
 #include <QFileInfo>
 
 #include <cpptools/clangdiagnosticconfigsmodel.h>
-#include <cpptools/clangdiagnosticconfigsmodel.h>
 
 using namespace CppTools;
 
 namespace ClangTools {
 namespace Internal {
+
+static QString lineColumnString(const Debugger::DiagnosticLocation &location)
+{
+    return QString("%1:%2").arg(QString::number(location.line), QString::number(location.column));
+}
+
+static QString fixitStatus(FixitStatus status)
+{
+    switch (status) {
+    case FixitStatus::NotAvailable:
+        return QCoreApplication::translate("ClangToolsDiagnosticModel", "No Fixits");
+    case FixitStatus::NotScheduled:
+        return QCoreApplication::translate("ClangToolsDiagnosticModel", "Not Scheduled");
+    case FixitStatus::Invalidated:
+        return QCoreApplication::translate("ClangToolsDiagnosticModel", "Invalidated");
+    case FixitStatus::Scheduled:
+        return QCoreApplication::translate("ClangToolsDiagnosticModel", "Scheduled");
+    case FixitStatus::FailedToApply:
+        return QCoreApplication::translate("ClangToolsDiagnosticModel", "Failed to Apply");
+    case FixitStatus::Applied:
+        return QCoreApplication::translate("ClangToolsDiagnosticModel", "Applied");
+    }
+    return QString();
+}
+
+QString createDiagnosticToolTipString(
+    const Diagnostic &diagnostic,
+    Utils::optional<FixitStatus> status,
+    bool showSteps)
+{
+    using StringPair = QPair<QString, QString>;
+    QList<StringPair> lines;
+
+    if (!diagnostic.category.isEmpty()) {
+        lines << qMakePair(
+                     QCoreApplication::translate("ClangTools::Diagnostic", "Category:"),
+                     diagnostic.category.toHtmlEscaped());
+    }
+
+    if (!diagnostic.type.isEmpty()) {
+        lines << qMakePair(
+                     QCoreApplication::translate("ClangTools::Diagnostic", "Type:"),
+                     diagnostic.type.toHtmlEscaped());
+    }
+
+    if (!diagnostic.description.isEmpty()) {
+        lines << qMakePair(
+                     QCoreApplication::translate("ClangTools::Diagnostic", "Description:"),
+                     diagnostic.description.toHtmlEscaped());
+    }
+
+    lines << qMakePair(
+                 QCoreApplication::translate("ClangTools::Diagnostic", "Location:"),
+                 createFullLocationString(diagnostic.location));
+
+    if (status) {
+        lines << qMakePair(QCoreApplication::translate("ClangTools::Diagnostic", "Fixit status:"),
+                           fixitStatus(*status));
+    }
+
+    if (showSteps && !diagnostic.explainingSteps.isEmpty()) {
+        StringPair steps;
+        steps.first = QCoreApplication::translate("ClangTools::Diagnostic", "Steps:");
+        for (const ExplainingStep &step : diagnostic.explainingSteps) {
+            if (!steps.second.isEmpty())
+                steps.second += "<br>";
+            steps.second += QString("%1:%2: %3")
+                    .arg(step.location.filePath,
+                         lineColumnString(step.location),
+                         step.message);
+        }
+        lines << steps;
+    }
+
+    QString html = QLatin1String("<html>"
+                                 "<head>"
+                                 "<style>dt { font-weight:bold; } dd { font-family: monospace; }</style>"
+                                 "</head>\n"
+                                 "<body><dl>");
+
+    for (const StringPair &pair : qAsConst(lines)) {
+        html += QLatin1String("<dt>");
+        html += pair.first;
+        html += QLatin1String("</dt><dd>");
+        html += pair.second;
+        html += QLatin1String("</dd>\n");
+    }
+    html += QLatin1String("</dl></body></html>");
+    return html;
+}
 
 QString createFullLocationString(const Debugger::DiagnosticLocation &location)
 {
@@ -124,7 +214,7 @@ QString fullPath(const QString &executable)
 
 static QString findValidExecutable(const QStringList &candidates)
 {
-    for (QString candidate : candidates) {
+    for (const QString &candidate : candidates) {
         const QString expandedPath = fullPath(candidate);
         if (isFileExecutable(expandedPath))
             return expandedPath;
@@ -153,7 +243,6 @@ QString clazyStandaloneFallbackExecutable()
 {
     return findValidExecutable({
         shippedClazyStandaloneExecutable(),
-        qEnvironmentVariable("QTC_USE_CLAZY_STANDALONE_PATH"),
         Constants::CLAZY_STANDALONE_EXECUTABLE_NAME,
     });
 }
@@ -214,6 +303,52 @@ QString documentationUrl(const QString &checkName)
     }
 
     return url;
+}
+
+ClangDiagnosticConfig diagnosticConfig(const Utils::Id &diagConfigId)
+{
+    const ClangDiagnosticConfigsModel configs = diagnosticConfigsModel();
+    QTC_ASSERT(configs.hasConfigWithId(diagConfigId), return ClangDiagnosticConfig());
+    return configs.configWithId(diagConfigId);
+}
+
+QStringList splitArgs(QString &argsString)
+{
+    QStringList result;
+    Utils::QtcProcess::ArgIterator it(&argsString);
+    while (it.next())
+        result.append(it.value());
+    return result;
+}
+
+QStringList extraOptions(const char *envVar)
+{
+    if (!qEnvironmentVariableIsSet(envVar))
+        return QStringList();
+    QString arguments = QString::fromLocal8Bit(qgetenv(envVar));
+    return splitArgs(arguments);
+}
+
+QStringList extraClangToolsPrependOptions()
+{
+    constexpr char csaPrependOptions[] = "QTC_CLANG_CSA_CMD_PREPEND";
+    constexpr char toolsPrependOptions[] = "QTC_CLANG_TOOLS_CMD_PREPEND";
+    static const QStringList options = extraOptions(csaPrependOptions)
+                                       + extraOptions(toolsPrependOptions);
+    if (!options.isEmpty())
+        qWarning() << "ClangTools options are prepended with " << options.toVector();
+    return options;
+}
+
+QStringList extraClangToolsAppendOptions()
+{
+    constexpr char csaAppendOptions[] = "QTC_CLANG_CSA_CMD_APPEND";
+    constexpr char toolsAppendOptions[] = "QTC_CLANG_TOOLS_CMD_APPEND";
+    static const QStringList options = extraOptions(csaAppendOptions)
+                                       + extraOptions(toolsAppendOptions);
+    if (!options.isEmpty())
+        qWarning() << "ClangTools options are appended with " << options.toVector();
+    return options;
 }
 
 } // namespace Internal

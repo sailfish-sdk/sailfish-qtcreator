@@ -30,25 +30,16 @@
 
 namespace Nim {
 
-class NimCompilerBuildStep;
-
 class NimBuildConfiguration : public ProjectExplorer::BuildConfiguration
 {
     Q_OBJECT
 
     friend class ProjectExplorer::BuildConfigurationFactory;
-    NimBuildConfiguration(ProjectExplorer::Target *target, Core::Id id);
+    NimBuildConfiguration(ProjectExplorer::Target *target, Utils::Id id);
 
 public:
     Utils::FilePath cacheDirectory() const;
     Utils::FilePath outFilePath() const;
-
-signals:
-    void outFilePathChanged(const Utils::FilePath &outFilePath);
-
-private:
-    void setupBuild(const ProjectExplorer::BuildInfo *info);
-    const NimCompilerBuildStep *nimCompilerBuildStep() const;
 };
 
 

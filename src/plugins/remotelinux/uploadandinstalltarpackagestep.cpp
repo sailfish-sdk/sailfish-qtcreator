@@ -25,6 +25,7 @@
 
 #include "uploadandinstalltarpackagestep.h"
 
+#include "remotelinux_constants.h"
 #include "remotelinuxdeployconfiguration.h"
 #include "remotelinuxpackageinstaller.h"
 #include "tarpackagecreationstep.h"
@@ -60,12 +61,11 @@ AbstractRemoteLinuxPackageInstaller *UploadAndInstallTarPackageService::packageI
 }
 
 
-UploadAndInstallTarPackageStep::UploadAndInstallTarPackageStep(BuildStepList *bsl, Core::Id id)
+UploadAndInstallTarPackageStep::UploadAndInstallTarPackageStep(BuildStepList *bsl, Utils::Id id)
     : AbstractRemoteLinuxDeployStep(bsl, id)
 {
     auto service = createDeployService<UploadAndInstallTarPackageService>();
 
-    setDefaultDisplayName(displayName());
     setWidgetExpandedByDefault(false);
 
     setInternalInitializer([this, service] {
@@ -85,9 +85,9 @@ UploadAndInstallTarPackageStep::UploadAndInstallTarPackageStep(BuildStepList *bs
     });
 }
 
-Core::Id UploadAndInstallTarPackageStep::stepId()
+Utils::Id UploadAndInstallTarPackageStep::stepId()
 {
-    return "MaemoUploadAndInstallTarPackageStep";
+    return Constants::UploadAndInstallTarPackageStepId;
 }
 
 QString UploadAndInstallTarPackageStep::displayName()

@@ -95,6 +95,7 @@ ResourceEditorW::ResourceEditorW(const Core::Context &context,
                                               &ResourceEditorW::renameCurrentFile);
     m_copyFileNameAction = m_contextMenu->addAction(tr("Copy Resource Path to Clipboard"),
                                                     this, &ResourceEditorW::copyCurrentResourcePath);
+    m_orderList = m_contextMenu->addAction(tr("Sort Alphabetically"), this, &ResourceEditorW::orderList);
 
     connect(m_resourceDocument, &ResourceEditorDocument::loaded,
             m_resourceEditor, &QrcEditor::loaded);
@@ -194,7 +195,7 @@ bool ResourceEditorDocument::setContents(const QByteArray &contents)
 {
     TempFileSaver saver;
     saver.write(contents);
-    if (!saver.finalize(Core::ICore::mainWindow()))
+    if (!saver.finalize(Core::ICore::dialogParent()))
         return false;
 
     const QString originalFileName = m_model->fileName();
@@ -237,14 +238,12 @@ QByteArray ResourceEditorW::saveState() const
     return bytes;
 }
 
-bool ResourceEditorW::restoreState(const QByteArray &state)
+void ResourceEditorW::restoreState(const QByteArray &state)
 {
     QDataStream stream(state);
     QByteArray splitterState;
     stream >> splitterState;
-    if (!m_resourceEditor->restoreState(splitterState))
-        return false;
-    return true;
+    m_resourceEditor->restoreState(splitterState);
 }
 
 QWidget *ResourceEditorW::toolBar()
@@ -329,6 +328,11 @@ void ResourceEditorW::renameCurrentFile()
 void ResourceEditorW::copyCurrentResourcePath()
 {
     QApplication::clipboard()->setText(m_resourceEditor->currentResourcePath());
+}
+
+void ResourceEditorW::orderList()
+{
+    m_resourceDocument->model()->orderList();
 }
 
 void ResourceEditorW::onUndo()

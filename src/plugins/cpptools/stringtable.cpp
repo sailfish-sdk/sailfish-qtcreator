@@ -108,7 +108,8 @@ QString StringTablePrivate::insert(const QString &string)
 
 void StringTable::scheduleGC()
 {
-    QMetaObject::invokeMethod(&m_instance->m_gcCountDown, "start", Qt::QueuedConnection);
+    QMetaObject::invokeMethod(&m_instance->m_gcCountDown, QOverload<>::of(&QTimer::start),
+                              Qt::QueuedConnection);
 }
 
 StringTable::StringTable()
@@ -124,8 +125,13 @@ StringTable::~StringTable()
 
 static inline bool isQStringInUse(const QString &string)
 {
-    QArrayData *data_ptr = const_cast<QString&>(string).data_ptr();
-    return data_ptr->ref.isShared() || data_ptr->ref.isStatic();
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    auto data_ptr = const_cast<QString&>(string).data_ptr();
+    return data_ptr->ref.isShared() || data_ptr->ref.isStatic() /* QStringLiteral ? */;
+#else
+    auto data_ptr = const_cast<QString&>(string).data_ptr();
+    return data_ptr->isShared() || !data_ptr->isMutable() /* QStringLiteral ? */;
+#endif
 }
 
 void StringTablePrivate::GC()

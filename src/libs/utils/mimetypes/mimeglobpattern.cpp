@@ -39,7 +39,7 @@
 
 #include "mimeglobpattern_p.h"
 
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QStringList>
 #include <QDebug>
 
@@ -123,7 +123,7 @@ bool MimeGlobPattern::matchFileName(const QString &inputFilename) const
     if (starCount == 1 && m_pattern.at(pattern_len - 1) == QLatin1Char('*')) {
         if (len + 1 < pattern_len) return false;
         if (m_pattern.at(0) == QLatin1Char('*'))
-            return filename.indexOf(m_pattern.midRef(1, pattern_len - 2)) != -1;
+            return filename.indexOf(QStringView(m_pattern).mid(1, pattern_len - 2)) != -1;
 
         const QChar *c1 = m_pattern.unicode();
         const QChar *c2 = filename.unicode();
@@ -138,8 +138,9 @@ bool MimeGlobPattern::matchFileName(const QString &inputFilename) const
         return (m_pattern == filename);
 
     // Other (quite rare) patterns, like "*.anim[1-9j]": use slow but correct method
-    QRegExp rx(m_pattern, Qt::CaseSensitive, QRegExp::WildcardUnix);
-    return rx.exactMatch(filename);
+    const QRegularExpression rx(QRegularExpression::anchoredPattern(
+                                    QRegularExpression::wildcardToRegularExpression(m_pattern)));
+    return rx.match(filename).hasMatch();
 }
 
 static bool isFastPattern(const QString &pattern)
@@ -191,11 +192,7 @@ void MimeAllGlobPatterns::removeMimeType(const QString &mimeType)
 void MimeGlobPatternList::match(MimeGlobMatchResult &result,
                                  const QString &fileName) const
 {
-
-    MimeGlobPatternList::const_iterator it = this->constBegin();
-    const MimeGlobPatternList::const_iterator endIt = this->constEnd();
-    for (; it != endIt; ++it) {
-        const MimeGlobPattern &glob = *it;
+    for (const MimeGlobPattern &glob : *this) {
         if (glob.matchFileName(fileName))
             result.addMatch(glob.mimeType(), glob.weight(), glob.pattern());
     }
@@ -217,9 +214,8 @@ QStringList MimeAllGlobPatterns::matchingGlobs(const QString &fileName, QString 
             // (toLower because fast patterns are always case-insensitive and saved as lowercase)
 
             const QStringList matchingMimeTypes = m_fastPatterns.value(simpleExtension);
-            foreach (const QString &mime, matchingMimeTypes) {
+            for (const QString &mime : matchingMimeTypes)
                 result.addMatch(mime, 50, QLatin1String("*.") + simpleExtension);
-            }
             // Can't return yet; *.tar.bz2 has to win over *.bz2, so we need the low-weight mimetypes anyway,
             // at least those with weight 50.
         }

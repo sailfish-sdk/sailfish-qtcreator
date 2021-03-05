@@ -27,62 +27,31 @@
 
 #include "itestframework.h"
 
-#include <QHash>
-#include <QSharedPointer>
-
 QT_BEGIN_NAMESPACE
 class QSettings;
 QT_END_NAMESPACE
 
-namespace Core { class Id; }
-
 namespace Autotest {
-
-class TestTreeItem;
-
 namespace Internal {
-
-class TestRunner;
 struct TestSettings;
 }
 
-class IFrameworkSettings;
-class ITestParser;
-class TestTreeModel;
-
-class TestFrameworkManager
+class TestFrameworkManager final
 {
+
 public:
-    static TestFrameworkManager *instance();
-    virtual ~TestFrameworkManager();
+    TestFrameworkManager();
+    ~TestFrameworkManager();
+
     bool registerTestFramework(ITestFramework *framework);
-
-    void activateFrameworksFromSettings(QSharedPointer<Internal::TestSettings> settings);
-    QString frameworkNameForId(const Core::Id &id) const;
-    QList<Core::Id> registeredFrameworkIds() const;
-    QList<Core::Id> sortedRegisteredFrameworkIds() const;
-    QList<Core::Id> sortedActiveFrameworkIds() const;
-
-    TestTreeItem *rootNodeForTestFramework(const Core::Id &frameworkId) const;
-    ITestParser *testParserForTestFramework(const Core::Id &frameworkId) const;
-    QSharedPointer<IFrameworkSettings> settingsForTestFramework(const Core::Id &frameworkId) const;
     void synchronizeSettings(QSettings *s);
-    bool isActive(const Core::Id &frameworkId) const;
-    bool groupingEnabled(const Core::Id &frameworkId) const;
-    void setGroupingEnabledFor(const Core::Id &frameworkId, bool enabled);
-    QString groupingToolTip(const Core::Id &frameworkId) const;
-    bool hasActiveFrameworks() const;
-    unsigned priority(const Core::Id &frameworkId) const;
-private:
-    QList<Core::Id> activeFrameworkIds() const;
-    explicit TestFrameworkManager();
-    QHash<Core::Id, ITestFramework *> m_registeredFrameworks;
-    QHash<Core::Id, QSharedPointer<IFrameworkSettings> > m_frameworkSettings;
-    QVector<Core::IOptionsPage *> m_frameworkSettingsPages;
-    TestTreeModel *m_testTreeModel;
-    Internal::TestRunner *m_testRunner;
 
-    typedef QHash<Core::Id, ITestFramework *>::ConstIterator FrameworkIterator;
+    static ITestFramework *frameworkForId(Utils::Id frameworkId);
+    static void activateFrameworksFromSettings(const Internal::TestSettings *settings);
+    static TestFrameworks registeredFrameworks();
+
+private:
+    TestFrameworks m_registeredFrameworks;
 };
 
 } // namespace Autotest

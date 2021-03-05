@@ -46,7 +46,6 @@ public:
     int priorityInStatusBar() const override;
 
     void clearContents() override;
-    void visibilityChanged(bool visible) override;
 
     void setFocus() override;
     bool hasFocus() const override;
@@ -75,9 +74,6 @@ public:
         Command, // A bold command with timestamp "10:00 " + "Executing: vcs -diff"
         Message, // A blue message text (e.g. "command has finished successfully")
     };
-
-signals:
-    void referenceClicked(const QString &reference);
 
 public slots:
     static void setRepository(const QString &);

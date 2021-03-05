@@ -4,15 +4,15 @@ import qbs.FileInfo
 import "qtc.js" as HelperFunctions
 
 Module {
-    property string qtcreator_display_version: '4.12.2'
+    property string qtcreator_display_version: '4.14.1'
     property string ide_version_major: '4'
-    property string ide_version_minor: '12'
-    property string ide_version_release: '2'
+    property string ide_version_minor: '14'
+    property string ide_version_release: '1'
     property string qtcreator_version: ide_version_major + '.' + ide_version_minor + '.'
                                        + ide_version_release
 
     property string ide_compat_version_major: '4'
-    property string ide_compat_version_minor: '12'
+    property string ide_compat_version_minor: '14'
     property string ide_compat_version_release: '0'
     property string qtcreator_compat_version: ide_compat_version_major + '.'
             + ide_compat_version_minor + '.' + ide_compat_version_release
@@ -65,6 +65,10 @@ Module {
 
     property string litehtmlInstallDir: Environment.getEnv("LITEHTML_INSTALL_DIR")
 
+    property bool enableAddressSanitizer: false
+    property bool enableUbSanitizer: false
+    property bool enableThreadSanitizer: false
+
     property bool make_dev_package: false
 
     // Will be replaced when creating modules from products
@@ -84,8 +88,7 @@ Module {
         "QT_NO_CAST_TO_ASCII",
         "QT_RESTRICTED_CAST_FROM_ASCII",
         "QT_DISABLE_DEPRECATED_BEFORE=0x050900",
-        "QT_USE_FAST_OPERATOR_PLUS",
-        "QT_USE_FAST_CONCATENATION",
+        "QT_USE_QSTRINGBUILDER",
     ].concat(testsEnabled ? ["WITH_TESTS"] : [])
      .concat(qbs.toolchain.contains("msvc") ? ["_CRT_SECURE_NO_WARNINGS"] : [])
 

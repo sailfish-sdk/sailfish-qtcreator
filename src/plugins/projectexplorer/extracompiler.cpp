@@ -42,6 +42,7 @@
 #include <utils/runextensions.h>
 
 #include <QDateTime>
+#include <QFutureInterface>
 #include <QFutureWatcher>
 #include <QProcess>
 #include <QThreadPool>
@@ -292,7 +293,7 @@ void ExtraCompilerPrivate::updateIssues()
         const auto fontSettings = TextEditor::TextEditorSettings::instance()->fontSettings();
         selection.format = fontSettings.toTextCharFormat(issue.type == Task::Warning ?
                 TextEditor::C_WARNING : TextEditor::C_ERROR);
-        selection.format.setToolTip(issue.description);
+        selection.format.setToolTip(issue.description());
         selections.append(selection);
     }
 

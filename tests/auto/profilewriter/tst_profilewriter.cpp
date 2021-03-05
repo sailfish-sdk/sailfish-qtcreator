@@ -476,7 +476,10 @@ void tst_ProFileWriter::adds()
 
     QMakeVfs vfs;
     QMakeParser parser(0, &vfs, &parseHandler);
-    ProFile *proFile = parser.parsedProBlock(QStringRef(&input), 0, QLatin1String(BASE_DIR "/test.pro"), 1);
+    ProFile *proFile = parser.parsedProBlock(Utils::make_stringview(input),
+                                             0,
+                                             QLatin1String(BASE_DIR "/test.pro"),
+                                             1);
     QVERIFY(proFile);
     PW::putVarValues(proFile, &lines, values, var, PW::PutFlags(flags), scope, "\t");
     proFile->deref();
@@ -647,7 +650,10 @@ void tst_ProFileWriter::removes()
 
     QMakeVfs vfs;
     QMakeParser parser(0, &vfs, &parseHandler);
-    ProFile *proFile = parser.parsedProBlock(QStringRef(&input), 0, QLatin1String(BASE_DIR "/test.pro"), 1);
+    ProFile *proFile = parser.parsedProBlock(Utils::make_stringview(input),
+                                             0,
+                                             QLatin1String(BASE_DIR "/test.pro"),
+                                             1);
     QVERIFY(proFile);
     QmakeProjectManager::Internal::ProWriter::removeVarValues(proFile, &lines, values, vars);
     proFile->deref();
@@ -676,7 +682,10 @@ void tst_ProFileWriter::multiVar()
 
     QMakeVfs vfs;
     QMakeParser parser(0, &vfs, &parseHandler);
-    ProFile *proFile = parser.parsedProBlock(QStringRef(&input), 0, QLatin1String(BASE_DIR "/test.pro"), 1);
+    ProFile *proFile = parser.parsedProBlock(Utils::make_stringview(input),
+                                             0,
+                                             QLatin1String(BASE_DIR "/test.pro"),
+                                             1);
     QVERIFY(proFile);
     QmakeProjectManager::Internal::ProWriter::removeFiles(proFile, &lines, baseDir, files, vars);
     proFile->deref();
@@ -686,25 +695,28 @@ void tst_ProFileWriter::multiVar()
 
 void tst_ProFileWriter::addFiles()
 {
-    QString input = QLatin1String(
-            "SOURCES = foo.cpp"
-            );
-    QStringList lines = input.split(QLatin1Char('\n'));
-    QString output = QLatin1String(
-            "SOURCES = foo.cpp \\\n"
-            "\tsub/bar.cpp"
-            );
+    const QStringList equivalentInputs = {"SOURCES = foo.cpp", "SOURCES = foo.cpp \\"};
+    for (const QString &input : equivalentInputs) {
+        QStringList lines = input.split(QLatin1Char('\n'));
+        QString output = QLatin1String(
+                    "SOURCES = foo.cpp \\\n"
+                    "\tsub/bar.cpp"
+                    );
 
-    QMakeVfs vfs;
-    QMakeParser parser(0, &vfs, &parseHandler);
-    ProFile *proFile = parser.parsedProBlock(QStringRef(&input), 0, QLatin1String(BASE_DIR "/test.pro"), 1);
-    QVERIFY(proFile);
-    QmakeProjectManager::Internal::ProWriter::addFiles(proFile, &lines,
-            QStringList() << QString::fromLatin1(BASE_DIR "/sub/bar.cpp"),
-            QLatin1String("SOURCES"), "\t");
-    proFile->deref();
+        QMakeVfs vfs;
+        QMakeParser parser(0, &vfs, &parseHandler);
+        ProFile *proFile = parser.parsedProBlock(Utils::make_stringview(input),
+                                                 0,
+                                                 BASE_DIR "/test.pro",
+                                                 1);
+        QVERIFY(proFile);
+        QmakeProjectManager::Internal::ProWriter::addFiles(proFile, &lines,
+                                                           QStringList(BASE_DIR "/sub/bar.cpp"),
+                                                           QLatin1String("SOURCES"), "\t");
+        proFile->deref();
 
-    QCOMPARE(lines.join(QLatin1Char('\n')), output);
+        QCOMPARE(lines.join(QLatin1Char('\n')), output);
+    }
 }
 
 void tst_ProFileWriter::removeFiles()
@@ -719,7 +731,10 @@ void tst_ProFileWriter::removeFiles()
 
     QMakeVfs vfs;
     QMakeParser parser(0, &vfs, &parseHandler);
-    ProFile *proFile = parser.parsedProBlock(QStringRef(&input), 0, QLatin1String(BASE_DIR "/test.pro"), 1);
+    ProFile *proFile = parser.parsedProBlock(Utils::make_stringview(input),
+                                             0,
+                                             QLatin1String(BASE_DIR "/test.pro"),
+                                             1);
     QVERIFY(proFile);
     QmakeProjectManager::Internal::ProWriter::removeFiles(proFile, &lines, QDir(BASE_DIR),
             QStringList() << QString::fromLatin1(BASE_DIR "/sub/bar.cpp"),

@@ -27,7 +27,7 @@
 
 #include <cppcheck/cppcheckoptions.h>
 
-#include <QFuture>
+#include <QFutureInterface>
 #include <QPointer>
 #include <QRegularExpression>
 
@@ -58,7 +58,7 @@ class CppcheckTool final : public QObject
     Q_OBJECT
 
 public:
-    CppcheckTool(CppcheckDiagnosticManager &manager, const Core::Id &progressId);
+    CppcheckTool(CppcheckDiagnosticManager &manager, const Utils::Id &progressId);
     ~CppcheckTool() override;
 
     void updateOptions(const CppcheckOptions &options);
@@ -84,10 +84,10 @@ private:
     std::unique_ptr<CppcheckRunner> m_runner;
     std::unique_ptr<QFutureInterface<void>> m_progress;
     QHash<QString, QString> m_cachedAdditionalArguments;
-    QVector<QRegExp> m_filters;
+    QVector<QRegularExpression> m_filters;
     QRegularExpression m_progressRegexp;
     QRegularExpression m_messageRegexp;
-    Core::Id m_progressId;
+    Utils::Id m_progressId;
 };
 
 } // namespace Internal

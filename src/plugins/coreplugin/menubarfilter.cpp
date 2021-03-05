@@ -32,6 +32,7 @@
 #include "locator/locatormanager.h"
 
 #include <utils/algorithm.h>
+#include <utils/porting.h>
 #include <utils/qtcassert.h>
 #include <utils/stringutils.h>
 
@@ -41,7 +42,7 @@
 #include <QTimer>
 
 QT_BEGIN_NAMESPACE
-uint qHash(const QPointer<QAction> &p, uint seed)
+Utils::QHashValueType qHash(const QPointer<QAction> &p, Utils::QHashValueType seed)
 {
     return qHash(p.data(), seed);
 }
@@ -187,7 +188,7 @@ void Core::Internal::MenuBarFilter::prepareSearch(const QString &entry)
     static const QRegularExpression seperatorRegExp(QString("[%1]").arg(separators));
     QString normalized = entry;
     normalized.replace(seperatorRegExp, separators.at(0));
-    const QStringList entryPath = normalized.split(separators.at(0), QString::SkipEmptyParts);
+    const QStringList entryPath = normalized.split(separators.at(0), Qt::SkipEmptyParts);
     m_entries.clear();
     QVector<const QMenu *> processedMenus;
     for (QAction* action : menuBarActions())

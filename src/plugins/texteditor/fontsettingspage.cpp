@@ -139,8 +139,7 @@ public:
 
         connect(m_ui.fontComboBox, &QFontComboBox::currentFontChanged,
                 this, &FontSettingsPageWidget::fontSelected);
-        connect(m_ui.sizeComboBox,
-                QOverload<const QString &>::of(&QComboBox::currentIndexChanged),
+        connect(m_ui.sizeComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
                 this, &FontSettingsPageWidget::fontSizeSelected);
         connect(m_ui.zoomSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
                 this, &FontSettingsPageWidget::fontZoomChanged);
@@ -165,7 +164,7 @@ public:
 
     void saveSettings();
     void fontSelected(const QFont &font);
-    void fontSizeSelected(const QString &sizeString);
+    void fontSizeSelected(int index);
     void fontZoomChanged();
     void antialiasChanged();
     void colorSchemeSelected(int index);
@@ -280,7 +279,9 @@ FormatDescription::FormatDescription(TextStyle id,
 
 QColor FormatDescription::defaultForeground(TextStyle id)
 {
-    if (id == C_LINE_NUMBER) {
+    if (id == C_TEXT) {
+        return Qt::black;
+    } else if (id == C_LINE_NUMBER) {
         const QPalette palette = Utils::Theme::initialPalette();
         const QColor bg = palette.window().color();
         if (bg.value() < 128)
@@ -298,6 +299,10 @@ QColor FormatDescription::defaultForeground(TextStyle id)
         return QColor(Qt::red);
     } else if (id == C_AUTOCOMPLETE) {
         return QColor(Qt::darkBlue);
+    } else if (id == C_SEARCH_RESULT_ALT1) {
+        return QColor(0x00, 0x00, 0x33);
+    } else if (id == C_SEARCH_RESULT_ALT2) {
+        return QColor(0x33, 0x00, 0x00);
     }
     return QColor();
 }
@@ -310,6 +315,10 @@ QColor FormatDescription::defaultBackground(TextStyle id)
         return Utils::Theme::initialPalette().window().color();
     } else if (id == C_SEARCH_RESULT) {
         return QColor(0xffef0b);
+    } else if (id == C_SEARCH_RESULT_ALT1) {
+        return QColor(0xb6, 0xcc, 0xff);
+    } else if (id == C_SEARCH_RESULT_ALT2) {
+        return QColor(0xff, 0xb6, 0xcc);
     } else if (id == C_PARENTHESES) {
         return QColor(0xb4, 0xee, 0xb4);
     } else if (id == C_PARENTHESES_MISMATCH) {
@@ -400,8 +409,9 @@ QList<int> FontSettingsPageWidget::pointSizesForSelectedFont() const
     return sizeLst;
 }
 
-void FontSettingsPageWidget::fontSizeSelected(const QString &sizeString)
+void FontSettingsPageWidget::fontSizeSelected(int index)
 {
+    const QString sizeString = m_ui.sizeComboBox->itemText(index);
     bool ok = true;
     const int size = sizeString.toInt(&ok);
     if (ok) {
@@ -473,7 +483,7 @@ void FontSettingsPageWidget::copyColorScheme(const QString &name)
 
         ColorScheme scheme = m_value.colorScheme();
         scheme.setDisplayName(name);
-        if (scheme.save(fileName, Core::ICore::mainWindow()))
+        if (scheme.save(fileName, Core::ICore::dialogParent()))
             m_value.setColorSchemeFileName(fileName);
 
         refreshColorSchemeList();
@@ -540,7 +550,7 @@ void FontSettingsPageWidget::maybeSaveColorScheme()
 
     if (messageBox.exec() == QMessageBox::Save) {
         const ColorScheme &scheme = m_ui.schemeEdit->colorScheme();
-        scheme.save(m_value.colorSchemeFileName(), Core::ICore::mainWindow());
+        scheme.save(m_value.colorSchemeFileName(), Core::ICore::dialogParent());
     }
 }
 
@@ -590,7 +600,7 @@ void FontSettingsPageWidget::apply()
         // Update the scheme and save it under the name it already has
         m_value.setColorScheme(m_ui.schemeEdit->colorScheme());
         const ColorScheme &scheme = m_value.colorScheme();
-        scheme.save(m_value.colorSchemeFileName(), Core::ICore::mainWindow());
+        scheme.save(m_value.colorSchemeFileName(), Core::ICore::dialogParent());
     }
 
     bool ok;

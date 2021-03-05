@@ -123,7 +123,7 @@ CppTools::CheckSymbols *createHighlighter(const CPlusPlus::Document::Ptr &doc,
         const QString name = macro.macro().nameToQString();
 
         //Filter out QtKeywords
-        if (features.qtKeywordsEnabled && isQtKeyword(QStringRef(&name)))
+        if (features.qtKeywordsEnabled && isQtKeyword(name))
             continue;
 
         SimpleLexer tokenize;
@@ -202,7 +202,6 @@ BuiltinEditorDocumentProcessor::BuiltinEditorDocumentProcessor(
 BuiltinEditorDocumentProcessor::~BuiltinEditorDocumentProcessor()
 {
     m_parserFuture.cancel();
-    m_parserFuture.waitForFinished();
 }
 
 void BuiltinEditorDocumentProcessor::runImpl(

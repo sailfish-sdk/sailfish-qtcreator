@@ -29,10 +29,13 @@
 #include "tokencommand.h"
 #include "valueschangedcommand.h"
 #include "changeselectioncommand.h"
+#include "requestmodelnodepreviewimagecommand.h"
 
 #include <QTimer>
 #include <QVariant>
 #include <QPointer>
+#include <QImage>
+#include <QUrl>
 
 QT_BEGIN_NAMESPACE
 class QDragMoveEvent;
@@ -46,6 +49,7 @@ class Qt5InformationNodeInstanceServer : public Qt5NodeInstanceServer
 
 public:
     explicit Qt5InformationNodeInstanceServer(NodeInstanceClientInterface *nodeInstanceClient);
+    ~Qt5InformationNodeInstanceServer() override;
 
     void reparentInstances(const ReparentInstancesCommand &command) override;
     void clearScene(const ClearSceneCommand &command) override;
@@ -59,9 +63,15 @@ public:
     void removeInstances(const RemoveInstancesCommand &command) override;
     void inputEvent(const InputEventCommand &command) override;
     void view3DAction(const View3DActionCommand &command) override;
+    void requestModelNodePreviewImage(const RequestModelNodePreviewImageCommand &command) override;
     void changeAuxiliaryValues(const ChangeAuxiliaryCommand &command) override;
     void changePropertyBindings(const ChangeBindingsCommand &command) override;
     void changeIds(const ChangeIdsCommand &command) override;
+    void changeState(const ChangeStateCommand &command) override;
+    void removeProperties(const RemovePropertiesCommand &command) override;
+
+    void handleInstanceLocked(const ServerNodeInstance &instance, bool enable, bool checkAncestors) override;
+    void handleInstanceHidden(const ServerNodeInstance &instance, bool enable, bool checkAncestors) override;
 
 private slots:
     void handleSelectionChanged(const QVariant &objs);
@@ -83,11 +93,13 @@ protected:
     void selectInstances(const QList<ServerNodeInstance> &instanceList);
     void modifyProperties(const QVector<InstancePropertyValueTriple> &properties);
     QList<ServerNodeInstance> createInstances(const QVector<InstanceContainer> &container) override;
+    void initializeAuxiliaryViews() override;
 
 private:
     void handleObjectPropertyChangeTimeout();
     void handleSelectionChangeTimeout();
     void createEditView3D();
+    void create3DPreviewView();
     void setup3DEditView(const QList<ServerNodeInstance> &instanceList,
                          const QHash<QString, QVariantMap> &toolStates);
     void createCameraAndLightGizmos(const QList<ServerNodeInstance> &instanceList) const;
@@ -97,9 +109,10 @@ private:
     QObject *findView3DForSceneRoot(QObject *sceneRoot) const;
     QObject *find3DSceneRoot(const ServerNodeInstance &instance) const;
     QObject *find3DSceneRoot(QObject *obj) const;
-    QVector<InstancePropertyValueTriple> vectorToPropertyValue(const ServerNodeInstance &instance,
-                                                               const PropertyName &propertyName,
-                                                               const QVariant &variant);
+    QVector<InstancePropertyValueTriple> propertyToPropertyValueTriples(
+            const ServerNodeInstance &instance,
+            const PropertyName &propertyName,
+            const QVariant &variant);
     void modifyVariantValue(const QVariant &node,
                             const PropertyName &propertyName,
                             ValuesModifiedCommand::TransactionOption option);
@@ -108,12 +121,26 @@ private:
     void removeNode3D(QObject *node);
     void resolveSceneRoots();
     ServerNodeInstance active3DSceneInstance() const;
+    void updateNodesRecursive(QQuickItem *item);
+    QQuickItem *getContentItemForRendering(QQuickItem *rootItem);
     void render3DEditView(int count = 1);
     void doRender3DEditView();
+    void renderModelNodeImageView();
+    void doRenderModelNodeImageView();
+    void doRenderModelNode3DImageView();
+    void doRenderModelNode2DImageView();
+    void updateLockedAndHiddenStates(const QSet<ServerNodeInstance> &instances);
+    void handleInputEvents();
 
-    QPointer<QQuickView> m_editView3D;
-    QQuickItem *m_editView3DRootItem = nullptr;
-    QQuickItem *m_editView3DContentItem = nullptr;
+    void createAuxiliaryQuickView(const QUrl &url, RenderViewData &viewData);
+
+    RenderViewData m_editView3DData;
+    RenderViewData m_modelNode3DImageViewData;
+    RenderViewData m_modelNode2DImageViewData;
+
+    bool m_editView3DSetupDone = false;
+    RequestModelNodePreviewImageCommand m_modelNodePreviewImageCommand;
+    QHash<QString, QImage> m_modelNodePreviewImageCache;
     QSet<QObject *> m_view3Ds;
     QMultiHash<QObject *, QObject *> m_3DSceneMap; // key: scene root, value: node
     QObject *m_active3DView = nullptr;
@@ -124,12 +151,15 @@ private:
     QList<TokenCommand> m_tokenList;
     QTimer m_propertyChangeTimer;
     QTimer m_selectionChangeTimer;
-    QTimer m_renderTimer;
+    QTimer m_render3DEditViewTimer;
+    QTimer m_renderModelNodeImageViewTimer;
+    QTimer m_inputEventTimer;
     QVariant m_changedNode;
     PropertyName m_changedProperty;
     ChangeSelectionCommand m_lastSelectionChangeCommand;
+    QList<InputEventCommand> m_pendingInputEventCommands;
     QObject *m_3dHelper = nullptr;
-    int m_needRender = 0;
+    int m_need3DEditViewRender = 0;
 };
 
 } // namespace QmlDesigner

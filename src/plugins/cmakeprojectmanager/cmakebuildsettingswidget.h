@@ -25,6 +25,8 @@
 
 #pragma once
 
+#include "cmakeconfigitem.h"
+
 #include <projectexplorer/namedwidget.h>
 #include <QTimer>
 
@@ -55,6 +57,7 @@ class CMakeBuildConfiguration;
 class CMakeBuildSettingsWidget : public ProjectExplorer::NamedWidget
 {
     Q_OBJECT
+
 public:
     CMakeBuildSettingsWidget(CMakeBuildConfiguration *bc);
 
@@ -65,10 +68,10 @@ private:
     void updateButtonState();
     void updateAdvancedCheckBox();
     void updateFromKit();
-    void handleQmlDebugCxxFlags();
+    CMakeProjectManager::CMakeConfig getQmlDebugCxxFlags();
 
-    void setConfigurationForCMake();
-    void updateSelection(const QModelIndex &current, const QModelIndex &previous);
+    void updateSelection();
+    void setVariableUnsetFlag(bool unsetFlag);
     QAction *createForceAction(int type, const QModelIndex &idx);
 
     bool eventFilter(QObject *target, QEvent *event) override;
@@ -82,13 +85,14 @@ private:
     QPushButton *m_addButton;
     QMenu *m_addButtonMenu;
     QPushButton *m_editButton;
+    QPushButton *m_setButton;
     QPushButton *m_unsetButton;
     QPushButton *m_resetButton;
+    QPushButton *m_clearSelectionButton;
     QCheckBox *m_showAdvancedCheckBox;
     QPushButton *m_reconfigureButton;
     QTimer m_showProgressTimer;
     Utils::FancyLineEdit *m_filterEdit;
-    Utils::InfoLabel *m_errorMessageLabel;
     Utils::InfoLabel *m_warningMessageLabel;
 };
 

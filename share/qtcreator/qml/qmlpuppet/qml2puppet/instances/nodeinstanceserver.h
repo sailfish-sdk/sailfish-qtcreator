@@ -25,11 +25,20 @@
 
 #pragma once
 
+#include <QDebug>
 #include <QUrl>
 #include <QVector>
 #include <QSet>
 #include <QStringList>
 #include <QPointer>
+#include <QImage>
+
+#ifdef MULTILANGUAGE_TRANSLATIONPROVIDER
+#include <multilanguagelink.h>
+#endif
+
+#include <QTranslator>
+#include <memory>
 
 #include <nodeinstanceserverinterface.h>
 #include "servernodeinstance.h"
@@ -47,10 +56,42 @@ QList<T>toList(const QSet<T> &set)
 }
 } //QtHelpers
 
+#ifndef MULTILANGUAGE_TRANSLATIONPROVIDER
+namespace MultiLanguage {
+inline QByteArray databaseFilePath()
+{
+    return {};
+}
+
+class Translator : public QTranslator
+{
+public:
+    void setLanguage(const QString&) {}
+};
+
+class Link
+{
+public:
+    Link()
+    {
+        if (qEnvironmentVariableIsSet("QT_MULTILANGUAGE_DATABASE"))
+            qWarning() << "QT_MULTILANGUAGE_DATABASE is set but QQmlDebugTranslationService is without MULTILANGUAGE_TRANSLATIONPROVIDER support compiled.";
+    }
+    std::unique_ptr<MultiLanguage::Translator> translator() {
+        //should never be called
+        Q_ASSERT(false);
+        return std::make_unique<MultiLanguage::Translator>();
+    }
+    const bool isActivated = false;
+};
+} //namespace MultiLanguage
+#endif
+
 QT_BEGIN_NAMESPACE
 class QFileSystemWatcher;
 class QQmlView;
 class QQuickView;
+class QQuickWindow;
 class QQmlEngine;
 class QFileInfo;
 class QQmlComponent;
@@ -75,6 +116,8 @@ namespace Internal {
     class ChildrenChangeEventFilter;
 }
 
+enum class TimerMode { DisableTimer, NormalTimer, SlowTimer };
+
 class NodeInstanceServer : public NodeInstanceServerInterface
 {
     Q_OBJECT
@@ -89,8 +132,8 @@ public:
         QVariant propertyValue;
     };
 
-
     explicit NodeInstanceServer(NodeInstanceClientInterface *nodeInstanceClient);
+    ~NodeInstanceServer() override;
 
     void createInstances(const CreateInstancesCommand &command) override;
     void changeFileUrl(const ChangeFileUrlCommand &command) override;
@@ -112,12 +155,17 @@ public:
     void changeSelection(const ChangeSelectionCommand &command) override;
     void inputEvent(const InputEventCommand &command) override;
     void view3DAction(const View3DActionCommand &command) override;
+    void requestModelNodePreviewImage(const RequestModelNodePreviewImageCommand &command) override;
+    void changeLanguage(const ChangeLanguageCommand &command) override;
+    void changePreviewImageSize(const ChangePreviewImageSizeCommand &command) override;
 
     ServerNodeInstance instanceForId(qint32 id) const;
     bool hasInstanceForId(qint32 id) const;
 
     ServerNodeInstance instanceForObject(QObject *object) const;
     bool hasInstanceForObject(QObject *object) const;
+
+    const QVector<ServerNodeInstance> &nodeInstances() const { return m_idInstances; }
 
     virtual QQmlEngine *engine() const = 0;
     QQmlContext *context() const;
@@ -128,7 +176,9 @@ public:
     QFileSystemWatcher *dummydataFileSystemWatcher();
     Internal::ChildrenChangeEventFilter *childrenChangeEventFilter() const;
     void addFilePropertyToFileSystemWatcher(QObject *object, const PropertyName &propertyName, const QString &path);
-    void removeFilePropertyFromFileSystemWatcher(QObject *object, const PropertyName &propertyName, const QString &path);
+    void removeFilePropertyFromFileSystemWatcher(QObject *object,
+                                                 const PropertyName &propertyName,
+                                                 const QString &path);
 
     QUrl fileUrl() const;
 
@@ -145,11 +195,30 @@ public:
 
     virtual QQmlView *declarativeView() const = 0;
     virtual QQuickView *quickView() const = 0;
+    virtual QQuickWindow *quickWindow() const = 0;
+    virtual QQuickItem *rootItem() const = 0;
+    virtual void setRootItem(QQuickItem *item) = 0;
 
     void sendDebugOutput(DebugOutputCommand::Type type, const QString &message, qint32 instanceId = 0);
-    void sendDebugOutput(DebugOutputCommand::Type type, const QString &message, const QVector<qint32> &instanceIds);
+    void sendDebugOutput(DebugOutputCommand::Type type,
+                         const QString &message,
+                         const QVector<qint32> &instanceIds);
 
     void removeInstanceRelationsipForDeletedObject(QObject *object);
+
+    void incrementNeedsExtraRender();
+    void decrementNeedsExtraRender();
+    void handleExtraRender();
+
+    void disableTimer();
+
+    virtual void collectItemChangesAndSendChangeCommands() = 0;
+
+    virtual void handleInstanceLocked(const ServerNodeInstance &instance, bool enable, bool checkAncestors);
+    virtual void handleInstanceHidden(const ServerNodeInstance &instance, bool enable, bool checkAncestors);
+
+    virtual QImage grabWindow() = 0;
+
 public slots:
     void refreshLocalFileProperty(const QString &path);
     void refreshDummyData(const QString &path);
@@ -173,7 +242,6 @@ protected:
 
     void timerEvent(QTimerEvent *) override;
 
-    virtual void collectItemChangesAndSendChangeCommands() = 0;
 
     ValuesChangedCommand createValuesChangedCommand(const QList<ServerNodeInstance> &instanceList) const;
     ValuesChangedCommand createValuesChangedCommand(const QVector<InstancePropertyPair> &propertyList) const;
@@ -183,6 +251,8 @@ protected:
     ChildrenChangedCommand createChildrenChangedCommand(const ServerNodeInstance &parentInstance, const QList<ServerNodeInstance> &instanceList) const;
     ComponentCompletedCommand createComponentCompletedCommand(const QList<ServerNodeInstance> &instanceList);
     ChangeSelectionCommand createChangeSelectionCommand(const QList<ServerNodeInstance> &instanceList);
+
+    void sheduleRootItemRender();
 
     void addChangedProperty(const InstancePropertyPair &property);
 
@@ -194,7 +264,9 @@ protected:
     void setSlowRenderTimerInterval(int timerInterval);
 
     virtual void initializeView() = 0;
+    virtual void initializeAuxiliaryViews();
     virtual void setupScene(const CreateSceneCommand &command) = 0;
+    void setTranslationLanguage(const QString &language);
     void loadDummyDataFiles(const QString& directory);
     void loadDummyDataContext(const QString& directory);
     void loadDummyDataFile(const QFileInfo& fileInfo);
@@ -224,13 +296,14 @@ protected:
     QList<QQmlContext*> allSubContextsForObject(QObject *object);
     static QList<QObject*> allSubObjectsForObject(QObject *object);
 
-    virtual void resizeCanvasSizeToRootItemSize() = 0;
+    virtual void resizeCanvasToRootItem() = 0;
+    void setupState(qint32 stateInstanceId);
 
 private:
     void setupOnlyWorkingImports(const QStringList &workingImportStatementList);
     ServerNodeInstance m_rootNodeInstance;
     ServerNodeInstance m_activeStateInstance;
-    QHash<qint32, ServerNodeInstance> m_idInstanceHash;
+    QVector<ServerNodeInstance> m_idInstances;
     QHash<QObject*, ServerNodeInstance> m_objectInstanceHash;
     QMultiHash<QString, ObjectPropertyPair> m_fileSystemWatcherHash;
     QList<QPair<QString, QPointer<QObject> > > m_dummyObjectList;
@@ -241,13 +314,16 @@ private:
     NodeInstanceClientInterface *m_nodeInstanceClient;
     int m_timer = 0;
     int m_renderTimerInterval = 16;
-    bool m_slowRenderTimer = false;
-    int m_slowRenderTimerInterval = 200;
+    TimerMode m_timerMode = TimerMode::NormalTimer;
+    int m_timerModeInterval = 200;
     QVector<InstancePropertyPair> m_changedPropertyList;
     QByteArray m_importCode;
     QPointer<QObject> m_dummyContextObject;
     QPointer<QQmlComponent> m_importComponent;
     QPointer<QObject> m_importComponentObject;
+    std::unique_ptr<MultiLanguage::Link> multilanguageLink;
+    int m_needsExtraRenderCount = 0;
+    int m_extraRenderCurrentPass = 0;
 };
 
 }

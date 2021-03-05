@@ -91,22 +91,20 @@ TestSettings TestSettingsWidget::settings() const
     return result;
 }
 
-void TestSettingsWidget::populateFrameworksListWidget(const QHash<Core::Id, bool> &frameworks)
+void TestSettingsWidget::populateFrameworksListWidget(const QHash<Utils::Id, bool> &frameworks)
 {
-    TestFrameworkManager *frameworkManager = TestFrameworkManager::instance();
-    const QList<Core::Id> &registered = frameworkManager->sortedRegisteredFrameworkIds();
+    const TestFrameworks &registered = TestFrameworkManager::registeredFrameworks();
     m_ui.frameworkTreeWidget->clear();
-    for (const Core::Id &id : registered) {
-        auto *item = new QTreeWidgetItem(m_ui.frameworkTreeWidget,
-                                         QStringList(frameworkManager->frameworkNameForId(id)));
+    for (const ITestFramework *framework : registered) {
+        const Utils::Id id = framework->id();
+        auto item = new QTreeWidgetItem(m_ui.frameworkTreeWidget, QStringList(QLatin1String(framework->name())));
         item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsUserCheckable);
         item->setCheckState(0, frameworks.value(id) ? Qt::Checked : Qt::Unchecked);
         item->setData(0, Qt::UserRole, id.toSetting());
-        item->setData(1, Qt::CheckStateRole, frameworkManager->groupingEnabled(id) ? Qt::Checked
-                                                                                   : Qt::Unchecked);
+        item->setData(1, Qt::CheckStateRole, framework->grouping() ? Qt::Checked : Qt::Unchecked);
         item->setToolTip(0, tr("Enable or disable test frameworks to be handled by the AutoTest "
                                "plugin."));
-        QString toolTip = frameworkManager->groupingToolTip(id);
+        QString toolTip = framework->groupingToolTip();
         if (toolTip.isEmpty())
             toolTip = tr("Enable or disable grouping of test cases by folder.");
         item->setToolTip(1, toolTip);
@@ -120,7 +118,7 @@ void TestSettingsWidget::frameworkSettings(TestSettings &settings) const
     const int itemCount = model->rowCount();
     for (int row = 0; row < itemCount; ++row) {
         QModelIndex idx = model->index(row, 0);
-        const Core::Id id = Core::Id::fromSetting(idx.data(Qt::UserRole));
+        const Utils::Id id = Utils::Id::fromSetting(idx.data(Qt::UserRole));
         settings.frameworks.insert(id, idx.data(Qt::CheckStateRole) == Qt::Checked);
         idx = model->index(row, 1);
         settings.frameworksGrouping.insert(id, idx.data(Qt::CheckStateRole) == Qt::Checked);
@@ -140,7 +138,7 @@ void TestSettingsWidget::onFrameworkItemChanged()
     m_ui.frameworksWarn->setVisible(true);
 }
 
-TestSettingsPage::TestSettingsPage(const QSharedPointer<TestSettings> &settings)
+TestSettingsPage::TestSettingsPage(TestSettings *settings)
     : m_settings(settings)
 {
     setId("A.AutoTest.0.General");
@@ -164,14 +162,18 @@ void TestSettingsPage::apply()
     if (!m_widget) // page was not shown at all
         return;
     const TestSettings newSettings = m_widget->settings();
-    const QList<Core::Id> changedIds = Utils::filtered(newSettings.frameworksGrouping.keys(),
-                                                       [newSettings, this] (const Core::Id &id) {
+    const QList<Utils::Id> changedIds = Utils::filtered(newSettings.frameworksGrouping.keys(),
+                                                       [newSettings, this] (const Utils::Id &id) {
         return newSettings.frameworksGrouping[id] != m_settings->frameworksGrouping[id];
     });
     *m_settings = newSettings;
     m_settings->toSettings(Core::ICore::settings());
-    TestFrameworkManager *frameworkManager = TestFrameworkManager::instance();
-    frameworkManager->activateFrameworksFromSettings(m_settings);
+
+    for (ITestFramework *framework : TestFrameworkManager::registeredFrameworks()) {
+        framework->setActive(m_settings->frameworks.value(framework->id(), false));
+        framework->setGrouping(m_settings->frameworksGrouping.value(framework->id(), false));
+    }
+
     TestTreeModel::instance()->synchronizeTestFrameworks();
     if (!changedIds.isEmpty())
         TestTreeModel::instance()->rebuild(changedIds);

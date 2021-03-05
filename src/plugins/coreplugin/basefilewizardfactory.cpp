@@ -45,6 +45,8 @@
 
 enum { debugWizard = 0 };
 
+using namespace Utils;
+
 namespace Core {
 
 static int indexOfFile(const GeneratedFiles &f, const QString &path)
@@ -58,7 +60,9 @@ static int indexOfFile(const GeneratedFiles &f, const QString &path)
 
 /*!
     \class Core::BaseFileWizard
+    \inheaderfile coreplugin/basefilewizardfactory.h
     \inmodule QtCreator
+
     \brief The BaseFileWizard class implements a is a convenience class for
     creating files.
 
@@ -90,7 +94,9 @@ Utils::Wizard *BaseFileWizardFactory::runWizardImpl(const QString &path, QWidget
 
 /*!
     \class Core::BaseFileWizardFactory
+    \inheaderfile coreplugin/basefilewizardfactory.h
     \inmodule QtCreator
+
     \brief The BaseFileWizardFactory class implements a generic wizard for
     creating files.
 
@@ -317,7 +323,9 @@ QString BaseFileWizardFactory::preferredSuffix(const QString &mimeType)
 
 /*!
     \class Core::WizardDialogParameters
+    \inheaderfile coreplugin/basefilewizardfactory.h
     \inmodule QtCreator
+
     \brief The WizardDialogParameters class holds parameters for the new file
     wizard dialog.
 

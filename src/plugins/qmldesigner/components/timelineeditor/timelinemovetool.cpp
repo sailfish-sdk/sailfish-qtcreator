@@ -61,7 +61,7 @@ QPointF mapToItem(TimelineMovableAbstractItem *item, QGraphicsSceneMouseEvent *e
     return event->scenePos();
 }
 
-TimelineMoveTool::TimelineMoveTool(TimelineGraphicsScene *scene, TimelineToolDelegate *delegate)
+TimelineMoveTool::TimelineMoveTool(AbstractScrollGraphicsScene *scene, TimelineToolDelegate *delegate)
     : TimelineAbstractTool(scene, delegate)
 {}
 
@@ -69,6 +69,9 @@ void TimelineMoveTool::mousePressEvent(TimelineMovableAbstractItem *item,
                                        QGraphicsSceneMouseEvent *event)
 {
     Q_UNUSED(item)
+
+    if (currentItem() && currentItem()->isLocked())
+        return;
 
     if (auto *current = currentItem()->asTimelineKeyframeItem()) {
         const qreal sourceFrame = qRound(current->mapFromSceneToFrame(current->rect().center().x()));
@@ -83,6 +86,9 @@ void TimelineMoveTool::mouseMoveEvent(TimelineMovableAbstractItem *item,
     Q_UNUSED(item)
 
     if (!currentItem())
+        return;
+
+    if (currentItem()->isLocked())
         return;
 
     if (auto *current = currentItem()->asTimelineKeyframeItem()) {
@@ -155,7 +161,7 @@ void TimelineMoveTool::mouseReleaseEvent(TimelineMovableAbstractItem *item,
             }
         }
 
-        scene()->timelineView()->executeInTransaction("TimelineMoveTool::mouseReleaseEvent",
+        scene()->abstractView()->executeInTransaction("TimelineMoveTool::mouseReleaseEvent",
                                                       [this, current]() {
             current->commitPosition(mapToItem(current, current->rect().center()));
 

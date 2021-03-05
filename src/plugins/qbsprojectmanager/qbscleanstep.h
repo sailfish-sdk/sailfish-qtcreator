@@ -28,11 +28,13 @@
 #include "qbsbuildconfiguration.h"
 
 #include <projectexplorer/buildstep.h>
-#include <projectexplorer/projectconfigurationaspects.h>
 #include <projectexplorer/task.h>
+
+#include <utils/aspects.h>
 
 namespace QbsProjectManager {
 namespace Internal {
+
 class ErrorInfo;
 class QbsSession;
 
@@ -41,7 +43,7 @@ class QbsCleanStep : public ProjectExplorer::BuildStep
     Q_OBJECT
 
 public:
-    QbsCleanStep(ProjectExplorer::BuildStepList *bsl, Core::Id id);
+    QbsCleanStep(ProjectExplorer::BuildStepList *bsl, Utils::Id id);
     ~QbsCleanStep() override;
 
     QbsBuildStepData stepData() const;
@@ -60,15 +62,14 @@ private:
     void createTaskAndOutput(ProjectExplorer::Task::TaskType type,
                              const QString &message, const QString &file, int line);
 
-    ProjectExplorer::BaseBoolAspect *m_dryRunAspect = nullptr;
-    ProjectExplorer::BaseBoolAspect *m_keepGoingAspect = nullptr;
+    Utils::BoolAspect *m_dryRunAspect = nullptr;
+    Utils::BoolAspect *m_keepGoingAspect = nullptr;
 
     QStringList m_products;
     QbsSession *m_session = nullptr;
     QString m_description;
     int m_maxProgress;
     bool m_showCompilerOutput = true;
-    ProjectExplorer::IOutputParser *m_parser = nullptr;
 };
 
 class QbsCleanStepFactory : public ProjectExplorer::BuildStepFactory

@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of Qt Creator.
@@ -23,32 +23,46 @@
 **
 ****************************************************************************/
 
-import QtQuick 2.2
-import QtQuick.Controls 1.1
-import QtQuick.Controls.Styles 1.1
-import "../common"
+import QtQuick 2.15
+import QtQuick.Controls 2.15
 import QtQuickDesignerTheme 1.0
+import HelperWidgets 2.0
+import StudioControls 1.0 as StudioControls
+import StudioTheme 1.0 as StudioTheme
 
 FocusScope {
     id: root
 
-    height: expanded ? 192 : 40
+    property int delegateTopAreaHeight: 30
+    property int delegateBottomAreaHeight: 200
+    property int delegateColumnSpacing: 2
+    property int delegateStateMargin: 16
+    property int delegatePreviewMargin: 16
+
+    height: (root.expanded ? (root.delegateTopAreaHeight + root.delegateBottomAreaHeight + root.delegateColumnSpacing)
+                           : root.delegateTopAreaHeight)
+            + StudioTheme.Values.scrollBarThickness
+            + 2 * (root.delegateStateMargin + StudioTheme.Values.border + root.padding)
+
     signal createNewState
     signal deleteState(int internalNodeId)
     signal duplicateCurrentState
 
-    property int stateImageSize: 180
-    property int delegateWidth: stateImageSize + 44
+    property int stateImageSize: 200
     property int padding: 2
-    property int delegateHeight: root.height - padding * 2 + 1
-    property int innerSpacing: 0
-    property int currentStateInternalId : 0
+    property int delegateWidth: root.stateImageSize
+                                + 2 * (root.delegateStateMargin + root.delegatePreviewMargin)
+    property int delegateHeight: root.height
+                                 - StudioTheme.Values.scrollBarThickness
+                                 - 2 * (root.padding + StudioTheme.Values.border)
+    property int innerSpacing: 2
+    property int currentStateInternalId: 0
 
     property bool expanded: true
 
     Connections {
         target: statesEditorModel
-        onChangedToState: root.currentStateInternalId = n
+        function onChangedToState(n) { root.currentStateInternalId = n }
     }
 
     SystemPalette {
@@ -58,7 +72,7 @@ FocusScope {
     Rectangle {
         id: background
         anchors.fill: parent
-        color: Theme.qmlDesignerBackgroundColorDarkAlternate()
+        color: Theme.color(Theme.QmlDesigner_BackgroundColorDarkAlternate)
     }
 
     MouseArea {
@@ -66,96 +80,119 @@ FocusScope {
         acceptedButtons: Qt.LeftButton | Qt.RightButton
 
         onClicked: {
-            if (mouse.button === Qt.LeftButton)
+            if (mouse.button === Qt.LeftButton) {
+                contextMenu.dismiss()
                 focus = true
-            else if (mouse.button === Qt.RightButton)
+            } else if (mouse.button === Qt.RightButton) {
                 contextMenu.popup()
+            }
         }
 
-        Menu {
+        StudioControls.Menu {
             id: contextMenu
 
-            MenuItem {
+            StudioControls.MenuItem {
                 text: root.expanded ? qsTr("Collapse") : qsTr("Expand")
                 onTriggered: {
                     root.expanded = !root.expanded
                 }
-
             }
         }
+    }
+
+    function closeContextMenu() {
+        if (contextMenu.open)
+            contextMenu.dismiss()
     }
 
     Item {
         id: addStateItem
 
-        property int buttonLeftSpacing: 8 * (expanded ?  1 : 2)
+        property int buttonLeftSpacing: 8 * (root.expanded ? 1 : 2)
 
         anchors.right: parent.right
-        width: delegateHeight / 2 + buttonLeftSpacing
-        height: delegateHeight
+        width: root.delegateHeight / 2 + buttonLeftSpacing
+        height: root.delegateHeight
 
-        Button {
+        AbstractButton {
             id: addStateButton
-            visible: canAddNewStates
 
+            buttonIcon: root.expanded ? qsTr("Create New State") : StudioTheme.Constants.plus
+            iconFont: root.expanded ? StudioTheme.Constants.font : StudioTheme.Constants.iconFont
+            iconSize: root.expanded ? StudioTheme.Values.myFontSize : StudioTheme.Values.myIconFontSize
+            iconItalic: root.expanded ? true : false
             tooltip: qsTr("Add a new state.")
-
+            visible: canAddNewStates
             anchors.right: parent.right
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
             width: Math.max(parent.height / 2 - 8, 18)
-            height: width
+            height: root.expanded ? 80 : width
 
-            onClicked: root.createNewState()
-
-            style: ButtonStyle {
-                background: Rectangle {
-                    property color buttonBaseColor: Qt.darker(Theme.qmlDesignerBackgroundColorDarkAlternate(), 1.1)
-                    color: control.hovered ? Qt.lighter(buttonBaseColor, 1.2)  : buttonBaseColor
-                    border.color: Theme.qmlDesignerBorderColor()
-                    border.width: 1
-                    Image {
-                        source: "image://icons/plus"
-                        width: 16
-                        height: 16
-                        anchors.centerIn: parent
-                        smooth: false
-                    }
-                }
+            onClicked: {
+                root.closeContextMenu()
+                root.createNewState()
             }
         }
     }
 
-    ScrollView {
+    Rectangle {
+        color: Theme.color(Theme.DSsliderActiveTrackFocus)
+        x: root.padding
+        y: root.padding
+        width: Math.min((root.delegateWidth * flickable.count) + (2 * (flickable.count - 1)),
+                        flickable.width)
+        height: root.delegateHeight
+    }
+
+    ListView {
+        id: flickable
+
+        boundsBehavior: Flickable.StopAtBounds
+        clip: true
+
         anchors.left: parent.left
         anchors.right: addStateItem.left
-        height: delegateHeight
-        y: padding
-        anchors.leftMargin: padding
-        anchors.rightMargin: padding
+        height: root.delegateHeight + StudioTheme.Values.scrollBarThickness
+        y: root.padding
+        anchors.leftMargin: root.padding
+        anchors.rightMargin: root.padding
 
-        style: DesignerScrollViewStyle {
+        model: statesEditorModel
+        orientation: ListView.Horizontal
+        spacing: root.innerSpacing
+
+        delegate: StatesDelegate {
+            id: statesDelegate
+            width: root.delegateWidth
+            height: root.delegateHeight
+            isBaseState: 0 === internalNodeId
+            isCurrentState: root.currentStateInternalId === internalNodeId
+            baseColor: isCurrentState ? Theme.color(Theme.DSinteraction) : background.color
+            delegateStateName: stateName
+            delegateStateImageSource: stateImageSource
+            delegateStateImageSize: stateImageSize
+            delegateHasWhenCondition: hasWhenCondition
+            delegateWhenConditionString: whenConditionString
+            onDelegateInteraction: root.closeContextMenu()
+
+            columnSpacing: root.delegateColumnSpacing
+            topAreaHeight: root.delegateTopAreaHeight
+            bottomAreaHeight: root.delegateBottomAreaHeight
+            stateMargin: root.delegateStateMargin
+            previewMargin: root.delegatePreviewMargin
         }
 
-        ListView {
-            anchors.fill: parent
-            model: statesEditorModel
-            orientation: ListView.Horizontal
-            spacing: innerSpacing
+        property bool bothVisible: horizontal.scrollBarVisible && vertical.scrollBarVisible
 
-            delegate: StatesDelegate {
-                id: statesDelegate
-                width: delegateWidth
-                height: delegateHeight
-                isBaseState: 0 == internalNodeId
-                isCurrentState: root.currentStateInternalId == internalNodeId
-                baseColor: isCurrentState ? Theme.color(Theme.QmlDesigner_HighlightColor) : background.color
-                delegateStateName: stateName
-                delegateStateImageSource: stateImageSource
-                delegateStateImageSize: stateImageSize
-                delegateHasWhenCondition: hasWhenCondition
-                delegateWhenConditionString: whenConditionString
-            }
+        ScrollBar.horizontal: HorizontalScrollBar {
+            id: horizontal
+            parent: flickable
+        }
+
+        ScrollBar.vertical: VerticalScrollBar {
+            id: vertical
+            parent: flickable
         }
     }
 }

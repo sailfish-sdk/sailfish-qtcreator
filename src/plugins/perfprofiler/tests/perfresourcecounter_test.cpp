@@ -62,14 +62,14 @@ template<typename Counter>
 static void fill(Counter &counter, const typename Counter::Container &container, bool fragmented)
 {
     qint64 allocated = 0;
-    QHash<void *, int> allocations;
+    QMultiHash<void *, int> allocations;
     for (int i = 0; i < 100; ++i) {
         for (int j = 0; j < 100; ++j) {
             int amount = fragmented ? j : i;
             allocated += amount;
             counter.request(amount);
             void *alloc = malloc(amount);
-            allocations.insertMulti(alloc, amount);
+            allocations.insert(alloc, amount);
             counter.obtain(reinterpret_cast<quintptr>(alloc));
             QCOMPARE(counter.currentTotal(), allocated);
         }
@@ -112,19 +112,20 @@ void PerfResourceCounterTest::testMallocFree()
 
 void PerfResourceCounterTest::testRandomFill()
 {
+    auto rg = QRandomGenerator::global();
     for (int i = 0; i < 100; ++i) {
         SizeCounter::Container container;
         SizeCounter counter(&container);
         for (int i = 0; i < 10000; ++i) {
-            const int amount = qrand();
+            const int amount = qAbs(int(rg->generate()));
             counter.request(amount, i);
-            counter.obtain(qrand());
+            counter.obtain(rg->generate());
             if (sum(container) != counter.currentTotal())
                 qDebug() << "ouch";
             QCOMPARE(sum(container), counter.currentTotal());
         }
         for (int i = 0; i < 10000; ++i) {
-            counter.release(qrand());
+            counter.release(rg->generate());
             QCOMPARE(sum(container), counter.currentTotal());
         }
 
@@ -138,9 +139,10 @@ void PerfResourceCounterTest::testUnitSized()
     NoPayloadCounter::Container container;
     NoPayloadCounter counter(&container);
     QList<int> ids;
+    auto rg = QRandomGenerator::global();
     for (int i = 0; i < 10000; ++i) {
         counter.request(1);
-        const int id = qrand();
+        const int id = rg->generate();
         counter.obtain(id);
         if (id != 0) // Otherwise it's the invalid ID and that means the allocation "failed".
             ids.append(id);
@@ -158,11 +160,12 @@ void PerfResourceCounterTest::testRandomAlternate()
 {
     NoPayloadCounter::Container container;
     NoPayloadCounter counter(&container);
+    auto rg = QRandomGenerator::global();
     for (int i = 0; i < 1000; ++i) {
         for (int i = 0; i < 100; ++i) {
-            counter.request(qrand());
-            counter.obtain(qrand());
-            counter.release(qrand());
+            counter.request(qAbs(int(rg->generate())));
+            counter.obtain(rg->generate());
+            counter.release(rg->generate());
         }
         QCOMPARE(sum(container), counter.currentTotal());
     }

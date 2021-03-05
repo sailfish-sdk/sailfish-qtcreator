@@ -34,6 +34,8 @@ namespace QmlDesigner {
 
 class ItemLibraryWidget;
 class ImportManagerView;
+class ImageCacheData;
+class ImageCache;
 
 class ItemLibraryView : public AbstractView
 {
@@ -54,10 +56,13 @@ public:
 
     void setResourcePath(const QString &resourcePath);
 
+    ImageCache &imageCache();
+
 protected:
     void updateImports();
 
 private:
+    std::unique_ptr<ImageCacheData> m_imageCacheData;
     QPointer<ItemLibraryWidget> m_widget;
     ImportManagerView *m_importManagerView;
     bool m_hasErrors = false;

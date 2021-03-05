@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the Qt Creator documentation.
@@ -42,9 +42,9 @@
     specifies the compiler and other necessary tools for building an application
     for and running it on a particular platform.
 
-    \QC automatically detects the compilers that are registered by your system
-    or by an installer and lists them in \uicontrol Tools > \uicontrol Options >
-    \uicontrol Kits > \uicontrol Compilers:
+    \QC automatically detects the compilers that are registered by your
+    system or by the Qt Installer and lists them in \uicontrol Tools >
+    \uicontrol Options > \uicontrol Kits > \uicontrol Compilers:
 
     \image qtcreator-toolchains.png
 
@@ -57,10 +57,10 @@
         \li GNU Compiler Collection (GCC) is a compiler for Linux and
             \macos.
 
-        \li MinGW (Minimalist GNU for Windows) is a native software port of GCC
+        \li \MinGW (Minimalist GNU for Windows) is a native software port of GCC
             and GNU Binutils for use in the development of native Microsoft
-            Windows applications on Windows. MinGW is
-            distributed together with \QC and Qt installers for Windows.
+            Windows applications on Windows. \MinGW is distributed together with
+            \QC and Qt for Windows.
 
         \li ICC (Intel C++ Compiler) is a group of C and C++ compilers.
             Only the GCC-compatible variant, available for Linux and \macos,
@@ -94,7 +94,7 @@
             compilers from the various KEIL development environments.
             \note Currently supported architectures are \c 8051 and \c ARM.
 
-        \li \l{https://sdcc.sourceforge.net}{SDCC} is a retargetable, optimizing
+        \li \l{http://sdcc.sourceforge.net}{SDCC} is a retargetable, optimizing
             C bare-metal compiler for various architectures.
             \note Currently supported architectures are \c 8051 and \c STM8.
 
@@ -114,7 +114,7 @@
 
     \section1 Specifying Compiler Settings
 
-    To build an application using GCC, MinGW, Clang, or QCC, specify the path
+    To build an application using GCC, \MinGW, Clang, or QCC, specify the path
     to the directory where the compiler is located and select
     the application binary interface (ABI) version from the list of available
     versions. You can also create a custom ABI definition.
@@ -211,41 +211,11 @@
             to the Qt mkspecs directory.
 
         \li In the \uicontrol {Error parser} field, select the error parser to use.
-            Select \uicontrol Custom, and then select \uicontrol {Customer Parser Settings}
-            to specify settings for a custom parser:
-
-            \image qtcreator-custom-parser.png
-
-            The custom error parser enables you to capture errors and warnings separately.
-            You can configure the error parser in the \uicontrol Error tab and the warning
-            parser in the \uicontrol Warning tab:
-
-            \list 1
-
-                \li In the \uicontrol {Error message capture pattern} field, specify
-                    a regular expression to define what is an error. The custom
-                    parser matches the compile output line by line against the
-                    regular expression and displays errors in the \uicontrol Issues
-                    output pane. Create regular expression groups that contain
-                    the file name, line number and error message.
-
-                \li In the \uicontrol {Capture Positions} field, map the regular
-                    expression groups to \uicontrol {File name}, \uicontrol {Line number},
-                    and \uicontrol Message.
-
-                \li In the \uicontrol {Capture Output Channels} field, specify whether
-                    messages from standard output, standard error, or both channels
-                    should be captured.
-
-                \li In the \uicontrol {Test} group, you can test how the message that
-                    you enter in the \uicontrol {Error message} field is matched when
-                    using the current settings.
-
-            \endlist
-
+            You can add custom output parsers to the list. For more information,
+            see \l{Using Custom Output Parsers}.
     \endlist
 
-    \section1 Troubleshooting MinGW Compilation Errors
+    \section1 Troubleshooting \MinGW Compilation Errors
 
     If error messages displayed in the \uicontrol {Compile Output} pane contain
     paths where slashes are missing (for example, \c {C:QtSDK}),
@@ -258,7 +228,7 @@
     \endcode
 
     If these commands show paths, they have been added to the global PATH
-    variable during the installation of a tool chain based on Cygwin or MinGW,
+    variable during the installation of a tool chain based on Cygwin or \MinGW,
     even though this is against Windows conventions.
 
     To keep working with the third-party tool chain, create a new shell link

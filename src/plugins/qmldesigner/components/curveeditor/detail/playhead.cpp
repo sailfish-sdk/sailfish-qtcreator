@@ -34,7 +34,7 @@
 
 #include <cmath>
 
-namespace DesignTools {
+namespace QmlDesigner {
 
 constexpr double g_playheadMargin = 5.0;
 
@@ -102,9 +102,10 @@ bool Playhead::mouseMove(const QPointF &pos, GraphicsView *view)
 
         QRectF canvas = view->canvasRect().adjusted(0.0, -style.timeAxisHeight, 0.0, 0.0);
 
-        if (canvas.contains(pos))
-            view->setCurrentFrame(std::round(view->mapXtoTime(pos.x())));
-        else if (!m_timer.isActive())
+        if (canvas.contains(pos)) {
+            int frame = std::round(view->mapXtoTime(pos.x()));
+            view->setCurrentFrame(frame);
+        } else if (!m_timer.isActive())
             m_timer.start();
     }
 
@@ -148,9 +149,7 @@ void Playhead::mouseMoveOutOfBounds(GraphicsView *view)
 
 void Playhead::mouseRelease(GraphicsView *view)
 {
-    if (m_moving)
-        emit view->model()->currentFrameChanged(m_frame);
-
+    Q_UNUSED(view);
     m_moving = false;
 }
 
@@ -190,4 +189,4 @@ void Playhead::paint(QPainter *painter, GraphicsView *view) const
     painter->restore();
 }
 
-} // End namespace DesignTools.
+} // End namespace QmlDesigner.

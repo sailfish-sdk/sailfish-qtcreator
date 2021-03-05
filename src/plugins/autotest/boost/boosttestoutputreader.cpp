@@ -26,6 +26,7 @@
 #include "boosttestoutputreader.h"
 #include "boosttestsettings.h"
 #include "boosttestresult.h"
+#include "boosttesttreeitem.h"
 
 #include <utils/qtcassert.h>
 
@@ -107,6 +108,9 @@ void BoostTestOutputReader::sendCompleteInformation()
     if (m_lineNumber) {
         result->setLine(m_lineNumber);
         result->setFileName(m_fileName);
+    } else if (const TestTreeItem *it = result->findTestTreeItem()) {
+        result->setLine(it->line());
+        result->setFileName(it->filePath());
     }
 
     result->setDescription(m_description);
@@ -140,6 +144,7 @@ void BoostTestOutputReader::handleMessageMatch(const QRegularExpressionMatch &ma
         if (m_currentTest.isEmpty() || m_logLevel > LogLevel::UnitScope)
             m_currentTest = caseFromContent(content);
         m_result = ResultType::MessageFatal;
+        ++m_summary[ResultType::MessageFatal];
         m_description = content;
     } else if (content.startsWith("last checkpoint:")) {
         if (m_currentTest.isEmpty() || m_logLevel > LogLevel::UnitScope)
@@ -153,7 +158,11 @@ void BoostTestOutputReader::handleMessageMatch(const QRegularExpressionMatch &ma
             m_currentTest = match.captured(9);
             m_description = tr("Executing test case %1").arg(m_currentTest);
         } else if (type == "suite") {
-            m_currentSuite = match.captured(9);
+            if (m_currentSuite.isEmpty())
+                m_currentSuite = match.captured(9);
+            else
+                m_currentSuite.append("/").append(match.captured(9));
+            m_currentTest.clear();
             m_description = tr("Executing test suite %1").arg(m_currentSuite);
         }
     } else if (content.startsWith("Leaving")) {
@@ -164,8 +173,18 @@ void BoostTestOutputReader::handleMessageMatch(const QRegularExpressionMatch &ma
             m_result = ResultType::TestEnd;
             m_description = tr("Test execution took %1").arg(match.captured(12));
         } else if (type == "suite") {
-            if (m_currentSuite != match.captured(11) && m_currentSuite.isEmpty())
+            if (!m_currentSuite.isEmpty()) {
+                int index = m_currentSuite.lastIndexOf('/');
+                if (QTC_GUARD(m_currentSuite.mid(index + 1) == match.captured(11))) {
+                    if (index == -1)
+                        m_currentSuite.clear();
+                    else
+                        m_currentSuite = m_currentSuite.left(index);
+                }
+            } else if (match.capturedLength(11)) { // FIXME remove this branch?
+                QTC_CHECK(false);
                 m_currentSuite = match.captured(11);
+            }
             m_currentTest.clear();
             m_result = ResultType::TestEnd;
             m_description = tr("Test suite execution took %1").arg(match.captured(12));
@@ -206,8 +225,6 @@ void BoostTestOutputReader::processOutputLine(const QByteArray &outputLine)
 
     static QRegularExpression finish("^\\*{3} (\\d+) failure(s are| is) detected in the "
                                      "test module \"(.*)\"$");
-    static QRegularExpression errDetect("^\\*{3} Errors where detected in the "
-                                        "test module \"(.*}\"; see standard output for details");
     QString noErrors("*** No errors detected");
 
     const QString line = removeCommandlineColors(QString::fromUtf8(outputLine));
@@ -339,9 +356,9 @@ void BoostTestOutputReader::processOutputLine(const QByteArray &outputLine)
             sendCompleteInformation();
         BoostTestResult *result = new BoostTestResult(id(), m_projectFile, QString());
         int failed = match.captured(1).toInt();
+        int fatals = m_summary.value(ResultType::MessageFatal);
         QString txt = tr("%1 failures detected in %2.").arg(failed).arg(match.captured(3));
-        int passed = (m_testCaseCount != -1)
-                ? m_testCaseCount - failed - m_summary[ResultType::Skip] : -1;
+        int passed = qMax(0, m_testCaseCount - failed);
         if (m_testCaseCount != -1)
             txt.append(' ').append(tr("%1 tests passed.").arg(passed));
         result->setDescription(txt);
@@ -349,7 +366,7 @@ void BoostTestOutputReader::processOutputLine(const QByteArray &outputLine)
         reportResult(TestResultPtr(result));
         if (m_reportLevel == ReportLevel::Confirm) { // for the final summary
             m_summary[ResultType::Pass] += passed;
-            m_summary[ResultType::Fail] += failed;
+            m_summary[ResultType::Fail] += failed - fatals;
         }
         m_testCaseCount = -1;
         return;

@@ -28,7 +28,7 @@
 #include <QToolBar>
 #include <QWidget>
 
-namespace DesignTools {
+namespace QmlDesigner {
 
 class CurveEditorModel;
 class GraphicsView;
@@ -40,6 +40,8 @@ class CurveEditor : public QWidget
 
 public:
     CurveEditor(CurveEditorModel *model, QWidget *parent = nullptr);
+
+    bool dragging() const;
 
     void zoomX(double zoom);
 
@@ -55,4 +57,4 @@ private:
     GraphicsView *m_view;
 };
 
-} // End namespace DesignTools.
+} // End namespace QmlDesigner.

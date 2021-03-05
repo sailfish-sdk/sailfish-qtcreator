@@ -39,6 +39,7 @@ Node {
     property MouseArea3D dragHelper: null
     property real currentAngle
     property point currentMousePos
+    property alias freeDraggerArea: mouseAreaFree
 
     position: dragHelper.pivotScenePosition(targetNode)
 
@@ -174,7 +175,7 @@ Node {
         source: "#Sphere"
         materials: DefaultMaterial {
             id: material
-            emissiveColor: "black"
+            diffuseColor: "black"
             opacity: mouseAreaFree.hovering ? 0.15 : 0
             lighting: DefaultMaterial.NoLighting
         }

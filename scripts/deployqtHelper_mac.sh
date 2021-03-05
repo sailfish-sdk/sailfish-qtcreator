@@ -25,7 +25,7 @@
 #
 ############################################################################
 
-[ $# -lt 5 ] && echo "Usage: $(basename $0) <app folder> <qt bin folder> <qt translations folder> <qt plugin folder> <qt quick imports folder> <qt quick 2 imports folder>" && exit 2
+[ $# -lt 5 ] && echo "Usage: $(basename $0) <app folder> <qt bin folder> <qt translations folder> <qt plugin folder> <qt quick 2 imports folder>" && exit 2
 [ $(uname -s) != "Darwin" ] && echo "Run this script on Mac OS X" && exit 2;
 
 app_path="$1"
@@ -34,8 +34,7 @@ libexec_path="$app_path/Contents/Resources/libexec"
 bin_src="$2"
 translation_src="$3"
 plugin_src="$4"
-quick1_src="$5"
-quick2_src="$6"
+quick2_src="$5"
 
 echo "Deploying Qt"
 
@@ -64,20 +63,7 @@ if [ -d "$assetimporterSrcDir" ]; then
     if [ ! -d "$assetimporterDestDir" ]; then
         echo "- Copying 3d assetimporter plugins"
         mkdir -p "$assetimporterDestDir"
-        for plugin in "$assetimporterSrcDir"/*.dylib; do
-            cp "$plugin" "$assetimporterDestDir"/ || exit 1
-        done
-    fi
-fi
-
-# copy Qt Quick 1 imports
-importsDir="$app_path/Contents/Imports/qtquick1"
-if [ -d "$quick1_src" ]; then
-    if [ ! -d "$importsDir" ]; then
-        echo "- Copying Qt Quick 1 imports"
-        mkdir -p "$importsDir"
-        cp -R "$quick1_src"/ "$importsDir"/
-        find "$importsDir" -path "*.dylib.dSYM*" -delete
+        find "$assetimporterSrcDir" -iname "*.dylib" -maxdepth 1 -exec cp {} "$assetimporterDestDir"/ \;
     fi
 fi
 
@@ -133,6 +119,8 @@ if [ $LLVM_INSTALL_DIR ]; then
         mkdir -p "$libexec_path/clang/lib"
         cp -Rf "$LLVM_INSTALL_DIR"/lib/libclang.*dylib "$app_path/Contents/Frameworks/" || exit 1
         cp -Rf "$LLVM_INSTALL_DIR"/lib/clang "$libexec_path/clang/lib/" || exit 1
+        cp -Rf "$LLVM_INSTALL_DIR"/lib/libclang-cpp.dylib "$libexec_path/clang/lib/" || exit 1
+        cp -Rf "$LLVM_INSTALL_DIR"/lib/ClazyPlugin.dylib "$libexec_path/clang/lib/" || exit 1
         clangsource="$LLVM_INSTALL_DIR"/bin/clang
         clanglinktarget="$(readlink "$clangsource")"
         cp -Rf "$clangsource" "$libexec_path/clang/bin/" || exit 1
@@ -145,6 +133,7 @@ if [ $LLVM_INSTALL_DIR ]; then
         cp -Rf "$clangtidysource" "$libexec_path/clang/bin/" || exit 1
         clazysource="$LLVM_INSTALL_DIR"/bin/clazy-standalone
         cp -Rf "$clazysource" "$libexec_path/clang/bin/" || exit 1
+        install_name_tool -add_rpath "@executable_path/../lib" "$libexec_path/clang/bin/clazy-standalone" || exit 1
     fi
     clangbackendArgument="-executable=$libexec_path/clangbackend"
     clangpchmanagerArgument="-executable=$libexec_path/clangpchmanagerbackend"

@@ -27,11 +27,11 @@
 
 #include <texteditor/texteditor_global.h>
 
+#include <utils/id.h>
+
 #include <QChar>
 #include <QList>
 #include <QString>
-
-namespace Core { class Id; }
 
 namespace TextEditor {
 
@@ -40,7 +40,7 @@ class TEXTEDITOR_EXPORT NameMangler
 public:
     virtual ~NameMangler();
 
-    virtual Core::Id id() const = 0;
+    virtual Utils::Id id() const = 0;
     virtual QString mangle(const QString &unmangled) const = 0;
 };
 
@@ -57,6 +57,7 @@ public:
 
     void setTrigger(const QString &trigger);
     const QString &trigger() const;
+    static bool isValidTrigger(const QString &trigger);
 
     void setContent(const QString &content);
     const QString &content() const;

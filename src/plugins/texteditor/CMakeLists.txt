@@ -1,6 +1,12 @@
+if(TARGET KSyntaxHighlighting)
+  set(KSYNTAXHIGHLIGHTING_TARGET KSyntaxHighlighting)
+else()
+  set(KSYNTAXHIGHLIGHTING_TARGET KF5::SyntaxHighlighting)
+endif()
+
 add_qtc_plugin(TextEditor
   DEPENDS Qt5::Concurrent Qt5::Network Qt5::PrintSupport Qt5::Xml
-  PUBLIC_DEPENDS KSyntaxHighlighting
+  PUBLIC_DEPENDS ${KSYNTAXHIGHLIGHTING_TARGET}
   PLUGIN_DEPENDS Core
   SOURCES
     autocompleter.cpp autocompleter.h
@@ -34,7 +40,6 @@ add_qtc_plugin(TextEditor
     codeassist/runner.cpp codeassist/runner.h
     codeassist/textdocumentmanipulator.cpp codeassist/textdocumentmanipulator.h
     codeassist/textdocumentmanipulatorinterface.h
-    codecselector.cpp codecselector.h
     codestyleeditor.cpp codestyleeditor.h
     codestylepool.cpp codestylepool.h
     codestyleselectorwidget.cpp codestyleselectorwidget.h codestyleselectorwidget.ui

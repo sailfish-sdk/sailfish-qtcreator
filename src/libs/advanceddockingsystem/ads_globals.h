@@ -72,8 +72,6 @@ QT_END_NAMESPACE
 
 namespace ADS {
 
-enum eStateFileVersion { InitialVerison = 0, Version1 = 1, CurrentVersion = Version1 };
-
 class DockSplitter;
 
 enum DockWidgetArea {
@@ -107,10 +105,11 @@ enum eDragState {
  * The different icons used in the UI
  */
 enum eIcon {
-    TabCloseIcon,       //!< TabCloseIcon
-    DockAreaMenuIcon,   //!< DockAreaMenuIcon
-    DockAreaUndockIcon, //!< DockAreaUndockIcon
-    DockAreaCloseIcon,  //!< DockAreaCloseIcon
+    TabCloseIcon,            //!< TabCloseIcon
+    DockAreaMenuIcon,        //!< DockAreaMenuIcon
+    DockAreaUndockIcon,      //!< DockAreaUndockIcon
+    DockAreaCloseIcon,       //!< DockAreaCloseIcon
+    FloatingWidgetCloseIcon, //!< FloatingWidgetCloseIcon
 
     IconCount, //!< just a delimiter for range checks
 };
@@ -125,8 +124,6 @@ enum eBitwiseOperator
 };
 
 namespace internal {
-const bool restoreTesting = true;
-const bool restore = false;
 const char *const closedProperty = "close";
 const char *const dirtyProperty = "dirty";
 
@@ -148,7 +145,10 @@ void hideEmptyParentSplitters(DockSplitter *firstParentSplitter);
 class DockInsertParam : public QPair<Qt::Orientation, bool>
 {
 public:
-    using QPair::QPair;
+    DockInsertParam(Qt::Orientation orientation, bool append)
+        : QPair<Qt::Orientation, bool>(orientation, append)
+    {}
+
     Qt::Orientation orientation() const { return this->first; }
     bool append() const { return this->second; }
     int insertOffset() const { return append() ? 1 : 0; }
@@ -228,6 +228,19 @@ void setToolTip(QObjectPtr obj, const QString &tip)
  */
 void setButtonIcon(QAbstractButton *button, QStyle::StandardPixmap standarPixmap,
     ADS::eIcon CustomIconId);
+
+enum eRepolishChildOptions
+{
+    RepolishIgnoreChildren,
+    RepolishDirectChildren,
+    RepolishChildrenRecursively
+};
+
+/**
+ * Calls unpolish() / polish for the style of the given widget to update
+ * stylesheet if a property changes
+ */
+void repolishStyle(QWidget *widget, eRepolishChildOptions options = RepolishIgnoreChildren);
 
 } // namespace internal
 } // namespace ADS

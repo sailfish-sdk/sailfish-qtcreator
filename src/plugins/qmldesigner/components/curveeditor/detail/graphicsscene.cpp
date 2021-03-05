@@ -29,11 +29,14 @@
 #include "graphicsview.h"
 #include "handleitem.h"
 
+#include <qmldesignerconstants.h>
+#include <qmldesignerplugin.h>
+
 #include <QGraphicsSceneMouseEvent>
 
 #include <cmath>
 
-namespace DesignTools {
+namespace QmlDesigner {
 
 GraphicsScene::GraphicsScene(QObject *parent)
     : QGraphicsScene(parent)
@@ -85,6 +88,15 @@ bool GraphicsScene::hasSelectedKeyframe() const
     return false;
 }
 
+bool GraphicsScene::hasEditableSegment(double time) const
+{
+    for (auto *curve : m_curves) {
+        if (curve->hasEditableSegment(time))
+            return true;
+    }
+    return false;
+}
+
 double GraphicsScene::minimumTime() const
 {
     return limits().left();
@@ -105,9 +117,29 @@ double GraphicsScene::maximumValue() const
     return limits().top();
 }
 
+double GraphicsScene::animationRangeMin() const
+{
+    if (GraphicsView *gview = graphicsView())
+        return gview->minimumTime();
+
+    return minimumTime();
+}
+
+double GraphicsScene::animationRangeMax() const
+{
+    if (GraphicsView *gview = graphicsView())
+        return gview->maximumTime();
+
+    return maximumTime();
+}
+
 QRectF GraphicsScene::rect() const
 {
-    return sceneRect();
+    QRectF rect;
+    for (auto *curve : curves())
+        rect |= curve->boundingRect();
+
+    return rect;
 }
 
 QVector<CurveItem *> GraphicsScene::curves() const
@@ -207,13 +239,62 @@ void GraphicsScene::doNotMoveItems(bool val)
     m_doNotMoveItems = val;
 }
 
+void GraphicsScene::removeCurveItem(unsigned int id)
+{
+    CurveItem *tmp = nullptr;
+    for (auto *curve : m_curves) {
+        if (curve->id() == id) {
+            removeItem(curve);
+            tmp = curve;
+            break;
+        }
+    }
+
+    if (tmp) {
+        Q_UNUSED(m_curves.removeOne(tmp));
+        delete tmp;
+    }
+
+    m_dirty = true;
+}
+
 void GraphicsScene::addCurveItem(CurveItem *item)
 {
-    m_dirty = true;
+    for (auto *curve : m_curves) {
+        if (curve->id() == item->id()) {
+            delete item;
+            return;
+        }
+    }
+
     item->setDirty(false);
     item->connect(this);
     addItem(item);
-    m_curves.push_back(item);
+
+    if (item->locked())
+        m_curves.push_front(item);
+    else
+        m_curves.push_back(item);
+
+    resetZValues();
+
+    m_dirty = true;
+}
+
+void GraphicsScene::moveToBottom(CurveItem *item)
+{
+    if (m_curves.removeAll(item) > 0) {
+        m_curves.push_front(item);
+        resetZValues();
+    }
+}
+
+void GraphicsScene::moveToTop(CurveItem *item)
+{
+    if (m_curves.removeAll(item) > 0) {
+        m_curves.push_back(item);
+        resetZValues();
+    }
 }
 
 void GraphicsScene::setComponentTransform(const QTransform &transform)
@@ -347,6 +428,19 @@ void GraphicsScene::mouseReleaseEvent(QGraphicsSceneMouseEvent *mouseEvent)
         graphicsView()->setZoomY(0.0);
 }
 
+void GraphicsScene::focusOutEvent(QFocusEvent *focusEvent)
+{
+    QmlDesignerPlugin::emitUsageStatisticsTime(Constants::EVENT_CURVEDITOR_TIME,
+                                               m_usageTimer.elapsed());
+    QGraphicsScene::focusOutEvent(focusEvent);
+}
+
+void GraphicsScene::focusInEvent(QFocusEvent *focusEvent)
+{
+    m_usageTimer.restart();
+    QGraphicsScene::focusInEvent(focusEvent);
+}
+
 GraphicsView *GraphicsScene::graphicsView() const
 {
     const QList<QGraphicsView *> viewList = views();
@@ -379,9 +473,23 @@ QRectF GraphicsScene::limits() const
         }
 
         m_limits = QRectF(QPointF(min.x(), max.y()), QPointF(max.x(), min.y()));
+        if (qFuzzyCompare(m_limits.height(), 0.0)) {
+            auto tmp = CurveEditorStyle::defaultValueRange() / 2.0;
+            m_limits.adjust(0.0, tmp, 0.0, -tmp);
+        }
+
         m_dirty = false;
     }
     return m_limits;
 }
 
-} // End namespace DesignTools.
+void GraphicsScene::resetZValues()
+{
+    qreal z = 0.0;
+    for (auto *curve : curves()) {
+        curve->setZValue(z);
+        z += 1.0;
+    }
+}
+
+} // End namespace QmlDesigner.

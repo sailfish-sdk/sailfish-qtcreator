@@ -1,11 +1,10 @@
 
-
 /****************************************************************************
 **
 ** Copyright (C) 2019 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
-** This file is part of the examples of the Qt Toolkit.
+** This file is part of the examples of the Qt Design Studio.
 **
 ** $QT_BEGIN_LICENSE:BSD$
 ** Commercial License Usage
@@ -49,48 +48,62 @@
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
-import QtQuick 2.10
+import QtQuick 2.15
 import loginui1 1.0
+import QtQuick.Studio.Components 1.0
+import QtQuick.Controls 2.15
 
 Rectangle {
-    width: Constants.width
-    height: Constants.height
+    color: "#ffffff"
+    gradient: Gradient {
+        GradientStop {
+            position: 0.5
+            color: "#ffffff"
+        }
+
+        GradientStop {
+            position: 1
+            color: "#41cd52"
+        }
+    }
 
     Text {
         id: pageTitle
-        x: 259
-        y: 155
-        width: 123
-        height: 40
+        x: 273
+        y: 33
         text: qsTr("Qt Account")
         font.pixelSize: 24
+        font.bold: true
+        font.weight: Font.ExtraBold
+        anchors.verticalCenterOffset: -180
+        anchors.horizontalCenterOffset: 0
+        anchors.centerIn: parent
+        font.family: Constants.font.family
     }
 
     Image {
         id: logo
         x: 8
-        y: 8
-        width: 100
-        height: 100
+        y: 19
         source: "qt_logo_green_64x64px.png"
         fillMode: Image.PreserveAspectFit
     }
 
     PushButton {
-        id: registerButton
-        x: 259
-        y: 277
+        id: loginButton
+        x: 260
+        y: 352
         width: 120
         height: 40
-        text: qsTr("Create Account")
+        text: "Log In"
     }
 
     PushButton {
-        id: loginButton
-        x: 259
-        y: 231
+        id: registerButton
+        x: 260
+        y: 398
         width: 120
         height: 40
-        text: qsTr("Log In")
+        text: "Create Account"
     }
 }

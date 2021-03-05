@@ -43,7 +43,9 @@ public:
     virtual void notifyModelNodesRemoved(const QList<ModelNode> &modelNodes) = 0;
     virtual void notifyModelNodesInserted(const QList<ModelNode> &modelNodes) = 0;
     virtual void notifyModelNodesMoved(const QList<ModelNode> &modelNodes) = 0;
+    virtual void notifyIconsChanged() = 0;
     virtual void setFilter(bool showObjects) = 0;
+    virtual void setOrder(bool reverse) = 0;
     virtual void resetModel() = 0;
 };
 

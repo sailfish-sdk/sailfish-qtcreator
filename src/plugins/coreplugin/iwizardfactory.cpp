@@ -41,6 +41,7 @@
 
 /*!
     \class Core::IWizardFactory
+    \inheaderfile coreplugin/iwizardfactory.h
     \inmodule QtCreator
     \ingroup mainclasses
 
@@ -124,7 +125,7 @@
 */
 
 using namespace Core;
-
+using namespace Utils;
 
 namespace {
 static QList<IFeatureProvider *> s_providerList;

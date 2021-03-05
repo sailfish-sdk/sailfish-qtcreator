@@ -89,7 +89,7 @@ public:
     bool changedByUser() const;
     void recordVisibility();
 
-    Core::Id commandId;
+    Utils::Id commandId;
     QPointer<QWidget> widget;
     QPointer<QDockWidget> dock;
     QPointer<QWidget> anchorWidget;
@@ -152,12 +152,18 @@ public:
 
     void setCurrentPerspective(Perspective *perspective)
     {
+        const Core::Context oldContext = m_currentPerspective
+                ? Context(Id::fromString(m_currentPerspective->id())) : Context();
         m_currentPerspective = perspective;
+        const Core::Context newContext = m_currentPerspective
+                ? Context(Id::fromString(m_currentPerspective->id())) : Context();
+        ICore::updateAdditionalContexts(oldContext, newContext);
     }
 
     DebuggerMainWindow *q = nullptr;
     QPointer<Perspective> m_currentPerspective = nullptr;
     QComboBox *m_perspectiveChooser = nullptr;
+    QMenu *m_perspectiveMenu;
     QStackedWidget *m_centralWidgetStack = nullptr;
     QHBoxLayout *m_subPerspectiveSwitcherLayout = nullptr;
     QHBoxLayout *m_innerToolsLayout = nullptr;
@@ -186,14 +192,27 @@ DebuggerMainWindowPrivate::DebuggerMainWindowPrivate(DebuggerMainWindow *parent)
     m_perspectiveChooser->setObjectName("PerspectiveChooser");
     m_perspectiveChooser->setProperty("panelwidget", true);
     m_perspectiveChooser->setSizeAdjustPolicy(QComboBox::AdjustToContents);
-    connect(m_perspectiveChooser, QOverload<int>::of(&QComboBox::activated),
-            this, [this](int item) {
+    connect(m_perspectiveChooser, QOverload<int>::of(&QComboBox::activated), this, [this](int item) {
         Perspective *perspective = Perspective::findPerspective(m_perspectiveChooser->itemData(item).toString());
         QTC_ASSERT(perspective, return);
         if (auto subPerspective = Perspective::findPerspective(perspective->d->m_lastActiveSubPerspectiveId))
             subPerspective->select();
         else
             perspective->select();
+    });
+
+    m_perspectiveMenu = new QMenu;
+    connect(m_perspectiveMenu, &QMenu::aboutToShow, this, [this] {
+        m_perspectiveMenu->clear();
+        for (Perspective *perspective : qAsConst(m_perspectives)) {
+            m_perspectiveMenu->addAction(perspective->d->m_name, perspective, [perspective] {
+                if (auto subPerspective = Perspective::findPerspective(
+                        perspective->d->m_lastActiveSubPerspectiveId))
+                    subPerspective->select();
+                else
+                    perspective->select();
+            });
+        }
     });
 
     auto viewButton = new QToolButton;
@@ -250,8 +269,8 @@ DebuggerMainWindowPrivate::DebuggerMainWindowPrivate(DebuggerMainWindow *parent)
     m_toolBarDock = dock;
     q->addDockWidget(Qt::BottomDockWidgetArea, m_toolBarDock);
 
-    connect(viewButton, &QAbstractButton::clicked, this, [this, viewButton] {
-        ActionContainer *viewsMenu = ActionManager::actionContainer(Core::Constants::M_WINDOW_VIEWS);
+    connect(viewButton, &QAbstractButton::clicked, this, [viewButton] {
+        ActionContainer *viewsMenu = ActionManager::actionContainer(Core::Constants::M_VIEW_VIEWS);
         viewsMenu->menu()->exec(viewButton->mapToGlobal(QPoint()));
     });
 
@@ -263,6 +282,7 @@ DebuggerMainWindowPrivate::DebuggerMainWindowPrivate(DebuggerMainWindow *parent)
 DebuggerMainWindowPrivate::~DebuggerMainWindowPrivate()
 {
     delete m_editorPlaceHolder;
+    delete m_perspectiveMenu;
 }
 
 DebuggerMainWindow::DebuggerMainWindow()
@@ -277,7 +297,7 @@ DebuggerMainWindow::DebuggerMainWindow()
 
     Context debugcontext(Debugger::Constants::C_DEBUGMODE);
 
-    ActionContainer *viewsMenu = ActionManager::actionContainer(Core::Constants::M_WINDOW_VIEWS);
+    ActionContainer *viewsMenu = ActionManager::actionContainer(Core::Constants::M_VIEW_VIEWS);
     Command *cmd = ActionManager::registerAction(showCentralWidgetAction(),
         "Debugger.Views.ShowCentralWidget", debugcontext);
     cmd->setAttribute(Command::CA_Hide);
@@ -315,7 +335,7 @@ DebuggerMainWindow::~DebuggerMainWindow()
 
 void DebuggerMainWindow::contextMenuEvent(QContextMenuEvent *ev)
 {
-    ActionContainer *viewsMenu = ActionManager::actionContainer(Core::Constants::M_WINDOW_VIEWS);
+    ActionContainer *viewsMenu = ActionManager::actionContainer(Core::Constants::M_VIEW_VIEWS);
     viewsMenu->menu()->exec(ev->globalPos());
 }
 
@@ -509,6 +529,11 @@ void DebuggerMainWindow::addSubPerspectiveSwitcher(QWidget *widget)
     widget->setVisible(false);
     widget->setProperty("panelwidget", true);
     d->m_subPerspectiveSwitcherLayout->addWidget(widget);
+}
+
+QMenu *DebuggerMainWindow::perspectiveMenu()
+{
+    return theMainWindow ? theMainWindow->d->m_perspectiveMenu : nullptr;
 }
 
 DebuggerMainWindow *DebuggerMainWindow::instance()
@@ -841,6 +866,21 @@ void Perspective::addToolbarSeparator()
     d->m_innerToolBarLayout->addWidget(new StyledSeparator(d->m_innerToolBar));
 }
 
+void Perspective::registerNextPrevShortcuts(QAction *next, QAction *prev)
+{
+    static const char nextId[] = "Analyzer.nextitem";
+    static const char prevId[] = "Analyzer.previtem";
+
+    next->setText(DebuggerMainWindow::tr("Next Item"));
+    Command * const nextCmd = ActionManager::registerAction(next, nextId,
+                                                            Context(Id::fromString(id())));
+    nextCmd->augmentActionWithShortcutToolTip(next);
+    prev->setText(DebuggerMainWindow::tr("Previous Item"));
+    Command * const prevCmd = ActionManager::registerAction(prev, prevId,
+                                                            Context(Id::fromString(id())));
+    prevCmd->augmentActionWithShortcutToolTip(prev);
+}
+
 QWidget *Perspective::centralWidget() const
 {
     return d->m_centralWidget;
@@ -896,7 +936,7 @@ void Perspective::addWindow(QWidget *widget,
 
         Command *cmd = ActionManager::registerAction(op.toggleViewAction, op.commandId, d->context());
         cmd->setAttribute(Command::CA_Hide);
-        ActionManager::actionContainer(Core::Constants::M_WINDOW_VIEWS)->addAction(cmd);
+        ActionManager::actionContainer(Core::Constants::M_VIEW_VIEWS)->addAction(cmd);
     }
 
     d->m_dockOperations.append(op);

@@ -27,16 +27,12 @@
 
 #include <QClipboard>
 #include <QGuiApplication>
-#include <QScriptEngine>
+#include <QJSEngine>
 
 namespace Core {
 namespace Internal {
 
-enum JavaScriptAction
-{
-    ResetEngine = QVariant::UserType + 1,
-    AbortEngine
-};
+enum class EngineAction { Reset = 1, Abort };
 
 JavaScriptFilter::JavaScriptFilter()
 {
@@ -48,8 +44,8 @@ JavaScriptFilter::JavaScriptFilter()
     m_abortTimer.setInterval(1000);
     connect(&m_abortTimer, &QTimer::timeout, this, [this] {
         m_aborted = true;
-        if (m_engine && m_engine->isEvaluating())
-            m_engine->abortEvaluation();
+        if (m_engine)
+            m_engine->setInterrupted(true);
     });
 }
 
@@ -63,6 +59,7 @@ void JavaScriptFilter::prepareSearch(const QString &entry)
 
     if (!m_engine)
         setupEngine();
+    m_engine->setInterrupted(false);
     m_aborted = false;
     m_abortTimer.start();
 }
@@ -74,12 +71,12 @@ QList<LocatorFilterEntry> JavaScriptFilter::matchesFor(
 
     QList<LocatorFilterEntry> entries;
     if (entry.trimmed().isEmpty()) {
-        entries.append({this, tr("Reset Engine"), QVariant(ResetEngine, nullptr)});
+        entries.append({this, tr("Reset Engine"), QVariant::fromValue(EngineAction::Reset)});
     } else {
         const QString result = m_engine->evaluate(entry).toString();
         if (m_aborted) {
             const QString message = entry + " = " + tr("Engine aborted after timeout.");
-            entries.append({this, message, QVariant(AbortEngine, nullptr)});
+            entries.append({this, message, QVariant::fromValue(EngineAction::Abort)});
         } else {
             const QString expression = entry + " = " + result;
             entries.append({this, expression, QVariant()});
@@ -101,10 +98,13 @@ void JavaScriptFilter::accept(Core::LocatorFilterEntry selection, QString *newTe
     if (selection.internalData.isNull())
         return;
 
-    if (selection.internalData.userType() == ResetEngine) {
+    const EngineAction action = selection.internalData.value<EngineAction>();
+    if (action == EngineAction::Reset) {
         m_engine.reset();
         return;
     }
+    if (action == EngineAction::Abort)
+        return;
 
     QClipboard *clipboard = QGuiApplication::clipboard();
     clipboard->setText(selection.internalData.toString());
@@ -118,7 +118,7 @@ void JavaScriptFilter::refresh(QFutureInterface<void> &future)
 
 void JavaScriptFilter::setupEngine()
 {
-    m_engine.reset(new QScriptEngine);
+    m_engine.reset(new QJSEngine);
     m_engine->evaluate(
                 "function abs(x) { return Math.abs(x); }\n"
                 "function acos(x) { return Math.acos(x); }\n"
@@ -147,3 +147,5 @@ void JavaScriptFilter::setupEngine()
 
 } // namespace Internal
 } // namespace Core
+
+Q_DECLARE_METATYPE(Core::Internal::EngineAction)

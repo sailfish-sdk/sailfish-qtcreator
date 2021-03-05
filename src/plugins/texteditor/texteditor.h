@@ -27,8 +27,9 @@
 
 #include "texteditor_global.h"
 #include "blockrange.h"
-#include "indenter.h"
 #include "codeassist/assistenums.h"
+#include "indenter.h"
+#include "refactoroverlay.h"
 
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/editormanager/ieditor.h>
@@ -62,7 +63,6 @@ class TextDocument;
 class TextMark;
 class BaseHoverHandler;
 class RefactorOverlay;
-struct RefactorMarker;
 class SyntaxHighlighter;
 class AssistInterface;
 class IAssistProvider;
@@ -122,7 +122,7 @@ public:
     QChar characterAt(int pos) const;
     QString textAt(int from, int to) const;
 
-    void addContext(Core::Id id);
+    void addContext(Utils::Id id);
 
     // IEditor
     Core::IDocument *document() const override;
@@ -130,7 +130,7 @@ public:
     IEditor *duplicate() override;
 
     QByteArray saveState() const override;
-    bool restoreState(const QByteArray &state) override;
+    void restoreState(const QByteArray &state) override;
     QWidget *toolBar() override;
 
     void contextHelp(const HelpCallback &callback) const override; // from IContext
@@ -179,7 +179,7 @@ class TEXTEDITOR_EXPORT TextEditorWidget : public QPlainTextEdit
     Q_PROPERTY(int verticalBlockSelectionLastColumn READ verticalBlockSelectionLastColumn)
 
 public:
-    TextEditorWidget(QWidget *parent = nullptr);
+    explicit TextEditorWidget(QWidget *parent = nullptr);
     ~TextEditorWidget() override;
 
     void setTextDocument(const QSharedPointer<TextDocument> &doc);
@@ -190,7 +190,7 @@ public:
     virtual void openFinishedSuccessfully();
     // IEditor
     QByteArray saveState() const;
-    virtual bool restoreState(const QByteArray &state);
+    virtual void restoreState(const QByteArray &state);
     void gotoLine(int line, int column = 0, bool centerLine = true, bool animate = false);
     int position(TextPositionOperation posOp = CurrentPosition,
          int at = -1) const;
@@ -203,6 +203,10 @@ public:
     void print(QPrinter *);
 
     void appendStandardContextMenuActions(QMenu *menu);
+
+    uint optionalActions();
+    void setOptionalActions(uint optionalActions);
+    void addOptionalActions(uint optionalActions);
 
     void setAutoCompleter(AutoCompleter *autoCompleter);
     AutoCompleter *autoCompleter() const;
@@ -298,8 +302,8 @@ public:
     virtual void extraAreaMouseEvent(QMouseEvent *);
     void updateFoldingHighlight(const QPoint &pos);
 
-    void setLanguageSettingsId(Core::Id settingsId);
-    Core::Id languageSettingsId() const;
+    void setLanguageSettingsId(Utils::Id settingsId);
+    Utils::Id languageSettingsId() const;
 
     void setCodeStyle(ICodeStylePreferences *settings);
 
@@ -310,21 +314,21 @@ public:
     void ensureCursorVisible();
     void ensureBlockIsUnfolded(QTextBlock block);
 
-    static Core::Id FakeVimSelection;
-    static Core::Id SnippetPlaceholderSelection;
-    static Core::Id CurrentLineSelection;
-    static Core::Id ParenthesesMatchingSelection;
-    static Core::Id AutoCompleteSelection;
-    static Core::Id CodeWarningsSelection;
-    static Core::Id CodeSemanticsSelection;
-    static Core::Id UndefinedSymbolSelection;
-    static Core::Id UnusedSymbolSelection;
-    static Core::Id OtherSelection;
-    static Core::Id ObjCSelection;
-    static Core::Id DebuggerExceptionSelection;
+    static Utils::Id FakeVimSelection;
+    static Utils::Id SnippetPlaceholderSelection;
+    static Utils::Id CurrentLineSelection;
+    static Utils::Id ParenthesesMatchingSelection;
+    static Utils::Id AutoCompleteSelection;
+    static Utils::Id CodeWarningsSelection;
+    static Utils::Id CodeSemanticsSelection;
+    static Utils::Id UndefinedSymbolSelection;
+    static Utils::Id UnusedSymbolSelection;
+    static Utils::Id OtherSelection;
+    static Utils::Id ObjCSelection;
+    static Utils::Id DebuggerExceptionSelection;
 
-    void setExtraSelections(Core::Id kind, const QList<QTextEdit::ExtraSelection> &selections);
-    QList<QTextEdit::ExtraSelection> extraSelections(Core::Id kind) const;
+    void setExtraSelections(Utils::Id kind, const QList<QTextEdit::ExtraSelection> &selections);
+    QList<QTextEdit::ExtraSelection> extraSelections(Utils::Id kind) const;
     QString extraSelectionTooltip(int pos) const;
 
     RefactorMarkers refactorMarkers() const;
@@ -453,6 +457,7 @@ public:
     void openLinkUnderCursorInNextSplit();
 
     virtual void findUsages();
+    virtual void renameSymbolUnderCursor();
 
     /// Abort code assistant if it is running.
     void abortAssist();
@@ -490,6 +495,8 @@ signals:
     void requestLinkAt(const QTextCursor &cursor, Utils::ProcessLinkCallback &callback,
                        bool resolveTarget, bool inNextSplit);
     void requestUsages(const QTextCursor &cursor);
+    void requestRename(const QTextCursor &cursor);
+    void optionalActionMaskChanged();
 
 protected:
     QTextBlock blockForVisibleRow(int row) const;
@@ -523,6 +530,7 @@ protected:
     QMimeData *createMimeDataFromSelection() const override;
     bool canInsertFromMimeData(const QMimeData *source) const override;
     void insertFromMimeData(const QMimeData *source) override;
+    void dropEvent(QDropEvent *e) override;
 
     virtual QString plainTextFromSelection(const QTextCursor &cursor) const;
     static QString convertToPlainText(const QString &txt);
@@ -536,7 +544,7 @@ protected:
     virtual void triggerPendingUpdates();
     virtual void applyFontSettings();
 
-    void showDefaultContextMenu(QContextMenuEvent *e, Core::Id menuContextId);
+    void showDefaultContextMenu(QContextMenuEvent *e, Utils::Id menuContextId);
     virtual void finalizeInitialization() {}
     virtual void finalizeInitializationAfterDuplication(TextEditorWidget *) {}
     static QTextCursor flippedCursor(const QTextCursor &cursor);
@@ -545,7 +553,7 @@ public:
     QString selectedText() const;
 
     void setupGenericHighlighter();
-    void setupFallBackEditor(Core::Id id);
+    void setupFallBackEditor(Utils::Id id);
 
     void remove(int length);
     void replace(int length, const QString &string);
@@ -601,8 +609,8 @@ protected:
     virtual void slotCursorPositionChanged(); // Used in VcsBase
     virtual void slotCodeStyleSettingsChanged(const QVariant &); // Used in CppEditor
 
-    bool inFindScope(const QTextCursor &cursor);
-    bool inFindScope(int selectionStart, int selectionEnd);
+    Q_INVOKABLE bool inFindScope(const QTextCursor &cursor);
+    Q_INVOKABLE bool inFindScope(int selectionStart, int selectionEnd);
 
 private:
     Internal::TextEditorWidgetPrivate *d;

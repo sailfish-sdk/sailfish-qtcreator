@@ -36,6 +36,7 @@ const char OPEN_HEADER_SOURCE_IN_NEXT_SPLIT[] = "CppTools.OpenHeaderSourceInNext
 const char TASK_INDEX[]               = "CppTools.Task.Index";
 const char TASK_SEARCH[]              = "CppTools.Task.Search";
 const char C_SOURCE_MIMETYPE[] = "text/x-csrc";
+const char CUDA_SOURCE_MIMETYPE[] = "text/vnd.nvidia.cuda.csrc";
 const char C_HEADER_MIMETYPE[] = "text/x-chdr";
 const char CPP_SOURCE_MIMETYPE[] = "text/x-c++src";
 const char OBJECTIVE_C_SOURCE_MIMETYPE[] = "text/x-objcsrc";
@@ -99,7 +100,7 @@ const char SYMBOLS_FIND_FILTER_DISPLAY_NAME[] = QT_TRANSLATE_NOOP("CppTools", "C
 // CLANG_VERSION here because it might denote a version that was not yet
 // released (e.g. 6.0.1, but only 6.0.0 was released).
 constexpr const char TIDY_DOCUMENTATION_URL_TEMPLATE[]
-    = "https://releases.llvm.org/8.0.1/tools/clang/tools/extra/docs/clang-tidy/checks/%1.html";
+    = "https://releases.llvm.org/11.0.0/tools/clang/tools/extra/docs/clang-tidy/checks/%1.html";
 
 constexpr const char CLANG_STATIC_ANALYZER_DOCUMENTATION_URL[]
     = "https://clang-analyzer.llvm.org/available_checks.html";

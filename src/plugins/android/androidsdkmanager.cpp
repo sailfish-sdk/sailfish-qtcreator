@@ -22,17 +22,19 @@
 ** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ****************************************************************************/
+
 #include "androidsdkmanager.h"
 
+#include "androidconfigurations.h"
 #include "androidconstants.h"
 #include "androidmanager.h"
-#include "androidtoolmanager.h"
 
 #include <utils/algorithm.h>
 #include <utils/qtcassert.h>
-#include <utils/runextensions.h>
-#include <utils/synchronousprocess.h>
 #include <utils/qtcprocess.h>
+#include <utils/runextensions.h>
+#include <utils/stringutils.h>
+#include <utils/synchronousprocess.h>
 
 #include <QFutureWatcher>
 #include <QLoggingCategory>
@@ -46,10 +48,6 @@ static Q_LOGGING_CATEGORY(sdkManagerLog, "qtc.android.sdkManager", QtWarningMsg)
 
 namespace Android {
 namespace Internal {
-
-// Though sdk manager is introduced in 25.2.3 but the verbose mode is avaialble in 25.3.0
-// and android tool is supported in 25.2.3
-const QVersionNumber sdkManagerIntroVersion(25, 3 ,0);
 
 const char installLocationKey[] = "Installed Location:";
 const char revisionKey[] = "Version:";
@@ -107,7 +105,7 @@ int parseProgress(const QString &out, bool &foundAssertion)
     if (out.isEmpty())
         return progress;
     QRegularExpression reg("(?<progress>\\d*)%");
-    QStringList lines = out.split(QRegularExpression("[\\n\\r]"), QString::SkipEmptyParts);
+    QStringList lines = out.split(QRegularExpression("[\\n\\r]"), Qt::SkipEmptyParts);
     for (const QString &line : lines) {
         QRegularExpressionMatch match = reg.match(line);
         if (match.hasMatch()) {
@@ -132,6 +130,10 @@ void watcherDeleter(QFutureWatcher<void> *watcher)
     delete watcher;
 }
 
+static QString sdkRootArg(const AndroidConfig &config)
+{
+    return "--sdk_root=" + config.sdkLocation().toString();
+}
 /*!
     Runs the \c sdkmanger tool with arguments \a args. Returns \c true if the command is
     successfully executed. Output is copied into \a output. The function blocks the calling thread.
@@ -139,13 +141,16 @@ void watcherDeleter(QFutureWatcher<void> *watcher)
 static bool sdkManagerCommand(const AndroidConfig &config, const QStringList &args,
                               QString *output, int timeout = sdkManagerCmdTimeoutS)
 {
+    QStringList newArgs = args;
+    newArgs.append(sdkRootArg(config));
     qCDebug(sdkManagerLog) << "Running SDK Manager command (sync):"
-                           << CommandLine(config.sdkManagerToolPath(), args).toUserOutput();
+                           << CommandLine(config.sdkManagerToolPath(), newArgs)
+                                  .toUserOutput();
     SynchronousProcess proc;
     proc.setProcessEnvironment(AndroidConfigurations::toolsEnvironment(config));
     proc.setTimeoutS(timeout);
     proc.setTimeOutMessageBoxEnabled(true);
-    SynchronousProcessResponse response = proc.run({config.sdkManagerToolPath(), args});
+    SynchronousProcessResponse response = proc.run({config.sdkManagerToolPath(), newArgs});
     if (output)
         *output = response.allOutput();
     return response.result == SynchronousProcessResponse::Finished;
@@ -162,8 +167,10 @@ static void sdkManagerCommand(const AndroidConfig &config, const QStringList &ar
                               AndroidSdkManager::OperationOutput &output, double progressQuota,
                               bool interruptible = true, int timeout = sdkManagerOperationTimeoutS)
 {
+    QStringList newArgs = args;
+    newArgs.append(sdkRootArg(config));
     qCDebug(sdkManagerLog) << "Running SDK Manager command (async):"
-                           << CommandLine(config.sdkManagerToolPath(), args).toUserOutput();
+                           << CommandLine(config.sdkManagerToolPath(), newArgs).toUserOutput();
     int offset = fi.progressValue();
     SynchronousProcess proc;
     proc.setProcessEnvironment(AndroidConfigurations::toolsEnvironment(config));
@@ -186,7 +193,7 @@ static void sdkManagerCommand(const AndroidConfig &config, const QStringList &ar
         QObject::connect(&sdkManager, &AndroidSdkManager::cancelActiveOperations,
                          &proc, &SynchronousProcess::terminate);
     }
-    SynchronousProcessResponse response = proc.run({config.sdkManagerToolPath(), args});
+    SynchronousProcessResponse response = proc.run({config.sdkManagerToolPath(), newArgs});
     if (assertionFound) {
         output.success = false;
         output.stdOutput = response.stdOut();
@@ -240,7 +247,7 @@ private:
     mutable QReadWriteLock m_licenseInputLock;
 
 public:
-    bool m_packageListingSuccessful = true;
+    bool m_packageListingSuccessful = false;
 };
 
 /*!
@@ -278,6 +285,7 @@ public:
         NdkMarker                   = 0x800,
         ExtrasMarker                = 0x1000,
         CmdlineSdkToolsMarker       = 0x2000,
+        GenericToolMarker           = 0x4000,
         SectionMarkers = InstalledPackagesMarker | AvailablePackagesMarkers | AvailableUpdatesMarker
     };
 
@@ -300,6 +308,7 @@ private:
     EmulatorTools *parseEmulatorToolsPackage(const QStringList &data) const;
     Ndk *parseNdkPackage(const QStringList &data) const;
     ExtraTools *parseExtraToolsPackage(const QStringList &data) const;
+    GenericSdkPackage *parseGenericTools(const QStringList &data) const;
     MarkerTag parseMarkers(const QString &line);
 
     MarkerTag m_currentSection = MarkerTag::None;
@@ -321,8 +330,7 @@ const std::map<SdkManagerOutputParser::MarkerTag, const char *> markerTags {
     {SdkManagerOutputParser::MarkerTag::ExtrasMarker,               "extras"}
 };
 
-AndroidSdkManager::AndroidSdkManager(const AndroidConfig &config, QObject *parent):
-    QObject(parent),
+AndroidSdkManager::AndroidSdkManager(const AndroidConfig &config):
     m_d(new AndroidSdkManagerPrivate(*this, config))
 {
 }
@@ -342,11 +350,6 @@ SdkPlatformList AndroidSdkManager::installedSdkPlatforms()
 const AndroidSdkPackageList &AndroidSdkManager::allSdkPackages()
 {
     return m_d->allPackages();
-}
-
-AndroidSdkPackageList AndroidSdkManager::availableSdkPackages()
-{
-    return m_d->filteredPackages(AndroidSdkPackage::Available, AndroidSdkPackage::AnyValidType);
 }
 
 AndroidSdkPackageList AndroidSdkManager::installedSdkPackages()
@@ -633,6 +636,10 @@ void SdkManagerOutputParser::parsePackageData(MarkerTag packageMarker, const QSt
         createPackage(&SdkManagerOutputParser::parseExtraToolsPackage);
         break;
 
+    case MarkerTag::GenericToolMarker:
+        createPackage(&SdkManagerOutputParser::parseGenericTools);
+        break;
+
     default:
         qCDebug(sdkManagerLog) << "Unhandled package: " << markerTags.at(packageMarker);
         break;
@@ -808,8 +815,6 @@ Ndk *SdkManagerOutputParser::parseNdkPackage(const QStringList &data) const
         ndk->setDescriptionText(packageData.description);
         ndk->setDisplayText(packageData.description);
         ndk->setInstalledLocation(packageData.installedLocation);
-        if (packageData.description == "NDK")
-            ndk->setAsNdkBundle(true);
     } else {
         qCDebug(sdkManagerLog) << "NDK: Parsing failed. Minimum required data unavailable:"
                                << data;
@@ -833,6 +838,22 @@ ExtraTools *SdkManagerOutputParser::parseExtraToolsPackage(const QStringList &da
     return extraTools;
 }
 
+GenericSdkPackage *SdkManagerOutputParser::parseGenericTools(const QStringList &data) const
+{
+    GenericSdkPackage *sdkPackage = nullptr;
+    GenericPackageData packageData;
+    if (parseAbstractData(packageData, data, 1, "Generic")) {
+        sdkPackage = new GenericSdkPackage(packageData.revision, data.at(0));
+        sdkPackage->setDescriptionText(packageData.description);
+        sdkPackage->setDisplayText(packageData.description);
+        sdkPackage->setInstalledLocation(packageData.installedLocation);
+    } else {
+        qCDebug(sdkManagerLog) << "Generic: Parsing failed. Minimum required data "
+                                  "unavailable:" << data;
+    }
+    return sdkPackage;
+}
+
 SdkManagerOutputParser::MarkerTag SdkManagerOutputParser::parseMarkers(const QString &line)
 {
     if (line.isEmpty())
@@ -842,6 +863,10 @@ SdkManagerOutputParser::MarkerTag SdkManagerOutputParser::parseMarkers(const QSt
         if (line.startsWith(QLatin1String(pair.second)))
             return pair.first;
     }
+
+    QRegularExpressionMatch match = QRegularExpression("^[a-zA-Z]+[A-Za-z0-9;._-]+").match(line);
+    if (match.hasMatch() && match.captured(0) == line)
+        return GenericToolMarker;
 
     return None;
 }
@@ -881,6 +906,7 @@ void AndroidSdkManagerPrivate::reloadSdkPackages()
     clearPackages();
 
     lastSdkManagerPath = m_config.sdkManagerToolPath();
+    m_packageListingSuccessful = false;
 
     if (m_config.sdkToolsVersion().isNull()) {
         // Configuration has invalid sdk path or corrupt installation.
@@ -888,23 +914,13 @@ void AndroidSdkManagerPrivate::reloadSdkPackages()
         return;
     }
 
-    if (m_config.sdkToolsVersion() < sdkManagerIntroVersion && !m_config.isCmdlineSdkToolsInstalled()) {
-        // Old Sdk tools.
-        m_packageListingSuccessful = true;
-        AndroidToolManager toolManager(m_config);
-        auto toAndroidSdkPackages = [](SdkPlatform *p) -> AndroidSdkPackage *{
-            return p;
-        };
-        m_allPackages = Utils::transform(toolManager.availableSdkPlatforms(), toAndroidSdkPackages);
-    } else {
-        QString packageListing;
-        QStringList args({"--list", "--verbose"});
-        args << m_config.sdkManagerToolArgs();
-        m_packageListingSuccessful = sdkManagerCommand(m_config, args, &packageListing);
-        if (m_packageListingSuccessful) {
-            SdkManagerOutputParser parser(m_allPackages);
-            parser.parsePackageListing(packageListing);
-        }
+    QString packageListing;
+    QStringList args({"--list", "--verbose"});
+    args << m_config.sdkManagerToolArgs();
+    m_packageListingSuccessful = sdkManagerCommand(m_config, args, &packageListing);
+    if (m_packageListingSuccessful) {
+        SdkManagerOutputParser parser(m_allPackages);
+        parser.parsePackageListing(packageListing);
     }
     emit m_sdkManager.packageReloadFinished();
 }
@@ -997,7 +1013,7 @@ void AndroidSdkManagerPrivate::checkPendingLicense(SdkCmdFutureInterface &fi)
     fi.setProgressValue(0);
     AndroidSdkManager::OperationOutput result;
     result.type = AndroidSdkManager::LicenseCheck;
-    QStringList args("--licenses");
+    const QStringList args = {"--licenses", sdkRootArg(m_config)};
     if (!fi.isCanceled())
         sdkManagerCommand(m_config, args, m_sdkManager, fi, result, 100.0);
     else
@@ -1016,7 +1032,7 @@ void AndroidSdkManagerPrivate::getPendingLicense(SdkCmdFutureInterface &fi)
     QtcProcess licenseCommand;
     licenseCommand.setProcessEnvironment(AndroidConfigurations::toolsEnvironment(m_config));
     bool reviewingLicenses = false;
-    licenseCommand.setCommand(CommandLine(m_config.sdkManagerToolPath(), {"--licenses"}));
+    licenseCommand.setCommand(CommandLine(m_config.sdkManagerToolPath(), {"--licenses", sdkRootArg(m_config)}));
     if (Utils::HostOsInfo::isWindowsHost())
         licenseCommand.setUseCtrlCStub(true);
     licenseCommand.start();
@@ -1111,7 +1127,7 @@ void AndroidSdkManagerPrivate::addWatcher(const QFuture<AndroidSdkManager::Opera
     if (future.isFinished())
         return;
     m_activeOperation.reset(new QFutureWatcher<void>());
-    m_activeOperation->setFuture(future);
+    m_activeOperation->setFuture(QFuture<void>(future));
 }
 
 void AndroidSdkManagerPrivate::parseCommonArguments(QFutureInterface<QString> &fi)

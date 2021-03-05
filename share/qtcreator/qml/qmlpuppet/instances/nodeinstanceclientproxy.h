@@ -33,6 +33,8 @@
 #include <QFile>
 #include <QTimer>
 
+#include <memory>
+
 QT_BEGIN_NAMESPACE
 class QLocalSocket;
 class QIODevice;
@@ -61,13 +63,17 @@ class ChangeSelectionCommand;
 class PuppetToCreatorCommand;
 class InputEventCommand;
 class View3DActionCommand;
+class RequestModelNodePreviewImageCommand;
+class ChangeLanguageCommand;
+class ChangePreviewImageSizeCommand;
 
 class NodeInstanceClientProxy : public QObject, public NodeInstanceClientInterface
 {
     Q_OBJECT
 
 public:
-    NodeInstanceClientProxy(QObject *parent = nullptr);
+    NodeInstanceClientProxy(QObject *parent);
+    ~NodeInstanceClientProxy() override;
 
     void informationChanged(const InformationChangedCommand &command) override;
     void valuesChanged(const ValuesChangedCommand &command) override;
@@ -81,6 +87,8 @@ public:
     void puppetAlive(const PuppetAliveCommand &command);
     void selectionChanged(const ChangeSelectionCommand &command) override;
     void handlePuppetToCreatorCommand(const PuppetToCreatorCommand &command) override;
+    void capturedData(const CapturedDataCommand &capturedData) override;
+    void sceneCreated(const SceneCreatedCommand &command) override;
 
     void flush() override;
     void synchronizeWithClientProcess() override;
@@ -92,7 +100,7 @@ protected:
     void writeCommand(const QVariant &command);
     void dispatchCommand(const QVariant &command);
     NodeInstanceServerInterface *nodeInstanceServer() const;
-    void setNodeInstanceServer(NodeInstanceServerInterface *nodeInstanceServer);
+    void setNodeInstanceServer(std::unique_ptr<NodeInstanceServerInterface> nodeInstanceServer);
 
     void createInstances(const CreateInstancesCommand &command);
     void changeFileUrl(const ChangeFileUrlCommand &command);
@@ -116,6 +124,9 @@ protected:
     static QVariant readCommandFromIOStream(QIODevice *ioDevice, quint32 *readCommandCounter, quint32 *blockSize);
     void inputEvent(const InputEventCommand &command);
     void view3DAction(const View3DActionCommand &command);
+    void requestModelNodePreviewImage(const RequestModelNodePreviewImageCommand &command);
+    void changeLanguage(const ChangeLanguageCommand &command);
+    void changePreviewImageSize(const ChangePreviewImageSizeCommand &command);
 
 protected slots:
     void readDataStream();
@@ -126,7 +137,7 @@ private:
     QTimer m_puppetAliveTimer;
     QIODevice *m_inputIoDevice;
     QIODevice *m_outputIoDevice;
-    NodeInstanceServerInterface *m_nodeInstanceServer;
+    std::unique_ptr<NodeInstanceServerInterface> m_nodeInstanceServer;
     quint32 m_writeCommandCounter;
     int m_synchronizeId;
 };

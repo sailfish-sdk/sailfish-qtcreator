@@ -38,7 +38,8 @@
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/projectmacroexpander.h>
 #include <projectexplorer/target.h>
-#include <projectexplorer/projectconfigurationaspects.h>
+
+#include <utils/aspects.h>
 #include <utils/mimetypes/mimedatabase.h>
 #include <utils/qtcassert.h>
 
@@ -65,7 +66,7 @@ static FilePath defaultBuildDirectory(const Kit *k,
     return projectDir.pathAppended(buildDirectory);
 }
 
-NimBuildConfiguration::NimBuildConfiguration(Target *target, Core::Id id)
+NimBuildConfiguration::NimBuildConfiguration(Target *target, Utils::Id id)
     : BuildConfiguration(target, id)
 {
     setConfigWidgetDisplayName(tr("General"));
@@ -84,26 +85,7 @@ NimBuildConfiguration::NimBuildConfiguration(Target *target, Core::Id id)
 
         auto nimCompilerBuildStep = buildSteps()->firstOfType<NimCompilerBuildStep>();
         QTC_ASSERT(nimCompilerBuildStep, return);
-        NimCompilerBuildStep::DefaultBuildOptions defaultOption;
-        switch (info.buildType) {
-        case BuildConfiguration::Release:
-            defaultOption = NimCompilerBuildStep::DefaultBuildOptions::Release;
-            break;
-        case BuildConfiguration::Debug:
-            defaultOption = NimCompilerBuildStep::DefaultBuildOptions::Debug;
-            break;
-        default:
-            defaultOption = NimCompilerBuildStep::DefaultBuildOptions::Empty;
-            break;
-        }
-        nimCompilerBuildStep->setDefaultCompilerOptions(defaultOption);
-
-        const Utils::FilePaths nimFiles = project()->files([](const Node *n) {
-            return Project::AllFiles(n) && n->path().endsWith(".nim");
-        });
-
-        if (!nimFiles.isEmpty())
-            nimCompilerBuildStep->setTargetNimFile(nimFiles.first());
+        nimCompilerBuildStep->setBuildType(info.buildType);
     });
 }
 
@@ -115,19 +97,12 @@ FilePath NimBuildConfiguration::cacheDirectory() const
 
 FilePath NimBuildConfiguration::outFilePath() const
 {
-    const NimCompilerBuildStep *step = nimCompilerBuildStep();
-    QTC_ASSERT(step, return FilePath());
-    return step->outFilePath();
+    auto nimCompilerBuildStep = buildSteps()->firstOfType<NimCompilerBuildStep>();
+    QTC_ASSERT(nimCompilerBuildStep, return {});
+    return nimCompilerBuildStep->outFilePath();
 }
 
-const NimCompilerBuildStep *NimBuildConfiguration::nimCompilerBuildStep() const
-{
-    foreach (BuildStep *step, buildSteps()->steps())
-        if (step->id() == Constants::C_NIMCOMPILERBUILDSTEP_ID)
-            return qobject_cast<NimCompilerBuildStep *>(step);
-    return nullptr;
-}
-
+// NimBuildConfigurationFactory
 
 NimBuildConfigurationFactory::NimBuildConfigurationFactory()
 {

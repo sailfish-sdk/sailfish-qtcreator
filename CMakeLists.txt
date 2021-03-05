@@ -1,11 +1,13 @@
-cmake_minimum_required(VERSION 3.9)
+cmake_minimum_required(VERSION 3.10)
 
 ## Add paths to check for cmake modules:
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(FeatureSummary)
-include(QtCreatorIDEBranding)
+include(QtCreatorIDEBranding RESULT_VARIABLE IDE_BRANDING_FILE)
 include(QtCreatorTranslations)
+include(QtCreatorDocumentation)
+include(QtCreatorAPI)
 
 set(IDE_REVISION FALSE CACHE BOOL "Marks the presence of IDE revision string.")
 set(IDE_REVISION_STR "" CACHE STRING "The IDE revision string.")
@@ -16,11 +18,12 @@ mark_as_advanced(IDE_REVISION IDE_REVISION_STR IDE_REVISION_URL)
 project(QtCreator VERSION ${IDE_VERSION})
 
 # Force C++ standard, do not fall back, do not use compiler extensions
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(WITH_TESTS "Build Tests" OFF)
+add_feature_info("Build tests" ${WITH_TESTS} "")
 option(WITH_DEBUG_CMAKE "Enabled CMake project debugging functionality (e.g. source file disk checking)" OFF)
 option(BUILD_WITH_PCH "Build with precompiled headers" ON)
 
@@ -37,50 +40,21 @@ if (WITH_TESTS)
 endif()
 
 find_package(Qt5
+  ${IDE_QT_VERSION_MIN}
   COMPONENTS Concurrent Core Gui Network PrintSupport Qml Quick
-    QuickWidgets Sql Widgets Xml ${QT_TEST_COMPONENT}
+    QuickWidgets Sql Widgets Xml Core5Compat ${QT_TEST_COMPONENT}
   REQUIRED
 )
-
-find_package(Qt5 COMPONENTS LinguistTools)
+if (Qt5_VERSION VERSION_LESS 6.0.0)
+  install(TARGETS Qt6Core5Compat EXPORT QtCreator)
+endif()
+find_package(Qt5 COMPONENTS LinguistTools QUIET)
+find_package(Qt5 COMPONENTS Designer DesignerComponents Help SerialPort Svg Tools QUIET)
 
 find_package(Threads)
+find_package(Clang QUIET)
+find_package(KF5SyntaxHighlighting QUIET)
 
-# Get information on directories from qmake
-# as this is not yet exported by cmake.
-function(qt5_query_qmake)
-  if (NOT TARGET Qt5::qmake)
-    message(FATAL_ERROR "Qmake was not found.")
-  endif()
-
-  get_target_property(_qmake_binary Qt5::qmake IMPORTED_LOCATION)
-  execute_process(COMMAND "${_qmake_binary}" "-query"
-                  TIMEOUT 10
-                  RESULT_VARIABLE _qmake_result
-                  OUTPUT_VARIABLE _qmake_stdout
-                  OUTPUT_STRIP_TRAILING_WHITESPACE)
-
-  if (NOT "${_qmake_result}" STREQUAL "0")
-    message(FATAL_ERROR "Qmake did not execute successfully: ${_qmake_result}.")
-  endif()
-
-  # split into lines:
-  string(REPLACE "\n" ";" _lines "${_qmake_stdout}")
-
-  foreach(_line ${_lines})
-    # split line into key/value pairs
-    string(REPLACE ":" ";" _parts "${_line}")
-    list(GET _parts 0 _key)
-    list(REMOVE_AT _parts 0)
-    string(REPLACE ";" ":" _value "${_parts}")
-
-    set("${_key}" "${_value}" CACHE PATH "qmake import of ${_key}" FORCE)
-  endforeach()
-endfunction()
-
-qt5_query_qmake()
-
-find_package(Qt5 COMPONENTS Designer Help Script SerialPort Svg QUIET)
 function (set_if_target var target)
    if (TARGET "${target}")
      set(_result ON)
@@ -93,6 +67,11 @@ endfunction()
 set_if_target(_has_svg_target Qt5::Svg)
 option(ENABLE_SVG_SUPPORT "Enable SVG support" "${_has_svg_target}")
 
+# specify standards conformance mode to MSVC 2017 and later
+if (MSVC AND MSVC_VERSION GREATER_EQUAL 1910)
+    add_compile_options(/permissive-)
+endif()
+
 add_library(OptionalSvg INTERFACE)
 if (TARGET Qt5::Svg AND ENABLE_SVG_SUPPORT)
   target_link_libraries(OptionalSvg INTERFACE Qt5::Svg)
@@ -100,15 +79,6 @@ else()
   target_compile_definitions(OptionalSvg INTERFACE QT_NO_SVG)
 endif()
 install(TARGETS OptionalSvg EXPORT QtCreator)
-
-find_package(Clang COMPONENTS libclang QUIET)
-# silence a lot of warnings from building against llvm
-# this would better fit inside a central libclang detection/include cmake file, but since we do not
-# have one put it temporary here
-if(MSVC AND TARGET libclang)
-    target_compile_options(libclang INTERFACE /wd4100 /wd4141 /wd4146 /wd4244 /wd4267 /wd4291)
-endif()
-find_package(LLVM QUIET)
 
 if (APPLE)
   find_library(FWCoreFoundation CoreFoundation)
@@ -120,8 +90,6 @@ if (APPLE)
   find_library(FWSystemConfiguration SystemConfiguration)
   find_library(FWWebKit WebKit)
 endif()
-
-include(QtCreatorAPI)
 
 if (WITH_TESTS)
   enable_testing()
@@ -140,10 +108,54 @@ endif()
 
 add_subdirectory(doc)
 
-# CMake will include in a cmake_install.cmake at the end the subdirectories
-# At this point all the previous install scripts have been included
-# Deployment is being done in cmake/CMakeLists.txt
-add_subdirectory(cmake)
+find_package(PythonInterp)
+if (NOT PYTHONINTERP_FOUND)
+  message("No python interpreter found, skipping \"Dependencies\" install component.")
+else()
+  get_target_property(_qmake_binary Qt5::qmake IMPORTED_LOCATION)
+  set(_llvm_arg)
+  if (LLVM_INSTALL_PREFIX)
+    set(_llvm_arg "--llvm \"${LLVM_INSTALL_PREFIX}\"")
+  endif()
+  set(_elfutils_arg)
+  if (ELFUTILS_INCLUDE_DIR)
+    get_filename_component(_elfutils_path ${ELFUTILS_INCLUDE_DIR} DIRECTORY)
+    set(_elfutils_arg "--elfutils \"${_elfutils_path}\"")
+  endif()
+  install(CODE "
+      execute_process(COMMAND
+        \"${PYTHON_EXECUTABLE}\"
+        \"${CMAKE_CURRENT_LIST_DIR}/scripts/deployqt.py\"
+        ${_llvm_arg}
+        ${_elfutils_arg}
+        \"\${CMAKE_INSTALL_PREFIX}/${IDE_APP_PATH}/${IDE_APP_TARGET}\"
+        \"${_qmake_binary}\"
+        COMMAND_ECHO STDOUT
+        )
+    "
+    COMPONENT Dependencies
+    EXCLUDE_FROM_ALL
+  )
+endif()
+
+# install qmake support files
+install(
+  FILES
+    qtcreator.pri
+    qtcreatordata.pri
+    qtcreator_ide_branding.pri
+  DESTINATION include
+  COMPONENT Devel EXCLUDE_FROM_ALL
+)
+install(
+  FILES
+    src/qtcreatorlibrary.pri
+    src/qtcreatorplugin.pri
+    src/qtcreatortool.pri
+    src/rpath.pri
+  DESTINATION include/src
+  COMPONENT Devel EXCLUDE_FROM_ALL
+)
 
 feature_summary(INCLUDE_QUIET_PACKAGES WHAT
   PACKAGES_FOUND PACKAGES_NOT_FOUND

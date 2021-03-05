@@ -195,7 +195,8 @@ IAssistProposal *KeywordsCompletionAssistProcessor::perform(const AssistInterfac
 
     if (interface->reason() == IdleEditor) {
         QChar characterUnderCursor = interface->characterAt(interface->position());
-        if (characterUnderCursor.isLetterOrNumber() || interface->position() - startPosition < 3) {
+        if (characterUnderCursor.isLetterOrNumber() || interface->position() - startPosition
+                < TextEditorSettings::completionSettings().m_characterThreshold) {
             QList<AssistProposalItemInterface *> items;
             if (m_dynamicCompletionFunction)
                 m_dynamicCompletionFunction(interface, &items, startPosition);
@@ -297,12 +298,12 @@ void pathComplete(const AssistInterface *interface, QList<AssistProposalItemInte
     if (!items)
         return;
 
-    if (interface->fileName().isEmpty())
+    if (interface->filePath().isEmpty())
         return;
 
     // For pragmatic reasons, we don't support spaces in file names here.
     static const auto canOccurInFilePath = [](const QChar &c) {
-        return c.isLetterOrNumber() || c == '.' || c == '/' || c == "_" || c == '-';
+        return c.isLetterOrNumber() || c == '.' || c == '/' || c == '_' || c == '-';
     };
 
     int pos = interface->position();
@@ -318,7 +319,7 @@ void pathComplete(const AssistInterface *interface, QList<AssistProposalItemInte
         return;
 
     const QString word = interface->textAt(startPos, interface->position() - startPos);
-    QDir baseDir = QFileInfo(interface->fileName()).absoluteDir();
+    QDir baseDir = interface->filePath().toFileInfo().absoluteDir();
     const int lastSlashPos = word.lastIndexOf(QLatin1Char('/'));
 
     QString prefix = word;

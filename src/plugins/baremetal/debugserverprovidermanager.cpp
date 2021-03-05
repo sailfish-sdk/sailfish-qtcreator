@@ -27,6 +27,7 @@
 #include "idebugserverprovider.h"
 
 // GDB debug servers.
+#include "debugservers/gdb/genericgdbserverprovider.h"
 #include "debugservers/gdb/openocdgdbserverprovider.h"
 #include "debugservers/gdb/stlinkutilgdbserverprovider.h"
 #include "debugservers/gdb/jlinkgdbserverprovider.h"
@@ -35,6 +36,7 @@
 // UVSC debug servers.
 #include "debugservers/uvsc/simulatoruvscserverprovider.h"
 #include "debugservers/uvsc/stlinkuvscserverprovider.h"
+#include "debugservers/uvsc/jlinkuvscserverprovider.h"
 
 #include <coreplugin/icore.h>
 
@@ -60,12 +62,14 @@ static DebugServerProviderManager *m_instance = nullptr;
 
 DebugServerProviderManager::DebugServerProviderManager()
     : m_configFile(Utils::FilePath::fromString(Core::ICore::userResourcePath() + fileNameKeyC))
-    , m_factories({new JLinkGdbServerProviderFactory,
+    , m_factories({new GenericGdbServerProviderFactory,
+                   new JLinkGdbServerProviderFactory,
                    new OpenOcdGdbServerProviderFactory,
                    new StLinkUtilGdbServerProviderFactory,
                    new EBlinkGdbServerProviderFactory,
                    new SimulatorUvscServerProviderFactory,
-                   new StLinkUvscServerProviderFactory})
+                   new StLinkUvscServerProviderFactory,
+                   new JLinkUvscServerProviderFactory})
 {
     m_instance = this;
     m_writer = new Utils::PersistentSettingsWriter(
@@ -113,7 +117,13 @@ void DebugServerProviderManager::restoreProviders()
         if (!data.contains(key))
             break;
 
-        const QVariantMap map = data.value(key).toMap();
+        QVariantMap map = data.value(key).toMap();
+        const QStringList keys = map.keys();
+        for (const QString &key : keys) {
+            const int lastDot = key.lastIndexOf('.');
+            if (lastDot != -1)
+                map[key.mid(lastDot + 1)] = map[key];
+        }
         bool restored = false;
         for (IDebugServerProviderFactory *f : qAsConst(m_factories)) {
             if (f->canRestore(map)) {
@@ -150,7 +160,7 @@ void DebugServerProviderManager::saveProviders()
         }
     }
     data.insert(countKeyC, count);
-    m_writer->save(data, Core::ICore::mainWindow());
+    m_writer->save(data, Core::ICore::dialogParent());
 }
 
 QList<IDebugServerProvider *> DebugServerProviderManager::providers()

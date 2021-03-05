@@ -26,9 +26,9 @@
 #pragma once
 
 #include "../core_global.h"
-#include "../id.h"
 
 #include <utils/fileutils.h>
+#include <utils/id.h>
 #include <utils/optional.h>
 
 QT_BEGIN_NAMESPACE
@@ -57,7 +57,7 @@ public:
         QString displayName() const;
         QString plainDisplayName() const;
         QString uniqueDisplayName() const;
-        Id id() const;
+        Utils::Id id() const;
 
         IDocument *document;
         // When an entry is suspended, it means that it is not in memory,
@@ -84,8 +84,8 @@ public:
     static Entry *entryForFilePath(const Utils::FilePath &filePath);
     static QList<IDocument *> openedDocuments();
 
-    static IDocument *documentForFilePath(const QString &filePath);
-    static QList<IEditor *> editorsForFilePath(const QString &filePath);
+    static IDocument *documentForFilePath(const Utils::FilePath &filePath);
+    static QList<IEditor *> editorsForFilePath(const Utils::FilePath &filePath);
     static QList<IEditor *> editorsForDocument(IDocument *document);
     static QList<IEditor *> editorsForDocuments(const QList<IDocument *> &entries);
     static QList<IEditor *> editorsForOpenedDocuments();

@@ -25,7 +25,9 @@
 
 #include "cvsutils.h"
 
-#include <QRegExp>
+#include <utils/stringutils.h>
+
+#include <QRegularExpression>
 #include <QStringList>
 
 namespace Cvs {
@@ -60,19 +62,20 @@ QList<CvsLogEntry> parseLogEntries(const QString &o,
     enum ParseState { FileState, RevisionState, StatusLineState };
 
     QList<CvsLogEntry> rc;
-    const QStringList lines = o.split(QString(QLatin1Char('\n')), QString::SkipEmptyParts);
+    const QStringList lines = o.split('\n', Qt::SkipEmptyParts);
     ParseState state = FileState;
 
     const QString workingFilePrefix = QLatin1String("Working file: ");
-    QRegExp statusPattern = QRegExp(QLatin1String("^date: ([\\d\\-]+) .*commitid: ([^;]+);$"));
-    QRegExp revisionPattern = QRegExp(QLatin1String("^revision ([\\d\\.]+)$"));
+    const QRegularExpression statusPattern(QLatin1String("^date: ([\\d\\-]+) .*commitid: ([^;]+);$"));
+    const QRegularExpression revisionPattern(QLatin1String("^revision ([\\d\\.]+)$"));
     const QChar slash = QLatin1Char('/');
     Q_ASSERT(statusPattern.isValid() && revisionPattern.isValid());
     const QString fileSeparator = QLatin1String("=============================================================================");
 
     // Parse using a state enumeration and regular expressions as not to fall for weird
     // commit messages in state 'RevisionState'
-    foreach (const QString &line, lines) {
+    QRegularExpressionMatch match;
+    for (const QString &line : lines) {
         switch (state) {
             case FileState:
             if (line.startsWith(workingFilePrefix)) {
@@ -85,8 +88,9 @@ QList<CvsLogEntry> parseLogEntries(const QString &o,
             }
             break;
         case RevisionState:
-            if (revisionPattern.exactMatch(line)) {
-                rc.back().revisions.push_back(CvsRevision(revisionPattern.cap(1)));
+            match = revisionPattern.match(line);
+            if (match.hasMatch()) {
+                rc.back().revisions.push_back(CvsRevision(match.captured(1)));
                 state = StatusLineState;
             } else {
                 if (line == fileSeparator)
@@ -94,10 +98,11 @@ QList<CvsLogEntry> parseLogEntries(const QString &o,
             }
             break;
         case StatusLineState:
-            if (statusPattern.exactMatch(line)) {
-                const QString commitId = statusPattern.cap(2);
+            match = statusPattern.match(line);
+            if (match.hasMatch()) {
+                const QString commitId = match.captured(2);
                 if (filterCommitId.isEmpty() || filterCommitId == commitId) {
-                    rc.back().revisions.back().date = statusPattern.cap(1);
+                    rc.back().revisions.back().date = match.captured(1);
                     rc.back().revisions.back().commitId = commitId;
                 } else {
                     rc.back().revisions.pop_back();
@@ -173,7 +178,7 @@ StateList parseStatusOutput(const QString &directory, const QString &output)
     const QString dotDir = QString(QLatin1Char('.'));
     const QChar slash = QLatin1Char('/');
 
-    const QStringList list = output.split(QLatin1Char('\n'), QString::SkipEmptyParts);
+    const QStringList list = output.split('\n', Qt::SkipEmptyParts);
 
     QString path = directory;
     if (!path.isEmpty())
@@ -217,7 +222,7 @@ QString previousRevision(const QString &rev)
     const int dotPos = rev.lastIndexOf(QLatin1Char('.'));
     if (dotPos == -1)
         return rev;
-    const int minor = rev.midRef(dotPos + 1).toInt();
+    const int minor = rev.mid(dotPos + 1).toInt();
     return rev.left(dotPos + 1) + QString::number(minor - 1);
 }
 

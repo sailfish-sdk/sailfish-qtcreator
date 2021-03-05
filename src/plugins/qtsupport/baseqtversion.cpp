@@ -54,18 +54,18 @@
 #include <utils/macroexpander.h>
 #include <utils/qtcassert.h>
 #include <utils/runextensions.h>
+#include <utils/stringutils.h>
 #include <utils/synchronousprocess.h>
 #include <utils/winutils.h>
 
 #include <resourceeditor/resourcenode.h>
 
-#include <QDir>
-#include <QUrl>
-#include <QFileInfo>
-#include <QFuture>
 #include <QCoreApplication>
+#include <QDir>
+#include <QFileInfo>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QUrl>
 
 #include <algorithm>
 
@@ -125,6 +125,7 @@ public:
 
     Utils::FilePath hostBinPath;
     Utils::FilePath hostDataPath;
+    Utils::FilePath hostPrefixPath;
 
     Abis qtAbis;
 };
@@ -220,7 +221,7 @@ public:
     bool m_qmakeIsExecutable = true;
 
     QString m_autodetectionSource;
-    QSet<Core::Id> m_overrideFeatures;
+    QSet<Utils::Id> m_overrideFeatures;
 
     FilePath m_mkspec;
     FilePath m_mkspecFullPath;
@@ -510,8 +511,7 @@ Tasks BaseQtVersion::validateKit(const Kit *k)
     if (!tdt.isEmpty() && !tdt.contains(dt))
         result << BuildSystemTask(Task::Warning, tr("Device type is not supported by Qt version."));
 
-    ToolChain *tc = ToolChainKitAspect::toolChain(k, ProjectExplorer::Constants::CXX_LANGUAGE_ID);
-    if (tc) {
+    if (ToolChain *tc = ToolChainKitAspect::cxxToolChain(k)) {
         Abi targetAbi = tc->targetAbi();
         bool fuzzyMatch = false;
         bool fullMatch = false;
@@ -538,7 +538,7 @@ Tasks BaseQtVersion::validateKit(const Kit *k)
                                   version->displayName(), qtAbiString);
             result << BuildSystemTask(fuzzyMatch ? Task::Warning : Task::Error, message);
         }
-    } else if (ToolChainKitAspect::toolChain(k, ProjectExplorer::Constants::C_LANGUAGE_ID)) {
+    } else if (ToolChainKitAspect::cToolChain(k)) {
         const QString message = tr("The kit has a Qt version, but no C++ compiler.");
         result << BuildSystemTask(Task::Warning, message);
     }
@@ -623,6 +623,12 @@ FilePath BaseQtVersion::hostDataPath() const // QT_HOST_DATA
     return d->m_data.hostDataPath;
 }
 
+FilePath BaseQtVersion::hostPrefixPath() const  // QT_HOST_PREFIX
+{
+    d->updateVersionInfo();
+    return d->m_data.hostPrefixPath;
+}
+
 FilePath BaseQtVersion::mkspecsPath() const
 {
     const FilePath result = hostDataPath();
@@ -695,7 +701,7 @@ void BaseQtVersion::fromMap(const QVariantMap &map)
     d->m_data.unexpandedDisplayName.fromMap(map, Constants::QTVERSIONNAME);
     d->m_isAutodetected = map.value(QTVERSIONAUTODETECTED).toBool();
     d->m_autodetectionSource = map.value(QTVERSIONAUTODETECTIONSOURCE).toString();
-    d->m_overrideFeatures = Core::Id::fromStringList(map.value(QTVERSION_OVERRIDE_FEATURES).toStringList());
+    d->m_overrideFeatures = Utils::Id::fromStringList(map.value(QTVERSION_OVERRIDE_FEATURES).toStringList());
     QString string = map.value(QTVERSIONQMAKEPATH).toString();
     if (string.startsWith('~'))
         string.remove(0, 1).prepend(QDir::homePath());
@@ -732,7 +738,7 @@ QVariantMap BaseQtVersion::toMap() const
     result.insert(QTVERSIONAUTODETECTED, isAutodetected());
     result.insert(QTVERSIONAUTODETECTIONSOURCE, autodetectionSource());
     if (!d->m_overrideFeatures.isEmpty())
-        result.insert(QTVERSION_OVERRIDE_FEATURES, Core::Id::toStringList(d->m_overrideFeatures));
+        result.insert(QTVERSION_OVERRIDE_FEATURES, Utils::Id::toStringList(d->m_overrideFeatures));
 
     result.insert(QTVERSIONQMAKEPATH, qmakeCommand().toString());
     return result;
@@ -1047,7 +1053,8 @@ QString BaseQtVersionPrivate::findHostBinary(HostBinaries binary) const
         if (HostOsInfo::isWindowsHost()) {
             possibleCommands << "uic.exe";
         } else {
-            possibleCommands << "uic-qt4" << "uic4" << "uic";
+            const QString majorString = QString::number(q->qtVersion().majorVersion);
+            possibleCommands << ("uic-qt" + majorString) << ("uic" + majorString) << "uic";
         }
         break;
     case QScxmlc:
@@ -1267,6 +1274,7 @@ void BaseQtVersionPrivate::updateVersionInfo()
 
     m_data.hostBinPath = FilePath::fromUserInput(qmakeProperty("QT_HOST_BINS"));
     m_data.hostDataPath = FilePath::fromUserInput(qmakeProperty("QT_HOST_DATA"));
+    m_data.hostPrefixPath = FilePath::fromUserInput(qmakeProperty("QT_HOST_PREFIX"));
 
     const QString qtInstallBins = q->binPath().toString();
     const QString qtHeaderData = q->headerPath().toString();
@@ -1443,6 +1451,13 @@ BaseQtVersion::createMacroExpander(const std::function<const BaseQtVersion *()> 
                                    "The installation location of the current Qt version's data."),
                                versionProperty([](const BaseQtVersion *version) {
                                    return version->dataPath().toString();
+                               }));
+
+    expander->registerVariable("Qt:QT_HOST_PREFIX",
+                               QtKitAspect::tr(
+                                   "The host location of the current Qt version."),
+                               versionProperty([](const BaseQtVersion *version) {
+                                   return version->hostPrefixPath().toString();
                                }));
 
     expander->registerVariable(
@@ -1690,6 +1705,11 @@ Tasks BaseQtVersion::reportIssuesImpl(const QString &proFile, const QString &bui
     }
 
     return results;
+}
+
+bool BaseQtVersion::supportsMultipleQtAbis() const
+{
+    return false;
 }
 
 Tasks BaseQtVersion::reportIssues(const QString &proFile, const QString &buildDir) const
@@ -2133,7 +2153,7 @@ static QStringList extractFieldsFromBuildString(const QByteArray &buildString)
     result.append(match.captured(1)); // qtVersion
 
     // Abi info string:
-    QStringList abiInfo = match.captured(2).split('-', QString::SkipEmptyParts);
+    QStringList abiInfo = match.captured(2).split('-', Qt::SkipEmptyParts);
 
     result.append(abiInfo.takeFirst()); // cpu
 
@@ -2217,7 +2237,7 @@ Abis BaseQtVersion::qtAbisFromLibrary(const FilePaths &coreLibraries)
 {
     Abis res;
     for (const FilePath &library : coreLibraries) {
-        for (Abi abi : Abi::abisOfBinary(library)) {
+        for (const Abi &abi : Abi::abisOfBinary(library)) {
             Abi tmp = abi;
             if (abi.osFlavor() == Abi::UnknownFlavor)
                 tmp = scanQtBinaryForBuildStringAndRefineAbi(library, abi);

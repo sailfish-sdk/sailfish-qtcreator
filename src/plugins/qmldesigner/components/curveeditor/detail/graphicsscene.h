@@ -27,9 +27,10 @@
 
 #include "keyframeitem.h"
 
+#include <QElapsedTimer>
 #include <QGraphicsScene>
 
-namespace DesignTools {
+namespace QmlDesigner {
 
 class AnimationCurve;
 class CurveItem;
@@ -57,6 +58,8 @@ public:
 
     bool hasSelectedKeyframe() const;
 
+    bool hasEditableSegment(double time) const;
+
     double minimumTime() const;
 
     double maximumTime() const;
@@ -64,6 +67,10 @@ public:
     double minimumValue() const;
 
     double maximumValue() const;
+
+    double animationRangeMin() const;
+
+    double animationRangeMax() const;
 
     QRectF rect() const;
 
@@ -89,7 +96,13 @@ public:
 
     void doNotMoveItems(bool tmp);
 
+    void removeCurveItem(unsigned int id);
+
     void addCurveItem(CurveItem *item);
+
+    void moveToBottom(CurveItem *item);
+
+    void moveToTop(CurveItem *item);
 
     void setComponentTransform(const QTransform &transform);
 
@@ -108,6 +121,10 @@ protected:
 
     void mouseReleaseEvent(QGraphicsSceneMouseEvent *mouseEvent) override;
 
+    void focusOutEvent(QFocusEvent *focusEvent) override;
+
+    void focusInEvent(QFocusEvent *focusEvent) override;
+
 private:
     using QGraphicsScene::addItem;
 
@@ -119,6 +136,8 @@ private:
 
     QRectF limits() const;
 
+    void resetZValues();
+
     QVector<CurveItem *> m_curves;
 
     mutable bool m_dirty;
@@ -126,6 +145,8 @@ private:
     mutable QRectF m_limits;
 
     bool m_doNotMoveItems;
+
+    QElapsedTimer m_usageTimer;
 };
 
-} // End namespace DesignTools.
+} // End namespace QmlDesigner.

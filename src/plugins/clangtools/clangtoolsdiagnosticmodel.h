@@ -28,6 +28,7 @@
 #include "clangfixitsrefactoringchanges.h"
 #include "clangtoolsdiagnostic.h"
 #include "clangtoolsprojectsettings.h"
+#include "clangtoolsutils.h"
 
 #include <debugger/analyzer/detailederrorview.h>
 #include <utils/fileutils.h>
@@ -48,15 +49,6 @@ namespace ProjectExplorer { class Project; }
 namespace ClangTools {
 namespace Internal {
 
-enum class FixitStatus {
-    NotAvailable,
-    NotScheduled,
-    Scheduled,
-    Applied,
-    FailedToApply,
-    Invalidated,
-};
-
 class ClangToolsDiagnosticModel;
 
 class FilePathItem : public Utils::TreeItem
@@ -69,6 +61,8 @@ private:
     const QString m_filePath;
 };
 
+class DiagnosticMark;
+
 class DiagnosticItem : public Utils::TreeItem
 {
 public:
@@ -76,10 +70,12 @@ public:
         = std::function<void(const QModelIndex &index, FixitStatus oldStatus, FixitStatus newStatus)>;
     DiagnosticItem(const Diagnostic &diag,
                    const OnFixitStatusChanged &onFixitStatusChanged,
+                   bool generateMark,
                    ClangToolsDiagnosticModel *parent);
     ~DiagnosticItem() override;
 
     const Diagnostic &diagnostic() const { return m_diagnostic; }
+    void setTextMarkVisible(bool visible);
 
     FixitStatus fixItStatus() const { return m_fixitStatus; }
     void setFixItStatus(const FixitStatus &status);
@@ -101,6 +97,7 @@ private:
     ReplacementOperations  m_fixitOperations;
     FixitStatus m_fixitStatus = FixitStatus::NotAvailable;
     ClangToolsDiagnosticModel *m_parentModel = nullptr;
+    TextEditor::TextMark *m_mark = nullptr;
 };
 
 class ExplainingStepItem;
@@ -116,7 +113,7 @@ class ClangToolsDiagnosticModel : public ClangToolsDiagnosticModelBase
 public:
     ClangToolsDiagnosticModel(QObject *parent = nullptr);
 
-    void addDiagnostics(const Diagnostics &diagnostics);
+    void addDiagnostics(const Diagnostics &diagnostics, bool generateMarks);
     QSet<Diagnostic> diagnostics() const;
 
     enum ItemRole {
@@ -162,6 +159,7 @@ public:
     DiagnosticFilterModel(QObject *parent = nullptr);
 
     void setProject(ProjectExplorer::Project *project);
+    void addSuppressedDiagnostics(const SuppressedDiagnosticsList &diags);
     void addSuppressedDiagnostic(const SuppressedDiagnostic &diag);
     ProjectExplorer::Project *project() const { return m_project; }
 

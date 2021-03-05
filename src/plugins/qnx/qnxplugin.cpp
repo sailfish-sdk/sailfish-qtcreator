@@ -57,6 +57,7 @@
 #include <remotelinux/genericdirectuploadstep.h>
 #include <remotelinux/makeinstallstep.h>
 #include <remotelinux/remotelinuxcheckforfreediskspacestep.h>
+#include <remotelinux/remotelinux_constants.h>
 
 #include <qtsupport/qtkitinformation.h>
 
@@ -70,8 +71,8 @@ namespace Internal {
 class QnxUploadStep : public RemoteLinux::GenericDirectUploadStep
 {
 public:
-    QnxUploadStep(BuildStepList *bsl, Core::Id id) : GenericDirectUploadStep(bsl, id, false) {}
-    static Core::Id stepId() { return "Qnx.DirectUploadStep"; }
+    QnxUploadStep(BuildStepList *bsl, Utils::Id id) : GenericDirectUploadStep(bsl, id, false) {}
+    static Utils::Id stepId() { return "Qnx.DirectUploadStep"; }
 };
 
 template <class Step>
@@ -98,13 +99,13 @@ public:
         addSupportedTargetDeviceType(Constants::QNX_QNX_OS_TYPE);
         setUseDeploymentDataView();
 
-        addInitialStep(RemoteLinux::MakeInstallStep::stepId(), [](Target *target) {
+        addInitialStep(RemoteLinux::Constants::MakeInstallStepId, [](Target *target) {
             const Project * const prj = target->project();
             return prj->deploymentKnowledge() == DeploymentKnowledge::Bad
                     && prj->hasMakeInstallEquivalent();
         });
         addInitialStep(DeviceCheckBuildStep::stepId());
-        addInitialStep(RemoteLinux::RemoteLinuxCheckForFreeDiskSpaceStep::stepId());
+        addInitialStep(RemoteLinux::Constants::CheckForFreeDiskSpaceId);
         addInitialStep(QnxUploadStep::stepId());
     }
 };
@@ -132,17 +133,17 @@ public:
     RunWorkerFactory runWorkerFactory{
         RunWorkerFactory::make<SimpleTargetRunner>(),
         {ProjectExplorer::Constants::NORMAL_RUN_MODE},
-        {runConfigFactory.id()}
+        {runConfigFactory.runConfigurationId()}
     };
     RunWorkerFactory debugWorkerFactory{
         RunWorkerFactory::make<QnxDebugSupport>(),
         {ProjectExplorer::Constants::DEBUG_RUN_MODE},
-        {runConfigFactory.id()}
+        {runConfigFactory.runConfigurationId()}
     };
     RunWorkerFactory qmlProfilerWorkerFactory{
         RunWorkerFactory::make<QnxQmlProfilerSupport>(),
         {}, // FIXME: Shouldn't this use the run mode id somehow?
-        {runConfigFactory.id()}
+        {runConfigFactory.runConfigurationId()}
     };
 };
 
@@ -169,14 +170,16 @@ void QnxPlugin::extensionsInitialized()
     connect(&dd->m_attachToQnxApplication, &QAction::triggered,
             this, [] { QnxAttachDebugSupport::showProcessesDialog(); });
 
+    const char QNX_DEBUGGING_GROUP[] = "Debugger.Group.Qnx";
+
     Core::ActionContainer *mstart = Core::ActionManager::actionContainer(ProjectExplorer::Constants::M_DEBUG_STARTDEBUGGING);
-    mstart->appendGroup(Constants::QNX_DEBUGGING_GROUP);
-    mstart->addSeparator(Core::Context(Core::Constants::C_GLOBAL), Constants::QNX_DEBUGGING_GROUP,
+    mstart->appendGroup(QNX_DEBUGGING_GROUP);
+    mstart->addSeparator(Core::Context(Core::Constants::C_GLOBAL), QNX_DEBUGGING_GROUP,
                          &dd->m_debugSeparator);
 
     Core::Command *cmd = Core::ActionManager::registerAction
             (&dd->m_attachToQnxApplication, "Debugger.AttachToQnxApplication");
-    mstart->addAction(cmd, Constants::QNX_DEBUGGING_GROUP);
+    mstart->addAction(cmd, QNX_DEBUGGING_GROUP);
 
     connect(KitManager::instance(), &KitManager::kitsChanged,
             this, [] { dd->updateDebuggerActions(); });

@@ -25,9 +25,9 @@
 
 #pragma once
 
-#include <QDialog>
+#include <utils/id.h>
 
-namespace Core { class Id; }
+#include <QDialog>
 
 namespace ProjectExplorer {
 class IDeviceFactory;
@@ -42,7 +42,7 @@ class DeviceFactorySelectionDialog : public QDialog
 public:
     explicit DeviceFactorySelectionDialog(QWidget *parent = nullptr);
     ~DeviceFactorySelectionDialog() override;
-    Core::Id selectedId() const;
+    Utils::Id selectedId() const;
 
 private:
     void handleItemSelectionChanged();

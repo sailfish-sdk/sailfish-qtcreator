@@ -25,6 +25,8 @@
 
 #include "tarpackagecreationstep.h"
 
+#include "remotelinux_constants.h"
+
 #include <projectexplorer/buildmanager.h>
 #include <projectexplorer/deploymentdata.h>
 #include <projectexplorer/project.h>
@@ -41,6 +43,7 @@
 #include <cstring>
 
 using namespace ProjectExplorer;
+using namespace Utils;
 
 namespace RemoteLinux {
 namespace {
@@ -70,19 +73,17 @@ struct TarFileHeader {
 
 } // Anonymous namespace.
 
-TarPackageCreationStep::TarPackageCreationStep(BuildStepList *bsl, Core::Id id)
+TarPackageCreationStep::TarPackageCreationStep(BuildStepList *bsl, Utils::Id id)
     : AbstractPackagingStep(bsl, id)
 {
-    setDefaultDisplayName(displayName());
-
-    m_ignoreMissingFilesAspect = addAspect<BaseBoolAspect>();
+    m_ignoreMissingFilesAspect = addAspect<BoolAspect>();
     m_ignoreMissingFilesAspect->setLabel(tr("Ignore missing files"),
-                                         BaseBoolAspect::LabelPlacement::AtCheckBox);
+                                         BoolAspect::LabelPlacement::AtCheckBox);
     m_ignoreMissingFilesAspect->setSettingsKey(IgnoreMissingFilesKey);
 
-    m_incrementalDeploymentAspect = addAspect<BaseBoolAspect>();
+    m_incrementalDeploymentAspect = addAspect<BoolAspect>();
     m_incrementalDeploymentAspect->setLabel(tr("Package modified files only"),
-                                            BaseBoolAspect::LabelPlacement::AtCheckBox);
+                                            BoolAspect::LabelPlacement::AtCheckBox);
     m_incrementalDeploymentAspect->setSettingsKey(IncrementalDeploymentKey);
 
     setSummaryUpdater([this] {
@@ -346,7 +347,7 @@ bool TarPackageCreationStep::runImpl()
     if (m_incrementalDeploymentAspect->value()) {
         m_files.clear();
         for (const DeployableFile &file : files)
-            addNeededDeploymentFiles(file, target()->kit());
+            addNeededDeploymentFiles(file, kit());
     } else {
         m_files = files;
     }
@@ -376,13 +377,17 @@ bool TarPackageCreationStep::fromMap(const QVariantMap &map)
 QVariantMap TarPackageCreationStep::toMap() const
 {
     QVariantMap map = AbstractPackagingStep::toMap();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    map.insert(m_deployTimes.exportDeployTimes());
+#else
     map.unite(m_deployTimes.exportDeployTimes());
+#endif
     return map;
 }
 
-Core::Id TarPackageCreationStep::stepId()
+Utils::Id TarPackageCreationStep::stepId()
 {
-    return "MaemoTarPackageCreationStep";
+    return Constants::TarPackageCreationStepId;
 }
 
 QString TarPackageCreationStep::displayName()

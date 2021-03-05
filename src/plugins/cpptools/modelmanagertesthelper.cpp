@@ -41,7 +41,7 @@ TestProject::TestProject(const QString &name, QObject *parent) :
     m_name(name)
 {
     setParent(parent);
-    setId(Core::Id::fromString(name));
+    setId(Utils::Id::fromString(name));
     setDisplayName(name);
     qRegisterMetaType<QSet<QString> >();
 }
@@ -93,8 +93,7 @@ ModelManagerTestHelper::Project *ModelManagerTestHelper::createProject(const QSt
 QSet<QString> ModelManagerTestHelper::updateProjectInfo(const CppTools::ProjectInfo &projectInfo)
 {
     resetRefreshedSourceFiles();
-    QFutureInterface<void> dummy;
-    CppModelManager::instance()->updateProjectInfo(dummy, projectInfo).waitForFinished();
+    CppModelManager::instance()->updateProjectInfo(projectInfo).waitForFinished();
     QCoreApplication::processEvents();
     return waitForRefreshedSourceFiles();
 }

@@ -39,6 +39,7 @@
 #include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/target.h>
+#include <projectexplorer/taskhub.h>
 #include <qtsupport/profilereader.h>
 #include <texteditor/icodestylepreferences.h>
 #include <texteditor/tabsettings.h>
@@ -62,41 +63,6 @@ using namespace QmakeProjectManager;
 using namespace QmakeProjectManager::Internal;
 using namespace QMakeInternal;
 using namespace Utils;
-
-namespace {
-
-class QmakePriFileDocument : public Core::IDocument
-{
-public:
-    QmakePriFileDocument(QmakePriFile *qmakePriFile, const Utils::FilePath &filePath) :
-        IDocument(nullptr), m_priFile(qmakePriFile)
-    {
-        setId("Qmake.PriFile");
-        setMimeType(QLatin1String(QmakeProjectManager::Constants::PROFILE_MIMETYPE));
-        setFilePath(filePath);
-    }
-
-    ReloadBehavior reloadBehavior(ChangeTrigger state, ChangeType type) const override
-    {
-        Q_UNUSED(state)
-        Q_UNUSED(type)
-        return BehaviorSilent;
-    }
-    bool reload(QString *errorString, ReloadFlag flag, ChangeType type) override
-    {
-        Q_UNUSED(errorString)
-        Q_UNUSED(flag)
-        if (type == TypePermissions)
-            return true;
-        m_priFile->scheduleUpdate();
-        return true;
-    }
-
-private:
-    QmakePriFile *m_priFile;
-};
-
-} // namespace
 
 namespace QmakeProjectManager {
 
@@ -268,6 +234,7 @@ QmakePriFile::~QmakePriFile()
 
 void QmakePriFile::scheduleUpdate()
 {
+    QTC_ASSERT(m_buildSystem, return);
     QtSupport::ProFileCacheManager::instance()->discardFile(
                 filePath().toString(), m_buildSystem->qmakeVfs());
     m_qmakeProFile->scheduleUpdate(QmakeProFile::ParseLater);
@@ -722,8 +689,7 @@ bool QmakePriFile::addDependencies(const QStringList &dependencies)
 
 bool QmakePriFile::saveModifiedEditors()
 {
-    Core::IDocument *document
-            = Core::DocumentModel::documentForFilePath(filePath().toString());
+    Core::IDocument *document = Core::DocumentModel::documentForFilePath(filePath());
     if (!document || !document->isModified())
         return true;
 
@@ -783,9 +749,11 @@ bool QmakePriFile::ensureWriteableProFile(const QString &file)
         if (!versionControl || !versionControl->vcsOpen(file)) {
             bool makeWritable = QFile::setPermissions(file, fi.permissions() | QFile::WriteUser);
             if (!makeWritable) {
-                QMessageBox::warning(Core::ICore::mainWindow(),
+                QMessageBox::warning(Core::ICore::dialogParent(),
                                      QCoreApplication::translate("QmakePriFile", "Failed"),
-                                     QCoreApplication::translate("QmakePriFile", "Could not write project file %1.").arg(file));
+                                     QCoreApplication::translate("QmakePriFile",
+                                                                 "Could not write project file %1.")
+                                         .arg(file));
                 return false;
             }
         }
@@ -807,7 +775,7 @@ QPair<ProFile *, QStringList> QmakePriFile::readProFile()
                         &contents,
                         &m_textFormat,
                         &errorMsg) != TextFileFormat::ReadSuccess) {
-                QmakeBuildSystem::proFileParseError(errorMsg);
+                QmakeBuildSystem::proFileParseError(errorMsg, filePath());
                 return qMakePair(includeFile, lines);
             }
             lines = contents.split('\n');
@@ -816,7 +784,10 @@ QPair<ProFile *, QStringList> QmakePriFile::readProFile()
         QMakeVfs vfs;
         QtSupport::ProMessageHandler handler;
         QMakeParser parser(nullptr, &vfs, &handler);
-        includeFile = parser.parsedProBlock(QStringRef(&contents), 0, filePath().toString(), 1);
+        includeFile = parser.parsedProBlock(Utils::make_stringview(contents),
+                                            0,
+                                            filePath().toString(),
+                                            1);
     }
     return qMakePair(includeFile, lines);
 }
@@ -862,13 +833,11 @@ bool QmakePriFile::renameFile(const QString &oldName, const QString &newName, Ch
 
         // Reparse necessary due to changed contents.
         QMakeParser parser(nullptr, nullptr, nullptr);
-        ProFile * const proFile = parser.parsedProBlock(
-                    QStringRef(&currentContents),
-                    0,
-                    filePath().toString(),
-                    1,
-                    QMakeParser::FullGrammar
-                    );
+        ProFile *const proFile = parser.parsedProBlock(Utils::make_stringview(currentContents),
+                                                       0,
+                                                       filePath().toString(),
+                                                       1,
+                                                       QMakeParser::FullGrammar);
         QTC_ASSERT(proFile, return); // The file should still be valid after what we did.
 
         ProWriter::addFiles(proFile, &currentLines, {newName}, loc.first, continuationIndent());
@@ -963,7 +932,7 @@ void QmakePriFile::save(const QStringList &lines)
         FileChangeBlocker changeGuard(filePath().toString());
         QString errorMsg;
         if (!m_textFormat.writeFile(filePath().toString(), lines.join('\n'), &errorMsg)) {
-            QMessageBox::critical(Core::ICore::mainWindow(), QCoreApplication::translate(
+            QMessageBox::critical(Core::ICore::dialogParent(), QCoreApplication::translate(
                                       "QmakePriFile", "File Error"), errorMsg);
         }
     }
@@ -974,14 +943,15 @@ void QmakePriFile::save(const QStringList &lines)
     // We manually tell each editor to reload it's file.
     // (The .pro files are notified by the file system watcher.)
     QStringList errorStrings;
-    Core::IDocument *document = Core::DocumentModel::documentForFilePath(filePath().toString());
+    Core::IDocument *document = Core::DocumentModel::documentForFilePath(filePath());
     if (document) {
         QString errorString;
         if (!document->reload(&errorString, Core::IDocument::FlagReload, Core::IDocument::TypeContents))
             errorStrings << errorString;
     }
     if (!errorStrings.isEmpty())
-        QMessageBox::warning(Core::ICore::mainWindow(), QCoreApplication::translate("QmakePriFile", "File Error"),
+        QMessageBox::warning(Core::ICore::dialogParent(),
+                             QCoreApplication::translate("QmakePriFile", "File Error"),
                              errorStrings.join(QLatin1Char('\n')));
 }
 
@@ -1336,7 +1306,7 @@ QmakeEvalInput QmakeProFile::evalInput() const
     QmakeEvalInput input;
     input.projectDir = directoryPath().toString();
     input.projectFilePath = filePath();
-    input.buildDirectory = buildDir();
+    input.buildDirectory = m_buildSystem->buildDir(m_filePath);
     input.sysroot = FilePath::fromString(m_buildSystem->qmakeSysroot());
     input.readerExact = m_readerExact;
     input.readerCumulative = m_readerCumulative;
@@ -1586,6 +1556,8 @@ QmakeEvalResult *QmakeProFile::evaluate(const QmakeEvalInput &input)
         result->newVarValues[Variable::AndroidArch] = exactReader->values(QLatin1String("ANDROID_TARGET_ARCH"));
         result->newVarValues[Variable::AndroidDeploySettingsFile] = exactReader->values(QLatin1String("ANDROID_DEPLOYMENT_SETTINGS_FILE"));
         result->newVarValues[Variable::AndroidPackageSourceDir] = exactReader->values(QLatin1String("ANDROID_PACKAGE_SOURCE_DIR"));
+        result->newVarValues[Variable::AndroidAbis] = exactReader->values(QLatin1String("ANDROID_ABIS"));
+        result->newVarValues[Variable::AndroidApplicationArguments] = exactReader->values(QLatin1String("ANDROID_APPLICATION_ARGUMENTS"));
         result->newVarValues[Variable::AndroidExtraLibs] = exactReader->values(QLatin1String("ANDROID_EXTRA_LIBS"));
         result->newVarValues[Variable::AppmanPackageDir] = exactReader->values(QLatin1String("AM_PACKAGE_DIR"));
         result->newVarValues[Variable::AppmanManifest] = exactReader->values(QLatin1String("AM_MANIFEST"));
@@ -1684,7 +1656,7 @@ void QmakeProFile::applyEvaluate(QmakeEvalResult *evalResult)
     }
 
     foreach (const QString &error, evalResult->errors)
-        QmakeBuildSystem::proFileParseError(error);
+        QmakeBuildSystem::proFileParseError(error, filePath());
 
     // we are changing what is executed in that case
     if (result->state == QmakeEvalResult::EvalFail || m_buildSystem->wasEvaluateCanceled()) {
@@ -1695,8 +1667,10 @@ void QmakeProFile::applyEvaluate(QmakeEvalResult *evalResult)
 
         if (result->state == QmakeEvalResult::EvalFail) {
             QmakeBuildSystem::proFileParseError(
-                        QCoreApplication::translate("QmakeProFile", "Error while parsing file %1. Giving up.")
-                                            .arg(filePath().toUserOutput()));
+                QCoreApplication::translate("QmakeProFile",
+                                            "Error while parsing file %1. Giving up.")
+                    .arg(filePath().toUserOutput()),
+                filePath());
             if (m_projectType == ProjectType::Invalid)
                 return;
 
@@ -1726,13 +1700,13 @@ void QmakeProFile::applyEvaluate(QmakeEvalResult *evalResult)
     //
     // Add/Remove pri files, sub projects
     //
-    FilePath buildDirectory = buildDir();
+    FilePath buildDirectory = m_buildSystem->buildDir(m_filePath);
     makeEmpty();
     for (QmakePriFile * const toAdd : qAsConst(result->directChildren))
         addChild(toAdd);
     result->directChildren.clear();
 
-    for (const auto priFiles : qAsConst(result->priFiles)) {
+    for (const auto &priFiles : qAsConst(result->priFiles)) {
         priFiles.first->finishInitialization(m_buildSystem, this);
         priFiles.first->update(priFiles.second);
     }
@@ -1779,7 +1753,7 @@ void QmakeProFile::applyEvaluate(QmakeEvalResult *evalResult)
             [this](const QString &path) {
                 return !m_wildcardWatcher->watchesDirectory(path);
             });
-        for (QString path : directoriesToAdd)
+        for (const QString &path : directoriesToAdd)
             m_wildcardDirectoryContents.insert(path, QDir(path).entryList());
         m_wildcardWatcher->addDirectories(directoriesToAdd,
                                           Utils::FileSystemWatcher::WatchModifiedDate);
@@ -1796,7 +1770,7 @@ void QmakeProFile::applyEvaluate(QmakeEvalResult *evalResult)
                         return !result->directoriesWithWildcards.contains(path);
                     });
             m_wildcardWatcher->removeDirectories(directoriesToRemove);
-            for (QString path : directoriesToRemove)
+            for (const QString &path : directoriesToRemove)
                 m_wildcardDirectoryContents.remove(path);
         }
     }
@@ -1868,15 +1842,24 @@ QStringList QmakeProFile::includePaths(QtSupport::ProFileReader *reader, const F
     }
 
     bool tryUnfixified = false;
+
+    // These paths should not be checked for existence, to ensure consistent include path lists
+    // before and after building.
+    const QString mocDir = mocDirPath(reader, buildDir);
+    const QString uiDir = uiDirPath(reader, buildDir);
+
     foreach (const ProFileEvaluator::SourceFile &el,
              reader->fixifiedValues(QLatin1String("INCLUDEPATH"), projectDir, buildDir.toString(),
                                     false)) {
         const QString sysrootifiedPath = sysrootify(el.fileName, sysroot.toString(), projectDir,
                                                     buildDir.toString());
-        if (IoUtils::isAbsolutePath(sysrootifiedPath) && IoUtils::exists(sysrootifiedPath))
+        if (IoUtils::isAbsolutePath(sysrootifiedPath)
+                && (IoUtils::exists(sysrootifiedPath) || sysrootifiedPath == mocDir
+                    || sysrootifiedPath == uiDir)) {
             paths << sysrootifiedPath;
-        else
+        } else {
             tryUnfixified = true;
+        }
     }
 
     // If sysrootifying a fixified path does not yield a valid path, try again with the
@@ -1891,10 +1874,6 @@ QStringList QmakeProFile::includePaths(QtSupport::ProFileReader *reader, const F
         }
     }
 
-    // paths already contains moc dir and ui dir, due to corrrectly parsing uic.prf and moc.prf
-    // except if those directories don't exist at the time of parsing
-    // thus we add those directories manually (without checking for existence)
-    paths << mocDirPath(reader, buildDir) << uiDirPath(reader, buildDir);
     paths.removeDuplicates();
     return paths;
 }
@@ -2025,7 +2004,7 @@ InstallsList QmakeProFile::installsList(const QtSupport::ProFileReader *reader, 
         const QStringList &itemPaths = reader->values(pathVar);
         if (itemPaths.count() != 1) {
             qDebug("Invalid RHS: Variable '%s' has %d values.",
-                qPrintable(pathVar), itemPaths.count());
+                qPrintable(pathVar), int(itemPaths.count()));
             if (itemPaths.isEmpty()) {
                 qDebug("%s: Ignoring INSTALLS item '%s', because it has no path.",
                     qPrintable(projectFilePath), qPrintable(item));
@@ -2067,20 +2046,6 @@ InstallsList QmakeProFile::installsList() const
 FilePath QmakeProFile::sourceDir() const
 {
     return directoryPath();
-}
-
-FilePath QmakeProFile::buildDir(BuildConfiguration *bc) const
-{
-    if (!bc)
-        bc = m_buildSystem->target()->activeBuildConfiguration();
-
-    const QDir srcDirRoot = QDir(m_buildSystem->projectDirectory().toString());
-    const QString relativeDir = srcDirRoot.relativeFilePath(directoryPath().toString());
-    const QString buildConfigBuildDir = bc ? bc->buildDirectory().toString() : QString();
-    const QString buildDir = buildConfigBuildDir.isEmpty()
-                                 ? m_buildSystem->projectDirectory().toString()
-                                 : buildConfigBuildDir;
-    return FilePath::fromString(QDir::cleanPath(QDir(buildDir).absoluteFilePath(relativeDir)));
 }
 
 FilePaths QmakeProFile::generatedFiles(const FilePath &buildDir,

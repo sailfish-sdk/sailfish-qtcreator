@@ -73,7 +73,7 @@ const QbsProductNode *parentQbsProductNode(const ProjectExplorer::Node *node)
 
 QbsGroupNode::QbsGroupNode(const QJsonObject &grp) : ProjectNode(FilePath()), m_groupData(grp)
 {
-    static QIcon groupIcon = QIcon(QString(Constants::QBS_GROUP_ICON));
+    static QIcon groupIcon = QIcon(QString(ProjectExplorer::Constants::FILEOVERLAY_GROUP));
     setIcon(groupIcon);
     setDisplayName(grp.value("name").toString());
     setEnabled(grp.value("is-enabled").toBool());
@@ -88,7 +88,7 @@ FolderNode::AddNewInformation QbsGroupNode::addNewInformation(const QStringList 
     return info;
 }
 
-QVariant QbsGroupNode::data(Core::Id role) const
+QVariant QbsGroupNode::data(Id role) const
 {
     if (role == ProjectExplorer::Constants::QT_KEYWORDS_ENABLED) {
         QJsonObject modProps = m_groupData.value("module-properties").toObject();
@@ -109,7 +109,7 @@ QVariant QbsGroupNode::data(Core::Id role) const
 QbsProductNode::QbsProductNode(const QJsonObject &prd) : ProjectNode(FilePath()), m_productData(prd)
 {
     static QIcon productIcon = Core::FileIconProvider::directoryIcon(
-                Constants::QBS_PRODUCT_OVERLAY_ICON);
+                ProjectExplorer::Constants::FILEOVERLAY_PRODUCT);
     setIcon(productIcon);
     if (prd.value("is-runnable").toBool()) {
         setProductType(ProductType::App);
@@ -151,7 +151,34 @@ QString QbsProductNode::getBuildKey(const QJsonObject &product)
             + product.value("multiplex-configuration-id").toString();
 }
 
-QVariant QbsProductNode::data(Core::Id role) const
+bool QbsProductNode::isAggregated() const
+{
+    return m_productData.value("is-multiplexed").toBool()
+            && m_productData.value("multiplex-configuration-id").toString().isEmpty();
+}
+
+const QList<const QbsProductNode*> QbsProductNode::aggregatedProducts() const
+{
+    if (!isAggregated())
+        return {};
+    const ProjectNode *parentNode = managingProject();
+    QTC_ASSERT(parentNode != nullptr && parentNode != this, return {});
+
+    QSet<QString> dependencies;
+    for (const auto &a : m_productData.value("dependencies").toArray())
+        dependencies << a.toString();
+
+    QList<const QbsProductNode*> qbsProducts;
+    parentNode->forEachProjectNode([&qbsProducts, dependencies](const ProjectNode *node) {
+        if (const auto qbsChildNode = dynamic_cast<const QbsProductNode *>(node)) {
+            if (dependencies.contains(qbsChildNode->fullDisplayName()))
+                qbsProducts << qbsChildNode;
+        }
+    });
+    return qbsProducts;
+}
+
+QVariant QbsProductNode::data(Id role) const
 {
     if (role == Android::Constants::AndroidDeploySettingsFile) {
         for (const auto &a : m_productData.value("generated-artifacts").toArray()) {
@@ -164,10 +191,16 @@ QVariant QbsProductNode::data(Core::Id role) const
 
     if (role == Android::Constants::AndroidSoLibPath) {
         QStringList ret{m_productData.value("build-directory").toString()};
-        forAllArtifacts(m_productData, ArtifactType::Generated, [&ret](const QJsonObject &artifact) {
-            if (artifact.value("file-tags").toArray().contains("dynamiclibrary"))
-                ret << QFileInfo(artifact.value("file-path").toString()).path();
-        });
+        if (!isAggregated()) {
+            forAllArtifacts(m_productData, ArtifactType::Generated,
+                            [&ret](const QJsonObject &artifact) {
+                if (artifact.value("file-tags").toArray().contains("dynamiclibrary"))
+                    ret << QFileInfo(artifact.value("file-path").toString()).path();
+            });
+        } else {
+            for (const auto &a : aggregatedProducts())
+                ret += a->data(Android::Constants::AndroidSoLibPath).toStringList();
+        }
         ret.removeDuplicates();
         return ret;
     }
@@ -188,6 +221,28 @@ QVariant QbsProductNode::data(Core::Id role) const
         return m_productData.value("module-properties").toObject()
                 .value("Qt.core.enableKeywords").toBool();
 
+    if (role == Android::Constants::ANDROID_ABIS) {
+        // Try using qbs.architectures
+        QStringList qbsAbis;
+        QMap<QString, QString> archToAbi {
+            {"armv7a", ProjectExplorer::Constants::ANDROID_ABI_ARMEABI_V7A},
+            {"arm64", ProjectExplorer::Constants::ANDROID_ABI_ARM64_V8A},
+            {"x86", ProjectExplorer::Constants::ANDROID_ABI_X86},
+            {"x86_64", ProjectExplorer::Constants::ANDROID_ABI_X86_64}};
+        for (const auto &a : m_productData.value("module-properties").toObject()
+             .value(Constants::QBS_ARCHITECTURES).toArray()) {
+            if (archToAbi.contains(a.toString()))
+                qbsAbis << archToAbi[a.toString()];
+        }
+        if (!qbsAbis.empty())
+            return qbsAbis;
+        // Try using qbs.architecture
+        QString architecture = m_productData.value("module-properties").toObject()
+                .value(Constants::QBS_ARCHITECTURE).toString();
+        if (archToAbi.contains(architecture))
+            qbsAbis << archToAbi[architecture];
+        return qbsAbis;
+    }
     return {};
 }
 

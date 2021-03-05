@@ -32,6 +32,8 @@ class ClangDiagnosticConfig;
 namespace Tests { class TemporaryCopiedDir; }
 } // namespace CppTools
 
+namespace ProjectExplorer { class Kit; }
+
 namespace ClangTools {
 namespace Internal {
 
@@ -54,7 +56,11 @@ private:
                     const CppTools::ClangDiagnosticConfig &diagnosticConfig);
 
 private:
+    static int getTimeout();
+
     CppTools::Tests::TemporaryCopiedDir *m_tmpDir = nullptr;
+    ProjectExplorer::Kit *m_kit = nullptr;
+    int m_timeout = getTimeout();
 };
 
 } // namespace Internal

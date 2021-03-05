@@ -28,49 +28,39 @@
 #include "projectexplorer_export.h"
 #include "buildstep.h"
 
-#include <QString>
+#include <utils/outputformatter.h>
+
+#include <functional>
 
 namespace ProjectExplorer {
 class Task;
 
-// Documentation inside.
-class PROJECTEXPLORER_EXPORT IOutputParser : public QObject
+class PROJECTEXPLORER_EXPORT OutputTaskParser : public Utils::OutputLineParser
 {
     Q_OBJECT
 public:
-    IOutputParser() = default;
-    ~IOutputParser() override;
+    OutputTaskParser();
+    ~OutputTaskParser() override;
 
-    virtual void appendOutputParser(IOutputParser *parser);
+    class TaskInfo
+    {
+    public:
+        TaskInfo(const Task &t, int l, int s) : task(t), linkedLines(l), skippedLines(s) {}
+        Task task;
+        int linkedLines = 0;
+        int skippedLines = 0;
+    };
+    const QList<TaskInfo> taskInfo() const;
 
-    IOutputParser *takeOutputParserChain();
-
-    IOutputParser *childParser() const;
-    void setChildParser(IOutputParser *parser);
-
-    virtual void stdOutput(const QString &line);
-    virtual void stdError(const QString &line);
-
-    virtual bool hasFatalErrors() const;
-    virtual void setWorkingDirectory(const QString &workingDirectory);
-    void setWorkingDirectory(const Utils::FilePath &fn);
-
-    void flush(); // flush out pending tasks
-
-    static QString rightTrimmed(const QString &in);
-
-signals:
-    void addOutput(const QString &string, ProjectExplorer::BuildStep::OutputFormat format);
-    void addTask(const ProjectExplorer::Task &task, int linkedOutputLines = 0, int skipLines = 0);
-
-public slots:
-    virtual void outputAdded(const QString &string, ProjectExplorer::BuildStep::OutputFormat format);
-    virtual void taskAdded(const ProjectExplorer::Task &task, int linkedOutputLines = 0, int skipLines = 0);
+protected:
+    void scheduleTask(const Task &task, int outputLines, int skippedLines = 0);
+    void setDetailsFormat(Task &task, const LinkSpecs &linkSpecs = {});
 
 private:
-    virtual void doFlush();
+    void runPostPrintActions() override;
 
-    IOutputParser *m_parser = nullptr;
+    class Private;
+    Private * const d;
 };
 
 } // namespace ProjectExplorer

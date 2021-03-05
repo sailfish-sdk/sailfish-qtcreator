@@ -26,7 +26,6 @@
 #include "qtwizard.h"
 
 #include <qmakeprojectmanager/qmakeproject.h>
-#include <qmakeprojectmanager/qmakeprojectmanager.h>
 #include <qmakeprojectmanager/qmakeprojectmanagerconstants.h>
 
 #include <coreplugin/icore.h>
@@ -148,7 +147,7 @@ BaseQmakeProjectWizardDialog::BaseQmakeProjectWizardDialog(
     m_profileIds = Utils::transform(parameters.extraValues()
                                         .value(ProjectExplorer::Constants::PROJECT_KIT_IDS)
                                         .toStringList(),
-                                    &Core::Id::fromString);
+                                    &Utils::Id::fromString);
 
     connect(this, &BaseProjectWizardDialog::projectParametersChanged,
             this, &BaseQmakeProjectWizardDialog::generateProfileName);
@@ -165,7 +164,7 @@ BaseQmakeProjectWizardDialog::BaseQmakeProjectWizardDialog(
     m_profileIds = Utils::transform(parameters.extraValues()
                                         .value(ProjectExplorer::Constants::PROJECT_KIT_IDS)
                                         .toStringList(),
-                                    &Core::Id::fromString);
+                                    &Utils::Id::fromString);
     connect(this, &BaseProjectWizardDialog::projectParametersChanged,
             this, &BaseQmakeProjectWizardDialog::generateProfileName);
 }
@@ -185,12 +184,12 @@ int BaseQmakeProjectWizardDialog::addTargetSetupPage(int id)
             return {
                 ProjectExplorer::CompileTask(Task::Error, tr("Required Qt features not present."))};
 
-        const Core::Id platform = selectedPlatform();
+        const Utils::Id platform = selectedPlatform();
         if (platform.isValid() && !QtKitAspect::platformPredicate(platform)(k))
             return {ProjectExplorer::CompileTask(
                 ProjectExplorer::Task::Warning,
                 tr("Qt version does not target the expected platform."))};
-        QSet<Core::Id> features = {QtSupport::Constants::FEATURE_DESKTOP};
+        QSet<Utils::Id> features = {QtSupport::Constants::FEATURE_DESKTOP};
         if (!QtKitAspect::qtVersionPredicate(features)(k))
             return {ProjectExplorer::CompileTask(ProjectExplorer::Task::Unknown,
                                                  tr("Qt version does not provide all features."))};
@@ -219,7 +218,7 @@ bool BaseQmakeProjectWizardDialog::writeUserFile(const QString &proFileName) con
     return success;
 }
 
-QList<Core::Id> BaseQmakeProjectWizardDialog::selectedKits() const
+QList<Utils::Id> BaseQmakeProjectWizardDialog::selectedKits() const
 {
     if (!m_targetSetupPage)
         return m_profileIds;

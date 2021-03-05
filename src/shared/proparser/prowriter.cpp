@@ -181,7 +181,7 @@ QString ProWriter::compileScope(const QString &scope)
     if (scope.isEmpty())
         return QString();
     QMakeParser parser(nullptr, nullptr, nullptr);
-    ProFile *includeFile = parser.parsedProBlock(QStringRef(&scope), 0, "no-file", 1);
+    ProFile *includeFile = parser.parsedProBlock(Utils::make_stringview(scope), 0, "no-file", 1);
     if (!includeFile)
         return QString();
     const QString result = includeFile->items();
@@ -347,7 +347,8 @@ void ProWriter::putVarValues(ProFile *profile, QStringList *lines, const QString
                 QString newLine = effectiveContIndent(contInfo) + v;
                 if (curLineNo == endLineNo) {
                     QString &oldLastLine = (*lines)[endLineNo - 1];
-                    oldLastLine.insert(lineInfo(oldLastLine).continuationPos, " \\");
+                    if (!oldLastLine.endsWith('\\'))
+                        oldLastLine.insert(lineInfo(oldLastLine).continuationPos, " \\");
                 } else {
                     newLine += " \\";
                 }

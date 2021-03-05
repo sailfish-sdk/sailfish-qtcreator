@@ -48,7 +48,7 @@ class AutotoolsBuildConfiguration : public BuildConfiguration
     Q_DECLARE_TR_FUNCTIONS(AutotoolsProjectManager::Internal::AutotoolsBuildConfiguration)
 
 public:
-    AutotoolsBuildConfiguration(Target *target, Core::Id id)
+    AutotoolsBuildConfiguration(Target *target, Utils::Id id)
         : BuildConfiguration(target, id)
     {
         // /<foobar> is used so the un-changed check in setBuildDirectory() works correctly.
@@ -68,7 +68,7 @@ public:
         appendInitialBuildStep(Constants::MAKE_STEP_ID); // make
 
         // ### Build Steps Clean ###
-        appendInitialBuildStep(Constants::MAKE_STEP_ID);
+        appendInitialCleanStep(Constants::MAKE_STEP_ID); // make clean
     }
 };
 

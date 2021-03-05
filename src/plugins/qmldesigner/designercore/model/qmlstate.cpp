@@ -32,6 +32,7 @@
 #include "bindingproperty.h"
 #include "qmlchangeset.h"
 #include "qmlitemnode.h"
+#include "annotation.h"
 
 #include <utils/qtcassert.h>
 
@@ -283,10 +284,7 @@ ModelNode QmlModelState::createQmlState(AbstractView *view, const PropertyListTy
 {
     QTC_CHECK(view->majorQtQuickVersion() < 3);
 
-    if (view->majorQtQuickVersion() > 1)
-        return view->createModelNode("QtQuick.State", 2, 0, propertyList);
-    else
-        return view->createModelNode("QtQuick.State", 1, 0, propertyList);
+    return view->createModelNode("QtQuick.State", 2, 0, propertyList);
 }
 
 void QmlModelState::setAsDefault()
@@ -305,6 +303,43 @@ bool QmlModelState::isDefault() const
     }
 
     return false;
+}
+
+void QmlModelState::setAnnotation(const Annotation &annotation, const QString &id)
+{
+    if (modelNode().isValid()) {
+        modelNode().setCustomId(id);
+        modelNode().setAnnotation(annotation);
+    }
+}
+
+Annotation QmlModelState::annotation() const
+{
+    if (modelNode().isValid())
+        return modelNode().annotation();
+    return {};
+}
+
+QString QmlModelState::annotationName() const
+{
+    if (modelNode().isValid())
+        return modelNode().customId();
+    return {};
+}
+
+bool QmlModelState::hasAnnotation() const
+{
+    if (modelNode().isValid())
+        return modelNode().hasAnnotation() || modelNode().hasCustomId();
+    return false;
+}
+
+void QmlModelState::removeAnnotation()
+{
+    if (modelNode().isValid()) {
+        modelNode().removeCustomId();
+        modelNode().removeAnnotation();
+    }
 }
 
 QmlModelState QmlModelState::createBaseState(const AbstractView *view)

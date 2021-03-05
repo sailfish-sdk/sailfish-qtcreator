@@ -30,6 +30,7 @@
 #include "bindingmodel.h"
 #include "dynamicpropertiesmodel.h"
 #include "connectionview.h"
+#include "nodemetainfo.h"
 
 #include <bindingproperty.h>
 
@@ -46,7 +47,7 @@ namespace  Internal {
 QStringList prependOnForSignalHandler(const QStringList &signalNames)
 {
     QStringList signalHandlerNames;
-    foreach (const QString &signalName, signalNames) {
+    for (const QString &signalName : signalNames) {
         QString signalHandlerName = signalName;
         if (!signalHandlerName.isEmpty()) {
             QChar firstChar = signalHandlerName.at(0).toUpper();
@@ -152,11 +153,21 @@ QWidget *BindingDelegate::createEditor(QWidget *parent, const QStyleOptionViewIt
             bindingComboBox->addItems(model->possibleTargetProperties(bindingProperty));
         } break;
         case BindingModel::SourceModelNodeRow: {
-            foreach (const ModelNode &modelNode, model->connectionView()->allModelNodes()) {
+            //common items
+            for (const ModelNode &modelNode : model->connectionView()->allModelNodes()) {
                 if (!modelNode.id().isEmpty()) {
                     bindingComboBox->addItem(modelNode.id());
                 }
             }
+            //singletons:
+            if (RewriterView* rv = model->connectionView()->rewriterView()) {
+                for (const QmlTypeData &data : rv->getQMLTypes()) {
+                    if (!data.typeName.isEmpty()) {
+                        bindingComboBox->addItem(data.typeName);
+                    }
+                }
+            }
+            //parent:
             if (!bindingProperty.parentModelNode().isRootNode())
                 bindingComboBox->addItem(QLatin1String("parent"));
         } break;
@@ -284,9 +295,67 @@ QWidget *ConnectionDelegate::createEditor(QWidget *parent, const QStyleOptionVie
 
     switch (index.column()) {
     case ConnectionModel::TargetModelNodeRow: {
-        foreach (const ModelNode &modelNode, connectionModel->connectionView()->allModelNodes()) {
+
+        auto addMetaInfoProperties = [&](const NodeMetaInfo& itemMetaInfo, QString itemName){
+            if (itemMetaInfo.isValid()) {
+                for (const PropertyName &propertyName : itemMetaInfo.propertyNames()) {
+                    TypeName propertyType = itemMetaInfo.propertyTypeName(propertyName);
+                    if (!propertyType.isEmpty()) {
+                        //first letter is a reliable item indicator
+                        QChar firstLetter = QString::fromUtf8(propertyType).at(0);
+                        if (firstLetter.isLetter() && firstLetter.isUpper()) {
+                            if (!itemMetaInfo.propertyIsEnumType(propertyName)
+                                    && !itemMetaInfo.propertyIsPrivate(propertyName)
+                                    && !itemMetaInfo.propertyIsListProperty(propertyName)
+                                    && !itemMetaInfo.propertyIsPointer(propertyName)) {
+                                NodeMetaInfo propertyMetaInfo =
+                                        connectionModel->connectionView()->model()->metaInfo(propertyType);
+                                if (propertyMetaInfo.isValid()) {
+                                    if (propertyMetaInfo.isQmlItem()) {
+                                        connectionComboBox->addItem(itemName
+                                                                    + "."
+                                                                    + propertyName);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        for (const ModelNode &modelNode : connectionModel->connectionView()->allModelNodes()) {
             if (!modelNode.id().isEmpty()) {
                 connectionComboBox->addItem(modelNode.id());
+
+                for (const BindingProperty &property : modelNode.bindingProperties()) {
+                    if (property.isValid()) {
+                        if (property.isAlias()) {
+                            connectionComboBox->addItem(modelNode.id()
+                                                        + "."
+                                                        + QString::fromUtf8(property.name()));
+                        }
+                    }
+                }
+
+                //Components
+                if (modelNode.isComponent()) {
+                    NodeMetaInfo componentMetaInfo = modelNode.metaInfo();
+                    addMetaInfoProperties(componentMetaInfo, modelNode.id());
+                }
+            }
+        }
+        //singletons:
+        if (RewriterView* rv = connectionModel->connectionView()->rewriterView()) {
+            for (const QmlTypeData &data : rv->getQMLTypes()) {
+                if (!data.typeName.isEmpty()) {
+                    //singleton itself
+                    connectionComboBox->addItem(data.typeName);
+
+                    //its properties, mostly looking for aliases:
+                    NodeMetaInfo metaInfo = connectionModel->connectionView()->model()->metaInfo(data.typeName.toUtf8());
+                    addMetaInfoProperties(metaInfo, data.typeName);
+                }
             }
         }
     } break;
@@ -298,18 +367,20 @@ QWidget *ConnectionDelegate::createEditor(QWidget *parent, const QStyleOptionVie
         if (QmlItemNode::isValidQmlItemNode(rootModelNode) && !rootModelNode.id().isEmpty()) {
 
             QString itemText = tr("Change to default state");
-            QString source = QString::fromLatin1("{ %1.state = \"\" }").arg(rootModelNode.id());
+            QString source = QString::fromLatin1("%1.state = \"\"").arg(rootModelNode.id());
             connectionComboBox->addItem(itemText, source);
             connectionComboBox->disableValidator();
 
-            foreach (const QmlModelState &state, QmlItemNode(rootModelNode).states().allStates()) {
+            for (const QmlModelState &state : QmlItemNode(rootModelNode).states().allStates()) {
                 QString itemText = tr("Change state to %1").arg(state.name());
-                QString source = QString::fromLatin1("{ %1.state = \"%2\" }").arg(rootModelNode.id()).arg(state.name());
+                QString source = QString::fromLatin1("%1.state = \"%2\"")
+                                     .arg(rootModelNode.id())
+                                     .arg(state.name());
                 connectionComboBox->addItem(itemText, source);
             }
 
             QStringList trigger = connectionModel->getflowActionTriggerForRow(index.row());
-            for (const QString action : trigger) {
+            for (const QString &action : trigger) {
                 connectionComboBox->addItem(tr("Activate FlowAction %1").arg(nameForAction(action)), action);
             }
         }

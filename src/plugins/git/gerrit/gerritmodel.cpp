@@ -67,7 +67,8 @@ QDebug operator<<(QDebug d, const GerritApproval &a)
 // Sort approvals by type and reviewer
 bool gerritApprovalLessThan(const GerritApproval &a1, const GerritApproval &a2)
 {
-    return a1.type.compare(a2.type) < 0 || a1.reviewer.fullName.compare(a2.reviewer.fullName) < 0;
+    const int compare = a1.type.compare(a2.type);
+    return compare == 0 ? a1.reviewer.fullName.compare(a2.reviewer.fullName) < 0 : compare < 0;
 }
 
 QDebug operator<<(QDebug d, const GerritPatchSet &p)
@@ -466,7 +467,7 @@ QString GerritModel::toHtml(const QModelIndex& index) const
         << dependencyHtml(dependsOnHeader, c->dependsOnNumber, serverPrefix)
         << dependencyHtml(neededByHeader, c->neededByNumber, serverPrefix)
         << "<tr><td>" << statusHeader << "</td><td>" << c->status
-        << ", " << c->lastUpdated.toString(Qt::DefaultLocaleShortDate) << "</td></tr>"
+        << ", " << QLocale::system().toString(c->lastUpdated, QLocale::ShortFormat) << "</td></tr>"
         << "<tr><td>" << patchSetHeader << "</td><td>" << "</td></tr>" << c->currentPatchSet.patchSetNumber << "</td></tr>"
         << c->currentPatchSet.approvalsToHtml()
         << "<tr><td>" << urlHeader << "</td><td><a href=\"" << c->url << "\">" << c->url << "</a></td></tr>"
@@ -859,8 +860,8 @@ QList<QStandardItem *> GerritModel::changeToRow(const GerritChangePtr &c) const
     row[OwnerColumn]->setText(c->owner.fullName);
     // Shorten columns: Display time if it is today, else date
     const QString dateString = c->lastUpdated.date() == QDate::currentDate() ?
-                c->lastUpdated.time().toString(Qt::SystemLocaleShortDate) :
-                c->lastUpdated.date().toString(Qt::SystemLocaleShortDate);
+                QLocale::system().toString(c->lastUpdated.time(), QLocale::ShortFormat) :
+                QLocale::system().toString(c->lastUpdated.date(), QLocale::ShortFormat);
     row[DateColumn]->setData(dateString, Qt::DisplayRole);
     row[DateColumn]->setData(c->lastUpdated, SortRole);
 

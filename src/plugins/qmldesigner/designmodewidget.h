@@ -36,6 +36,7 @@
 #include <QScopedPointer>
 
 #include <advanceddockingsystem/dockmanager.h>
+#include <annotationeditor/globalannotationeditor.h>
 
 namespace Core {
     class SideBar;
@@ -49,7 +50,6 @@ namespace QmlDesigner {
 class ItemLibraryWidget;
 class CrumbleBar;
 class DocumentWarningWidget;
-class SwitchSplitTabWidget;
 
 namespace Internal {
 
@@ -102,8 +102,6 @@ private: // functions
     void aboutToShowWorkspaces();
 
 private: // variables
-    SwitchSplitTabWidget* m_centralTabWidget = nullptr;
-
     QPointer<QWidget> m_bottomSideBar;
     Core::EditorToolBar *m_toolBar;
     CrumbleBar *m_crumbleBar;
@@ -120,6 +118,7 @@ private: // variables
 
     ADS::DockManager *m_dockManager = nullptr;
     ADS::DockWidget *m_outputPaneDockWidget = nullptr;
+    GlobalAnnotationEditor m_globalAnnotationEditor;
 };
 
 } // namespace Internal

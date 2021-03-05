@@ -1,15 +1,20 @@
 add_qtc_library(Utils
-  DEPENDS Qt5::Xml
-  PUBLIC_DEPENDS Qt5::Concurrent Qt5::Core Qt5::Network Qt5::Qml Qt5::Gui Qt5::Widgets
+  DEPENDS Qt5::Qml Qt5::Xml
+  PUBLIC_DEPENDS
+    Qt5::Concurrent Qt5::Core Qt5::Network Qt5::Gui Qt5::Widgets
+    Qt6Core5Compat
   DEFINES
     "QTC_REL_TOOLS_PATH=\"${RELATIVE_LIBEXEC_PATH}\""
   SOURCES
     ../3rdparty/optional/optional.hpp
     ../3rdparty/variant/variant.hpp
+    ../3rdparty/span/span.hpp
     QtConcurrentTools
     algorithm.h
     ansiescapecodehandler.cpp ansiescapecodehandler.h
     appmainwindow.cpp appmainwindow.h
+    archive.cpp archive.h
+    aspects.cpp aspects.h
     basetreeview.cpp basetreeview.h
     benchmarker.cpp benchmarker.h
     buildablehelperlibrary.cpp buildablehelperlibrary.h
@@ -24,8 +29,8 @@ add_qtc_library(Utils
     consoleprocess.cpp consoleprocess.h
     cpplanguage_details.h
     crumblepath.cpp crumblepath.h
-    delegates.cpp delegates.h
     declarationmacros.h
+    delegates.cpp delegates.h
     detailsbutton.cpp detailsbutton.h
     detailswidget.cpp detailswidget.h
     differ.cpp differ.h
@@ -34,14 +39,9 @@ add_qtc_library(Utils
     elfreader.cpp elfreader.h
     elidinglabel.cpp elidinglabel.h
     environment.cpp environment.h
-    environmentfwd.h
     environmentdialog.cpp environmentdialog.h
+    environmentfwd.h
     environmentmodel.cpp environmentmodel.h
-    namevaluedictionary.cpp namevaluedictionary.h
-    namevalueitem.cpp namevalueitem.h
-    namevaluemodel.cpp namevaluemodel.h
-    namevaluesdialog.cpp namevaluesdialog.h
-    namevaluevalidator.cpp namevaluevalidator.h
     execmenu.cpp execmenu.h
     executeondestruction.h
     fadingindicator.cpp fadingindicator.h
@@ -68,10 +68,13 @@ add_qtc_library(Utils
     hostosinfo.cpp hostosinfo.h
     htmldocextractor.cpp htmldocextractor.h
     icon.cpp icon.h
+    id.cpp id.h
+    infobar.cpp infobar.h
     infolabel.cpp infolabel.h
     itemviews.cpp itemviews.h
     json.cpp json.h
     jsontreeitem.cpp jsontreeitem.h
+    layoutbuilder.cpp layoutbuilder.h
     linecolumn.h
     link.h
     listmodel.h
@@ -86,9 +89,14 @@ add_qtc_library(Utils
     mimetypes/mimetype.cpp mimetypes/mimetype.h mimetypes/mimetype_p.h
     mimetypes/mimetypeparser.cpp mimetypes/mimetypeparser_p.h
     namevaluedictionary.cpp namevaluedictionary.h
+    namevaluedictionary.cpp namevaluedictionary.h
+    namevalueitem.cpp namevalueitem.h
     namevalueitem.cpp namevalueitem.h
     namevaluemodel.cpp namevaluemodel.h
+    namevaluemodel.cpp namevaluemodel.h
     namevaluesdialog.cpp namevaluesdialog.h
+    namevaluesdialog.cpp namevaluesdialog.h
+    namevaluevalidator.cpp namevaluevalidator.h
     namevaluevalidator.cpp namevaluevalidator.h
     navigationtreeview.cpp navigationtreeview.h
     networkaccessmanager.cpp networkaccessmanager.h
@@ -96,6 +104,7 @@ add_qtc_library(Utils
     osspecificaspects.h
     outputformat.h
     outputformatter.cpp outputformatter.h
+    overlaywidget.cpp overlaywidget.h
     overridecursor.cpp overridecursor.h
     parameteraction.cpp parameteraction.h
     pathchooser.cpp pathchooser.h
@@ -103,6 +112,7 @@ add_qtc_library(Utils
     persistentsettings.cpp persistentsettings.h
     pointeralgorithm.h
     port.cpp port.h
+    porting.h
     portlist.cpp portlist.h
     predicates.h
     processhandle.cpp processhandle.h
@@ -120,6 +130,7 @@ add_qtc_library(Utils
     savedaction.cpp savedaction.h
     savefile.cpp savefile.h
     scopedswap.h
+    set_algorithm.h
     settingsaccessor.cpp settingsaccessor.h
     settingsselector.cpp settingsselector.h
     settingsutils.h
@@ -135,6 +146,7 @@ add_qtc_library(Utils
     smallstringmemory.h
     smallstringvector.h
     smallstringview.h
+    span.h
     statuslabel.cpp statuslabel.h
     stringutils.cpp stringutils.h
     styledbar.cpp styledbar.h
@@ -160,15 +172,15 @@ add_qtc_library(Utils
     utils.qrc
     utils_global.h
     utilsicons.cpp utilsicons.h
+    variablechooser.cpp variablechooser.h
     variant.h
     winutils.cpp winutils.h
     wizard.cpp wizard.h
     wizardpage.cpp wizardpage.h
 )
 
-extend_qtc_target(Utils CONDITION WIN32
+extend_qtc_library(Utils CONDITION WIN32
   SOURCES
-    process_ctrlc_stub.cpp
     touchbar/touchbar.cpp
   DEPENDS
     user32 iphlpapi ws2_32 shell32
@@ -178,7 +190,7 @@ extend_qtc_target(Utils CONDITION WIN32
     _CRT_SECURE_NO_WARNINGS _SCL_SECURE_NO_WARNINGS
 )
 
-extend_qtc_target(Utils CONDITION APPLE
+extend_qtc_library(Utils CONDITION APPLE
   SOURCES
     fileutils_mac.mm fileutils_mac.h
     processhandle_mac.mm
@@ -189,7 +201,7 @@ extend_qtc_target(Utils CONDITION APPLE
     ${FWFoundation} ${FWAppKit}
 )
 
-extend_qtc_target(Utils CONDITION UNIX AND NOT APPLE
+extend_qtc_library(Utils CONDITION UNIX AND NOT APPLE
   SOURCES
     touchbar/touchbar.cpp
 )

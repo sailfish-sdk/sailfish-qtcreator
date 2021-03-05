@@ -317,6 +317,7 @@ void TokenInfo::typeKind(const Cursor &cursor)
             m_types.mixinHighlightingTypes.push_back(HighlightingType::Namespace);
             return;
         case CXCursor_TypeAliasDecl:
+        case CXCursor_TypeAliasTemplateDecl:
             m_types.mixinHighlightingTypes.push_back(HighlightingType::TypeAlias);
             return;
         case CXCursor_TypedefDecl:
@@ -373,6 +374,7 @@ void TokenInfo::identifierKind(const Cursor &cursor, Recursion recursion)
         case CXCursor_ParmDecl:
         case CXCursor_VarDecl:
         case CXCursor_VariableRef:
+        case CXCursor_UnexposedDecl: // structured bindings; see https://reviews.llvm.org/D78213
             variableKind(cursor.referenced());
             break;
         case CXCursor_DeclRefExpr:

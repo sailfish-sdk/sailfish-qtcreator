@@ -44,6 +44,9 @@ if (WIN32)
 endif()
 
 if (APPLE)
+  if (CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(MACOSX_DEPLOYMENT_TARGET ${CMAKE_OSX_DEPLOYMENT_TARGET})
+  endif()
   set_target_properties(qtcreator PROPERTIES
       MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/app-Info.plist"
   )
@@ -63,10 +66,16 @@ if (APPLE)
       "${CMAKE_CURRENT_BINARY_DIR}/qtcreator.icns"
       "${CMAKE_CURRENT_BINARY_DIR}/qtcreator-project.icns"
   )
-  set_source_files_properties(
-    "${CMAKE_CURRENT_BINARY_DIR}/qtcreator.icns"
-    "${CMAKE_CURRENT_BINARY_DIR}/qtcreator-project.icns"
-    PROPERTIES
-      MACOSX_PACKAGE_LOCATION "Resources"
+  qtc_copy_to_builddir(copy_icns
+    DESTINATION ${IDE_DATA_PATH}
+    FILES
+      ${CMAKE_CURRENT_BINARY_DIR}/qtcreator.icns
+      ${CMAKE_CURRENT_BINARY_DIR}/qtcreator-project.icns
+  )
+  install(
+    FILES
+      ${CMAKE_CURRENT_BINARY_DIR}/qtcreator.icns
+      ${CMAKE_CURRENT_BINARY_DIR}/qtcreator-project.icns
+    DESTINATION ${IDE_DATA_PATH}
   )
 endif()

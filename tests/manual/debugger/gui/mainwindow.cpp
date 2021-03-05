@@ -46,7 +46,6 @@
 #include <QFileInfo>
 #include <QSharedPointer>
 #include <QDir>
-#include <QLinkedList>
 #include <QStandardItemModel>
 
 struct TestClass {
@@ -270,7 +269,7 @@ void MainWindow::on_actionDumperBP_triggered()
     QStringList sl;
     QString s = "hallo";
     for (int c = 'a'; c < 'c'; c++) {
-        s += c + 23;
+        s += char(c + 23);
         stdS += c;
         sl.push_back(s);
         stdStringList.push_back(std::string(1, c));
@@ -306,8 +305,6 @@ void MainWindow::on_actionExtTypes_triggered()
         qDebug() << hidden;
     }
 
-    QLinkedList<QString> lls;
-    lls << "link1" << "link2";
     QStandardItemModel *model =new QStandardItemModel;
     model->appendRow(new QStandardItem("i1"));
 

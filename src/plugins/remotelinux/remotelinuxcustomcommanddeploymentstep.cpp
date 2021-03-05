@@ -24,38 +24,42 @@
 ****************************************************************************/
 
 #include "remotelinuxcustomcommanddeploymentstep.h"
+
+#include "remotelinux_constants.h"
 #include "remotelinuxcustomcommanddeployservice.h"
 
 #include <projectexplorer/runconfigurationaspects.h>
 
 using namespace ProjectExplorer;
+using namespace Utils;
 
 namespace RemoteLinux {
 
 RemoteLinuxCustomCommandDeploymentStep::RemoteLinuxCustomCommandDeploymentStep
-        (BuildStepList *bsl, Core::Id id)
+        (BuildStepList *bsl, Utils::Id id)
     : AbstractRemoteLinuxDeployStep(bsl, id)
 {
     auto service = createDeployService<RemoteLinuxCustomCommandDeployService>();
 
-    auto commandLine = addAspect<BaseStringAspect>();
+    auto commandLine = addAspect<StringAspect>();
     commandLine->setSettingsKey("RemoteLinuxCustomCommandDeploymentStep.CommandLine");
     commandLine->setLabelText(tr("Command line:"));
-    commandLine->setDisplayStyle(BaseStringAspect::LineEditDisplay);
-
-    setDefaultDisplayName(displayName());
+    commandLine->setDisplayStyle(StringAspect::LineEditDisplay);
+    commandLine->setHistoryCompleter("RemoteLinuxCustomCommandDeploymentStep.History");
 
     setInternalInitializer([service, commandLine] {
         service->setCommandLine(commandLine->value().trimmed());
         return service->isDeploymentPossible();
     });
+
+    addMacroExpander();
 }
 
 RemoteLinuxCustomCommandDeploymentStep::~RemoteLinuxCustomCommandDeploymentStep() = default;
 
-Core::Id RemoteLinuxCustomCommandDeploymentStep::stepId()
+Utils::Id RemoteLinuxCustomCommandDeploymentStep::stepId()
 {
-    return "RemoteLinux.GenericRemoteLinuxCustomCommandDeploymentStep";
+    return Constants::CustomCommandDeployStepId;
 }
 
 QString RemoteLinuxCustomCommandDeploymentStep::displayName()

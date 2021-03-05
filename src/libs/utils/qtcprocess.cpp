@@ -32,7 +32,7 @@
 #include <QDir>
 #include <QDebug>
 #include <QCoreApplication>
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QStack>
 
 #ifdef Q_OS_WIN
@@ -352,7 +352,7 @@ static QStringList splitArgsUnix(const QString &args, bool abortOnMeta,
                         goto quoteerr;
                     c = args.unicode()[pos++];
                 } while (c != QLatin1Char('\''));
-                cret += args.midRef(spos, pos - spos - 1);
+                cret += args.mid(spos, pos - spos - 1);
                 hadWord = true;
             } else if (c == QLatin1Char('"')) {
                 for (;;) {
@@ -583,7 +583,7 @@ static QString quoteArgWin(const QString &arg)
         // Quotes are escaped and their preceding backslashes are doubled.
         // It's impossible to escape anything inside a quoted string on cmd
         // level, so the outer quoting must be "suspended".
-        ret.replace(QRegExp(QLatin1String("(\\\\*)\"")), QLatin1String("\"\\1\\1\\^\"\""));
+        ret.replace(QRegularExpression(QLatin1String("(\\\\*)\"")), QLatin1String("\"\\1\\1\\^\"\""));
         // The argument must not end with a \ since this would be interpreted
         // as escaping the quote -- rather put the \ behind the quote: e.g.
         // rather use "foo"\ than "foo\"
@@ -626,7 +626,7 @@ void QtcProcess::addArg(QString *args, const QString &arg, OsType osType)
 QString QtcProcess::joinArgs(const QStringList &args, OsType osType)
 {
     QString ret;
-    foreach (const QString &arg, args)
+    for (const QString &arg : args)
         addArg(&ret, arg, osType);
     return ret;
 }
@@ -642,7 +642,7 @@ void QtcProcess::addArgs(QString *args, const QString &inArgs)
 
 void QtcProcess::addArgs(QString *args, const QStringList &inArgs)
 {
-    foreach (const QString &arg, inArgs)
+    for (const QString &arg : inArgs)
         addArg(args, arg);
 }
 
@@ -663,7 +663,13 @@ bool QtcProcess::prepareCommand(const QString &command, const QString &arguments
         } else {
             if (err != QtcProcess::FoundMeta)
                 return false;
-            *outCmd = QLatin1String("/bin/sh");
+#if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
+            *outCmd = qEnvironmentVariable("SHELL", "/bin/sh");
+#else
+            // for sdktool
+            *outCmd = qEnvironmentVariableIsSet("SHELL") ? QString::fromLocal8Bit(qgetenv("SHELL"))
+                                                         : QString("/bin/sh");
+#endif
             *outArgs = Arguments::createUnixArgs(
                         QStringList({"-c", (quoteArg(command) + ' ' + arguments)}));
         }
@@ -678,6 +684,10 @@ QtcProcess::QtcProcess(QObject *parent)
     static int qProcessProcessErrorMeta = qRegisterMetaType<QProcess::ProcessError>();
     Q_UNUSED(qProcessExitStatusMeta)
     Q_UNUSED(qProcessProcessErrorMeta)
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_UNIX)
+    setChildProcessModifier([this] { setupChildProcess_impl(); });
+#endif
 }
 
 void QtcProcess::setUseCtrlCStub(bool enabled)
@@ -776,7 +786,7 @@ void QtcProcess::terminate()
 {
 #ifdef Q_OS_WIN
     if (m_useCtrlCStub)
-        EnumWindows(sendShutDownMessageToAllWindowsOfProcess_enumWnd, pid()->dwProcessId);
+        EnumWindows(sendShutDownMessageToAllWindowsOfProcess_enumWnd, processId());
     else
 #endif
     QProcess::terminate();
@@ -786,7 +796,7 @@ void QtcProcess::interrupt()
 {
 #ifdef Q_OS_WIN
     QTC_ASSERT(m_useCtrlCStub, return);
-    EnumWindows(sendInterruptMessageToAllWindowsOfProcess_enumWnd, pid()->dwProcessId);
+    EnumWindows(sendInterruptMessageToAllWindowsOfProcess_enumWnd, processId());
 #endif
 }
 
@@ -1062,7 +1072,7 @@ bool QtcProcess::expandMacros(QString *cmd, AbstractMacroExpander *mx, OsType os
                 // Our expansion rules trigger in any context
                 if (state.dquote) {
                     // We are within a double-quoted string. Escape relevant meta characters.
-                    rsts.replace(QRegExp(QLatin1String("([$`\"\\\\])")), QLatin1String("\\\\1"));
+                    rsts.replace(QRegularExpression(QLatin1String("([$`\"\\\\])")), QLatin1String("\\\\1"));
                 } else if (state.current == MxSingleQuote) {
                     // We are within a single-quoted string. "Suspend" single-quoting and put a
                     // single escaped quote for each single quote inside the string.
@@ -1220,7 +1230,14 @@ QString QtcProcess::expandMacros(const QString &str, AbstractMacroExpander *mx, 
     return ret;
 }
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 void QtcProcess::setupChildProcess()
+{
+    setupChildProcess_impl();
+}
+#endif
+
+void QtcProcess::setupChildProcess_impl()
 {
 #if defined Q_OS_UNIX
     // nice value range is -20 to +19 where -20 is highest, 0 default and +19 is lowest
@@ -1230,7 +1247,6 @@ void QtcProcess::setupChildProcess()
             perror("Failed to set nice value");
     }
 #endif
-    QProcess::setupChildProcess();
 }
 
 bool QtcProcess::ArgIterator::next()

@@ -32,7 +32,6 @@
 #include <memory>
 
 QT_BEGIN_NAMESPACE
-class QGridLayout;
 class QLabel;
 class QLineEdit;
 class QToolButton;
@@ -90,14 +89,11 @@ private:
     };
 
     void showEvent(QShowEvent *event) override;
-    QLabel *createLabel(const QString &name, const QString &toolTip);
 
-    QGridLayout *m_layout;
     QToolButton *m_iconButton;
     QLineEdit *m_nameEdit;
     QLineEdit *m_fileSystemFriendlyNameLineEdit;
     QList<KitAspectWidget *> m_widgets;
-    QList<QLabel *> m_labels;
     Kit *m_kit;
     std::unique_ptr<Kit> m_modifiedKit;
     bool m_isDefaultKit = false;

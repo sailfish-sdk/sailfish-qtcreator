@@ -52,7 +52,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRadioButton>
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QScrollArea>
 #include <QSpinBox>
 
@@ -86,6 +86,8 @@ public:
     PathChooser *debuginfoPathChooser;
     QLabel *serverStartScriptLabel;
     PathChooser *serverStartScriptPathChooser;
+    QLabel *sysRootLabel;
+    PathChooser *sysRootPathChooser;
     QLabel *serverInitCommandsLabel;
     QPlainTextEdit *serverInitCommandsTextEdit;
     QLabel *serverResetCommandsLabel;
@@ -126,6 +128,7 @@ public:
     bool breakAtMain = false;
     bool runInTerminal = false;
     FilePath serverStartScript;
+    FilePath sysRoot;
     QString serverInitCommands;
     QString serverResetCommands;
     QString debugInfoLocation;
@@ -140,6 +143,7 @@ bool StartApplicationParameters::equals(const StartApplicationParameters &rhs) c
         && breakAtMain == rhs.breakAtMain
         && runInTerminal == rhs.runInTerminal
         && serverStartScript == rhs.serverStartScript
+        && sysRoot == rhs.sysRoot
         && serverInitCommands == rhs.serverInitCommands
         && serverResetCommands == rhs.serverResetCommands
         && kitId == rhs.kitId
@@ -181,6 +185,7 @@ void StartApplicationParameters::toSettings(QSettings *settings) const
     settings->setValue("LastServerInitCommands", serverInitCommands);
     settings->setValue("LastServerResetCommands", serverResetCommands);
     settings->setValue("LastDebugInfoLocation", debugInfoLocation);
+    settings->setValue("LastSysRoot", sysRoot.toVariant());
 }
 
 void StartApplicationParameters::fromSettings(const QSettings *settings)
@@ -197,6 +202,7 @@ void StartApplicationParameters::fromSettings(const QSettings *settings)
     serverInitCommands = settings->value("LastServerInitCommands").toString();
     serverResetCommands = settings->value("LastServerResetCommands").toString();
     debugInfoLocation = settings->value("LastDebugInfoLocation").toString();
+    sysRoot = FilePath::fromVariant(settings->value("LastSysRoot"));
 }
 
 ///////////////////////////////////////////////////////////////////////
@@ -259,6 +265,16 @@ StartApplicationDialog::StartApplicationDialog(QWidget *parent)
     d->serverStartScriptLabel->setBuddy(d->serverStartScriptPathChooser);
     d->serverStartScriptLabel->setToolTip(d->serverStartScriptPathChooser->toolTip());
 
+    d->sysRootPathChooser = new PathChooser(this);
+    d->sysRootPathChooser->setExpectedKind(PathChooser::Directory);
+    d->sysRootPathChooser->setHistoryCompleter("Debugger.SysRoot.History");
+    d->sysRootPathChooser->setPromptDialogTitle(tr("Select SysRoot Directory"));
+    d->sysRootPathChooser->setToolTip(tr(
+        "This option can be used to override the kit's SysRoot setting."));
+    d->sysRootLabel = new QLabel(tr("Override S&ysRoot:"), this);
+    d->sysRootLabel->setBuddy(d->sysRootPathChooser);
+    d->sysRootLabel->setToolTip(d->sysRootPathChooser->toolTip());
+
     d->serverInitCommandsTextEdit = new QPlainTextEdit(this);
     d->serverInitCommandsTextEdit->setToolTip(tr(
         "This option can be used to send the target init commands."));
@@ -306,6 +322,7 @@ StartApplicationDialog::StartApplicationDialog(QWidget *parent)
     formLayout->addRow(tr("Run in &terminal:"), d->runInTerminalCheckBox);
     formLayout->addRow(tr("Break at \"&main\":"), d->breakAtMainCheckBox);
     formLayout->addRow(d->serverStartScriptLabel, d->serverStartScriptPathChooser);
+    formLayout->addRow(d->sysRootLabel, d->sysRootPathChooser);
     formLayout->addRow(d->serverInitCommandsLabel, d->serverInitCommandsTextEdit);
     formLayout->addRow(d->serverResetCommandsLabel, d->serverResetCommandsTextEdit);
     formLayout->addRow(tr("Debug &information:"), d->debuginfoPathChooser);
@@ -445,6 +462,8 @@ void StartApplicationDialog::run(bool attachRemote)
     debugger->setCommandsAfterConnect(newParameters.serverInitCommands);
     debugger->setCommandsForReset(newParameters.serverResetCommands);
     debugger->setUseTerminal(newParameters.runInTerminal);
+    if (!newParameters.sysRoot.isEmpty())
+        debugger->setSysRoot(newParameters.sysRoot);
 
     bool isLocal = !dev || (dev->type() == ProjectExplorer::Constants::DESKTOP_DEVICE_TYPE);
     if (isLocal) {
@@ -479,14 +498,15 @@ StartApplicationParameters StartApplicationDialog::parameters() const
     StartApplicationParameters result;
     result.serverPort = d->serverPortSpinBox->value();
     result.serverAddress = d->channelOverrideEdit->text();
-    result.runnable.executable = d->localExecutablePathChooser->fileName();
-    result.serverStartScript = d->serverStartScriptPathChooser->fileName();
+    result.runnable.executable = d->localExecutablePathChooser->filePath();
+    result.serverStartScript = d->serverStartScriptPathChooser->filePath();
+    result.sysRoot = d->sysRootPathChooser->filePath();
     result.serverInitCommands = d->serverInitCommandsTextEdit->toPlainText();
     result.serverResetCommands = d->serverResetCommandsTextEdit->toPlainText();
     result.kitId = d->kitChooser->currentKitId();
-    result.debugInfoLocation = d->debuginfoPathChooser->path();
+    result.debugInfoLocation = d->debuginfoPathChooser->filePath().toString();
     result.runnable.commandLineArguments = d->arguments->text();
-    result.runnable.workingDirectory = d->workingDirectory->path();
+    result.runnable.workingDirectory = d->workingDirectory->filePath().toString();
     result.breakAtMain = d->breakAtMainCheckBox->isChecked();
     result.runInTerminal = d->runInTerminalCheckBox->isChecked();
     return result;
@@ -497,8 +517,9 @@ void StartApplicationDialog::setParameters(const StartApplicationParameters &p)
     d->kitChooser->setCurrentKitId(p.kitId);
     d->serverPortSpinBox->setValue(p.serverPort);
     d->channelOverrideEdit->setText(p.serverAddress);
-    d->localExecutablePathChooser->setFileName(p.runnable.executable);
-    d->serverStartScriptPathChooser->setFileName(p.serverStartScript);
+    d->localExecutablePathChooser->setFilePath(p.runnable.executable);
+    d->serverStartScriptPathChooser->setFilePath(p.serverStartScript);
+    d->sysRootPathChooser->setFilePath(p.sysRoot);
     d->serverInitCommandsTextEdit->setPlainText(p.serverInitCommands);
     d->serverResetCommandsTextEdit->setPlainText(p.serverResetCommands);
     d->debuginfoPathChooser->setPath(p.debugInfoLocation);
@@ -580,7 +601,7 @@ void AttachToQmlPortDialog::setKitId(Id id)
 // --------- StartRemoteCdbDialog
 static QString cdbRemoteHelp()
 {
-    const char *cdbConnectionSyntax =
+    const char cdbConnectionSyntax[] =
             "Server:Port<br>"
             "tcp:server=Server,port=Port[,password=Password][,ipversion=6]\n"
             "tcp:clicon=Server,port=Port[,password=Password][,ipversion=6]\n"
@@ -599,10 +620,10 @@ static QString cdbRemoteHelp()
                 "Launch the remote CDB as <code>%5 &lt;executable&gt;</code> "
                 "to use TCP/IP as communication protocol.</p><p>Enter the connection parameters as:</p>"
                 "<pre>%6</pre></body></html>")
-            .arg(Core::Constants::IDE_DISPLAY_NAME,
-                 ext32, ext64, "_NT_DEBUGGER_EXTENSION_PATH",
-                 "cdb.exe -server tcp:port=1234",
-                 QLatin1String(cdbConnectionSyntax));
+            .arg(QString(Core::Constants::IDE_DISPLAY_NAME),
+                 ext32, ext64, QString("_NT_DEBUGGER_EXTENSION_PATH"),
+                 QString("cdb.exe -server tcp:port=1234"),
+                 QString(cdbConnectionSyntax));
 }
 
 StartRemoteCdbDialog::StartRemoteCdbDialog(QWidget *parent) :
@@ -661,10 +682,11 @@ QString StartRemoteCdbDialog::connection() const
 {
     const QString rc = m_lineEdit->text();
     // Transform an IP:POrt ('localhost:1234') specification into full spec
-    QRegExp ipRegexp("([\\w\\.\\-_]+):([0-9]{1,4})");
+    QRegularExpression ipRegexp("([\\w\\.\\-_]+):([0-9]{1,4})");
     QTC_ASSERT(ipRegexp.isValid(), return QString());
-    if (ipRegexp.exactMatch(rc))
-        return QString::fromLatin1("tcp:server=%1,port=%2").arg(ipRegexp.cap(1), ipRegexp.cap(2));
+    const QRegularExpressionMatch match = ipRegexp.match(rc);
+    if (match.hasMatch())
+        return QString::fromLatin1("tcp:server=%1,port=%2").arg(match.captured(1), match.captured(2));
     return rc;
 }
 

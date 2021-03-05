@@ -30,6 +30,7 @@
 #include "qmlobjectnode.h"
 #include "qmlstate.h"
 #include "qmlvisualnode.h"
+#include "qmlconnections.h"
 
 #include <QStringList>
 #include <QRectF>
@@ -61,11 +62,13 @@ public:
     static QmlItemNode createQmlItemNodeFromImage(AbstractView *view,
                                                   const QString &imageName,
                                                   const QPointF &position,
-                                                  QmlItemNode parentQmlItemNode);
+                                                  QmlItemNode parentQmlItemNode,
+                                                  bool executeInTransaction = true);
     static QmlItemNode createQmlItemNodeFromImage(AbstractView *view,
                                                   const QString &imageName,
                                                   const QPointF &position,
-                                                  NodeAbstractProperty parentproperty);
+                                                  NodeAbstractProperty parentproperty,
+                                                  bool executeInTransaction = true);
 
     QList<QmlItemNode> children() const;
     QList<QmlObjectNode> resources() const;
@@ -88,6 +91,7 @@ public:
 
     bool modelIsMovable() const;
     bool modelIsResizable() const;
+    bool modelIsRotatable() const;
     bool modelIsInLayout() const;
 
     QRectF instanceBoundingRect() const;
@@ -120,6 +124,10 @@ public:
     void setSize(const QSizeF &size);
     bool isInLayout() const;
     bool canBereparentedTo(const ModelNode &potentialParent) const;
+
+    void setRotation(const qreal &angle);
+    qreal rotation() const;
+    QVariant transformOrigin();
 
     bool isInStackedContainer() const;
 
@@ -157,7 +165,6 @@ public:
     void assignTargetFlowItem(const QmlFlowTargetNode &flowItem);
     QmlFlowItemNode flowItemParent() const;
     void destroyTarget();
-    ModelNode decisionNodeForTransition(const ModelNode &transition) const;
 };
 
 class QMLDESIGNERCORE_EXPORT QmlFlowItemNode : public QmlItemNode
@@ -168,6 +175,8 @@ public:
     static bool isValidQmlFlowItemNode(const ModelNode &modelNode);
     QList<QmlFlowActionAreaNode> flowActionAreas() const;
     QmlFlowViewNode flowView() const;
+
+    static ModelNode decisionNodeForTransition(const ModelNode &transition);
 };
 
 class QMLDESIGNERCORE_EXPORT QmlFlowViewNode : public QmlItemNode
@@ -182,8 +191,18 @@ public:
     const QList<ModelNode> wildcards() const;
     const QList<ModelNode> decicions() const;
     QList<ModelNode> transitionsForTarget(const ModelNode &modelNode);
+    QList<ModelNode> transitionsForSource(const ModelNode &modelNode);
     void removeDanglingTransitions();
     void removeAllTransitions();
+    void setStartFlowItem(const QmlFlowItemNode &flowItem);
+    ModelNode createTransition();
+
+    static PropertyNameList st_mouseSignals;
+    static QList<QmlConnections> getAssociatedConnections(const ModelNode &node);
+
+
+protected:
+    QList<ModelNode> transitionsForProperty(const PropertyName &propertyName, const ModelNode &modelNode);
 };
 
 

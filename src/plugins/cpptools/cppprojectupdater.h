@@ -29,7 +29,6 @@
 #include "cpptools_global.h"
 #include "projectinfo.h"
 
-#include <QFutureInterface>
 #include <QFutureWatcher>
 
 namespace CppTools {
@@ -47,7 +46,7 @@ public:
     Q_INVOKABLE CppTools::CppProjectUpdaterInterface *create();
 };
 
-class CPPTOOLS_EXPORT CppProjectUpdater : public QObject, public CppProjectUpdaterInterface
+class CPPTOOLS_EXPORT CppProjectUpdater final : public QObject, public CppProjectUpdaterInterface
 {
     Q_OBJECT
 
@@ -67,7 +66,8 @@ private:
 private:
     ProjectExplorer::ProjectUpdateInfo m_projectUpdateInfo;
 
-    QFutureInterface<void> m_futureInterface;
+    QFuture<ProjectInfo> m_generateFuture;
+    QFuture<void> m_updateFuture;
     QFutureWatcher<ProjectInfo> m_generateFutureWatcher;
 };
 

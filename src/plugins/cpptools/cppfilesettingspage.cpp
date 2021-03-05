@@ -39,16 +39,17 @@
 #include <utils/fileutils.h>
 #include <utils/hostosinfo.h>
 #include <utils/mimetypes/mimedatabase.h>
+#include <utils/stringutils.h>
 
-#include <QSettings>
-#include <QDebug>
-#include <QFile>
 #include <QCoreApplication>
 #include <QDate>
+#include <QDebug>
+#include <QFile>
+#include <QFileDialog>
 #include <QLocale>
+#include <QSettings>
 #include <QTextCodec>
 #include <QTextStream>
-#include <QFileDialog>
 
 namespace CppTools {
 namespace Internal {
@@ -236,7 +237,6 @@ QString CppFileSettings::licenseTemplate()
     }
 
     QTextStream licenseStream(&file);
-    licenseStream.setCodec(Core::EditorManager::defaultTextCodec());
     licenseStream.setAutoDetectUnicode(true);
     QString license = licenseStream.readAll();
 
@@ -297,7 +297,7 @@ CppFileSettingsWidget::CppFileSettingsWidget(CppFileSettings *settings)
 
 QString CppFileSettingsWidget::licenseTemplatePath() const
 {
-    return m_ui.licenseTemplatePathChooser->path();
+    return m_ui.licenseTemplatePathChooser->filePath().toString();
 }
 
 void CppFileSettingsWidget::setLicenseTemplatePath(const QString &lp)
@@ -308,7 +308,7 @@ void CppFileSettingsWidget::setLicenseTemplatePath(const QString &lp)
 static QStringList trimmedPaths(const QString &paths)
 {
     QStringList res;
-    foreach (const QString &path, paths.split(QLatin1Char(','), QString::SkipEmptyParts))
+    foreach (const QString &path, paths.split(QLatin1Char(','), Qt::SkipEmptyParts))
         res << path.trimmed();
     return res;
 }

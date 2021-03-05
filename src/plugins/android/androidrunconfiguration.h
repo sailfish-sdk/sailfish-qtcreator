@@ -34,16 +34,16 @@
 
 namespace Android {
 
-class BaseStringListAspect : public ProjectExplorer::ProjectConfigurationAspect
+class BaseStringListAspect : public Utils::BaseAspect
 {
     Q_OBJECT
 
 public:
     explicit BaseStringListAspect(const QString &settingsKey = QString(),
-                                  Core::Id id = Core::Id());
+                                  Utils::Id id = Utils::Id());
     ~BaseStringListAspect() override;
 
-    void addToLayout(ProjectExplorer::LayoutBuilder &builder) override;
+    void addToLayout(Utils::LayoutBuilder &builder) override;
 
     QStringList value() const;
     void setValue(const QStringList &val);
@@ -52,9 +52,6 @@ public:
 
     void fromMap(const QVariantMap &map) override;
     void toMap(QVariantMap &map) const override;
-
-signals:
-    void changed();
 
 private:
     QStringList m_value;
@@ -66,7 +63,7 @@ class ANDROID_EXPORT AndroidRunConfiguration : public ProjectExplorer::RunConfig
 {
     Q_OBJECT
 public:
-    explicit AndroidRunConfiguration(ProjectExplorer::Target *target, Core::Id id);
+    explicit AndroidRunConfiguration(ProjectExplorer::Target *target, Utils::Id id);
 };
 
 } // namespace Android

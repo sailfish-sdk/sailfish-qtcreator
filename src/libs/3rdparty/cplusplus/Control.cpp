@@ -629,7 +629,7 @@ const NumericLiteral *Control::numericLiteral(const char *chars)
 
 const TemplateNameId *Control::templateNameId(const Identifier *id,
                                               bool isSpecialization,
-                                              const FullySpecifiedType *const args,
+                                              const TemplateArgument *const args,
                                               int argv)
 {
     return d->findOrInsertTemplateNameId(id, isSpecialization, args, args + argv);
@@ -819,11 +819,6 @@ int Control::symbolCount() const
 bool Control::hasSymbol(Symbol *symbol) const
 {
     return std::find(d->symbols.begin(), d->symbols.end(), symbol) != d->symbols.end();
-}
-
-void Control::squeeze()
-{
-    d->numericLiterals.reset();
 }
 
 TopLevelDeclarationProcessor *Control::topLevelDeclarationProcessor() const

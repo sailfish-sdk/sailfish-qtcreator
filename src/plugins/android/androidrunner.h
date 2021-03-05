@@ -31,7 +31,6 @@
 #include <qmldebug/qmldebugcommandlinearguments.h>
 #include <qmldebug/qmloutputparser.h>
 
-#include <QFutureInterface>
 #include <QObject>
 #include <QTimer>
 #include <QTcpSocket>
@@ -53,7 +52,7 @@ public:
                            const QString &intentName = QString());
     ~AndroidRunner() override;
 
-    Utils::Port gdbServerPort() const { return m_gdbServerPort; }
+    Utils::Port debugServerPort() const { return m_debugServerPort; } // GDB or LLDB
     QUrl qmlServer() const { return m_qmlServer; }
     Utils::ProcessHandle pid() const { return m_pid; }
 
@@ -72,7 +71,7 @@ private:
     void remoteOutput(const QString &output);
     void remoteErrorOutput(const QString &output);
     void gotRemoteOutput(const QString &output);
-    void handleRemoteProcessStarted(Utils::Port gdbServerPort, const QUrl &qmlServer, qint64 pid);
+    void handleRemoteProcessStarted(Utils::Port debugServerPort, const QUrl &qmlServer, qint64 pid);
     void handleRemoteProcessFinished(const QString &errString = QString());
     void checkAVD();
     void launchAVD();
@@ -83,7 +82,7 @@ private:
     QTimer m_checkAVDTimer;
     QScopedPointer<AndroidRunnerWorker> m_worker;
     QPointer<ProjectExplorer::Target> m_target;
-    Utils::Port m_gdbServerPort;
+    Utils::Port m_debugServerPort;
     QUrl m_qmlServer;
     Utils::ProcessHandle m_pid;
     QmlDebug::QmlOutputParser m_outputParser;

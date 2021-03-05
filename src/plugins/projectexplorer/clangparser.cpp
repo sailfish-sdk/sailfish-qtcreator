@@ -25,6 +25,7 @@
 
 #include "clangparser.h"
 #include "ldparser.h"
+#include "lldparser.h"
 #include "projectexplorerconstants.h"
 
 using namespace ProjectExplorer;
@@ -54,31 +55,39 @@ ClangParser::ClangParser() :
     setObjectName(QLatin1String("ClangParser"));
 }
 
-void ClangParser::stdError(const QString &line)
+QList<OutputLineParser *> ClangParser::clangParserSuite()
 {
+    return {new ClangParser, new Internal::LldParser, new LdParser};
+}
+
+OutputLineParser::Result ClangParser::handleLine(const QString &line, OutputFormat type)
+{
+    if (type != StdErrFormat)
+        return Status::NotHandled;
     const QString lne = rightTrimmed(line);
     QRegularExpressionMatch match = m_summaryRegExp.match(lne);
     if (match.hasMatch()) {
-        doFlush();
+        flush();
         m_expectSnippet = false;
-        return;
+        return Status::Done;
     }
 
     match = m_commandRegExp.match(lne);
     if (match.hasMatch()) {
         m_expectSnippet = true;
-        newTask(CompileTask(taskType(match.captured(3)), match.captured(4)));
-        return;
+        createOrAmendTask(taskType(match.captured(3)), match.captured(4), lne);
+        return Status::InProgress;
     }
 
     match = m_inLineRegExp.match(lne);
     if (match.hasMatch()) {
         m_expectSnippet = true;
-        newTask(CompileTask(Task::Unknown,
-                            lne.trimmed(),
-                            FilePath::fromUserInput(match.captured(2)), /* filename */
-                            match.captured(3).toInt() /* line */));
-        return;
+        const FilePath filePath = absoluteFilePath(FilePath::fromUserInput(match.captured(2)));
+        const int lineNo = match.captured(3).toInt();
+        LinkSpecs linkSpecs;
+        addLinkSpecForAbsoluteFilePath(linkSpecs, filePath, lineNo, match, 2);
+        createOrAmendTask(Task::Unknown, lne.trimmed(), lne, false, filePath, lineNo, linkSpecs);
+        return {Status::InProgress, linkSpecs};
     }
 
     match = m_messageRegExp.match(lne);
@@ -88,31 +97,32 @@ void ClangParser::stdError(const QString &line)
         int lineNo = match.captured(4).toInt(&ok);
         if (!ok)
             lineNo = match.captured(5).toInt(&ok);
-        newTask(CompileTask(taskType(match.captured(7)),
-                            match.captured(8),
-                            FilePath::fromUserInput(match.captured(1)), /* filename */
-                            lineNo));
-        return;
+        const FilePath filePath = absoluteFilePath(FilePath::fromUserInput(match.captured(1)));
+        LinkSpecs linkSpecs;
+        addLinkSpecForAbsoluteFilePath(linkSpecs, filePath, lineNo, match, 1);
+        createOrAmendTask(taskType(match.captured(7)), match.captured(8), lne, false,
+                          filePath, lineNo, linkSpecs);
+        return {Status::InProgress, linkSpecs};
     }
 
     match = m_codesignRegExp.match(lne);
     if (match.hasMatch()) {
         m_expectSnippet = true;
-        newTask(CompileTask(Task::Error, match.captured(1)));
-        return;
+        createOrAmendTask(Task::Error, match.captured(1), lne, false);
+        return Status::InProgress;
     }
 
     if (m_expectSnippet) {
-        amendDescription(lne, true);
-        return;
+        createOrAmendTask(Task::Unknown, lne, lne, true);
+        return Status::InProgress;
     }
 
-    IOutputParser::stdError(line);
+    return Status::NotHandled;
 }
 
-Core::Id ClangParser::id()
+Utils::Id ClangParser::id()
 {
-    return Core::Id("ProjectExplorer.OutputParser.Clang");
+    return Utils::Id("ProjectExplorer.OutputParser.Clang");
 }
 
 // Unit tests:
@@ -169,17 +179,15 @@ void ProjectExplorerPlugin::testClangOutputParser_data()
                                    "      ^")
             << OutputParserTester::STDERR
             << QString() << QString()
-            << (Tasks()
-                << CompileTask(Task::Unknown,
-                               "In file included from ..\\..\\..\\QtSDK1.1\\Desktop\\Qt\\4.7.3\\mingw\\include/QtCore/qnamespace.h:45:",
-                                FilePath::fromUserInput("..\\..\\..\\QtSDK1.1\\Desktop\\Qt\\4.7.3\\mingw\\include/QtCore/qnamespace.h"),
-                               45)
-                << CompileTask(Task::Warning,
-                               "unknown attribute 'dllimport' ignored [-Wunknown-attributes]\n"
-                               "class Q_CORE_EXPORT QSysInfo {\n"
-                               "      ^",
-                               FilePath::fromUserInput("..\\..\\..\\QtSDK1.1\\Desktop\\Qt\\4.7.3\\mingw\\include/QtCore/qglobal.h"),
-                               1425))
+            << Tasks{CompileTask(
+                   Task::Warning,
+                   "unknown attribute 'dllimport' ignored [-Wunknown-attributes]\n"
+                   "In file included from ..\\..\\..\\QtSDK1.1\\Desktop\\Qt\\4.7.3\\mingw\\include/QtCore/qnamespace.h:45:\n"
+                   "..\\..\\..\\QtSDK1.1\\Desktop\\Qt\\4.7.3\\mingw\\include/QtCore/qglobal.h(1425) :  warning: unknown attribute 'dllimport' ignored [-Wunknown-attributes]\n"
+                   "class Q_CORE_EXPORT QSysInfo {\n"
+                   "      ^",
+                   FilePath::fromUserInput("..\\..\\..\\QtSDK1.1\\Desktop\\Qt\\4.7.3\\mingw\\include/QtCore/qglobal.h"),
+                   1425)}
             << QString();
 
         QTest::newRow("note")
@@ -191,6 +199,7 @@ void ProjectExplorerPlugin::testClangOutputParser_data()
                 << (Tasks()
                     << CompileTask(Task::Unknown,
                                    "instantiated from:\n"
+                                   "..\\..\\..\\QtSDK1.1\\Desktop\\Qt\\4.7.3\\mingw\\include/QtCore/qglobal.h:1289:27: note: instantiated from:\n"
                                    "#    define Q_CORE_EXPORT Q_DECL_IMPORT\n"
                                    "                          ^",
                                    FilePath::fromUserInput("..\\..\\..\\QtSDK1.1\\Desktop\\Qt\\4.7.3\\mingw\\include/QtCore/qglobal.h"),
@@ -206,6 +215,7 @@ void ProjectExplorerPlugin::testClangOutputParser_data()
                 << (Tasks()
                     << CompileTask(Task::Error,
                                    "'bits/c++config.h' file not found\n"
+                                   "/usr/include/c++/4.6/utility:68:10: fatal error: 'bits/c++config.h' file not found\n"
                                    "#include <bits/c++config.h>\n"
                                    "         ^",
                                    FilePath::fromUserInput("/usr/include/c++/4.6/utility"),
@@ -221,6 +231,7 @@ void ProjectExplorerPlugin::testClangOutputParser_data()
                 << (Tasks()
                     << CompileTask(Task::Warning,
                                    "?: has lower precedence than +; + will be evaluated first [-Wparentheses]\n"
+                                   "/home/code/src/creator/src/plugins/coreplugin/manhattanstyle.cpp:567:51: warning: ?: has lower precedence than +; + will be evaluated first [-Wparentheses]\n"
                                    "            int x = option->rect.x() + horizontal ? 2 : 6;\n"
                                    "                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ^",
                                    FilePath::fromUserInput("/home/code/src/creator/src/plugins/coreplugin/manhattanstyle.cpp"),
@@ -247,15 +258,14 @@ void ProjectExplorerPlugin::testClangOutputParser_data()
                 << (Tasks()
                     << CompileTask(Task::Unknown,
                                    "Note: No relevant classes found. No output generated.",
-                                   FilePath::fromUserInput("/home/qtwebkithelpviewer.h"),
-                                   0))
+                                   FilePath::fromUserInput("/home/qtwebkithelpviewer.h")))
                 << QString();
 }
 
 void ProjectExplorerPlugin::testClangOutputParser()
 {
     OutputParserTester testbench;
-    testbench.appendOutputParser(new ClangParser);
+    testbench.setLineParsers(ClangParser::clangParserSuite());
     QFETCH(QString, input);
     QFETCH(OutputParserTester::Channel, inputChannel);
     QFETCH(Tasks, tasks);

@@ -38,13 +38,13 @@
 #include <utils/algorithm.h>
 #include <utils/hostosinfo.h>
 #include <utils/runextensions.h>
+#include <utils/stringutils.h>
 
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QMetaObject>
-#include <QRegExp>
 #include <QTextDocument>
 #include <QTextStream>
 #include <QTimer>
@@ -90,7 +90,7 @@ static QStringList environmentImportPaths()
     QStringList paths;
 
     const QStringList importPaths = QString::fromLocal8Bit(qgetenv("QML_IMPORT_PATH")).split(
-        Utils::HostOsInfo::pathListSeparator(), QString::SkipEmptyParts);
+        Utils::HostOsInfo::pathListSeparator(), Qt::SkipEmptyParts);
 
     for (const QString &path : importPaths) {
         const QString canonicalPath = QDir(path).canonicalPath();
@@ -129,6 +129,7 @@ ModelManagerInterface::ModelManagerInterface(QObject *parent)
 
     m_defaultProjectInfo.qtQmlPath = QFileInfo(
                 QLibraryInfo::location(QLibraryInfo::Qml2ImportsPath)).canonicalFilePath();
+    m_defaultProjectInfo.qtVersionString = QLibraryInfo::version().toString();
 
     updateImportPaths();
 
@@ -267,8 +268,10 @@ void ModelManagerInterface::loadQmlTypeDescriptionsInternal(const QString &resou
     }
 
     // load the fallbacks for libraries
-    CppQmlTypesLoader::defaultLibraryObjects.unite(
-                CppQmlTypesLoader::loadQmlTypes(qmlTypesFiles, &errors, &warnings));
+    const CppQmlTypesLoader::BuiltinObjects objs =
+            CppQmlTypesLoader::loadQmlTypes(qmlTypesFiles, &errors, &warnings);
+    for (auto it = objs.cbegin(); it != objs.cend(); ++it)
+        CppQmlTypesLoader::defaultLibraryObjects.insert(it.key(), it.value());
 
     for (const QString &error : qAsConst(errors))
         writeMessageInternal(error);
@@ -306,6 +309,7 @@ void ModelManagerInterface::updateSourceFiles(const QStringList &files,
 
 void ModelManagerInterface::cleanupFutures()
 {
+    QMutexLocker lock(&m_futuresMutex);
     const int maxFutures = 10;
     if (m_futures.size() > maxFutures) {
         const QList<QFuture<void>> futures = m_futures;
@@ -327,8 +331,7 @@ QFuture<void> ModelManagerInterface::refreshSourceFiles(const QStringList &sourc
                                            workingCopyInternal(), sourceFiles,
                                            this, Dialect(Dialect::Qml),
                                            emitDocumentOnDiskChanged);
-    cleanupFutures();
-    m_futures.append(result);
+    addFuture(result);
 
     if (sourceFiles.count() > 1)
          addTaskInternal(result, tr("Parsing QML Files"), Constants::TASK_INDEX);
@@ -561,11 +564,12 @@ void ModelManagerInterface::updateProjectInfo(const ProjectInfo &pinfo, ProjectE
     // parse any files not yet in the snapshot
     QStringList newFiles;
     for (const QString &file : qAsConst(pinfo.sourceFiles)) {
+        if (!m_fileToProject.contains(file, p))
+            m_fileToProject.insert(file, p);
         if (!snapshot.document(file))
             newFiles += file;
     }
-    for (const QString &newFile : qAsConst(newFiles))
-        m_fileToProject.insert(newFile, p);
+
     updateSourceFiles(newFiles, false);
 
     // update qrc cache
@@ -604,8 +608,10 @@ ModelManagerInterface::ProjectInfo ModelManagerInterface::projectInfoForPath(
     ProjectInfo res;
     const auto allProjectInfos = allProjectInfosForPath(path);
     for (const ProjectInfo &pInfo : allProjectInfos) {
-        if (res.qtQmlPath.isEmpty())
+        if (res.qtQmlPath.isEmpty()) {
             res.qtQmlPath = pInfo.qtQmlPath;
+            res.qtVersionString = pInfo.qtVersionString;
+        }
         res.applicationDirectories.append(pInfo.applicationDirectories);
         for (const auto &importPath : pInfo.importPaths)
             res.importPaths.maybeInsert(importPath);
@@ -636,7 +642,6 @@ QList<ModelManagerInterface::ProjectInfo> ModelManagerInterface::allProjectInfos
             infos.append(info);
     }
     std::sort(infos.begin(), infos.end(), &pInfoLessThanImports);
-    infos.append(m_defaultProjectInfo);
     return infos;
 }
 
@@ -1133,13 +1138,11 @@ void ModelManagerInterface::maybeScan(const PathsAndLanguages &importPaths)
                 pathToScan.maybeInsert(importPath);
     }
 
-    if (pathToScan.length() > 1) {
+    if (pathToScan.length() >= 1) {
         QFuture<void> result = Utils::runAsync(&ModelManagerInterface::importScan,
                                                workingCopyInternal(), pathToScan,
                                                this, true, true, false);
-        cleanupFutures();
-        m_futures.append(result);
-
+        addFuture(result);
         addTaskInternal(result, tr("Scanning QML Imports"), Constants::TASK_IMPORT_SCAN);
     }
 }
@@ -1247,8 +1250,7 @@ void ModelManagerInterface::maybeQueueCppQmlTypeUpdate(const CPlusPlus::Document
         doc->releaseSourceAndAST();
 
     // delegate actual queuing to the gui thread
-    QMetaObject::invokeMethod(this, "queueCppQmlTypeUpdate",
-                              Q_ARG(CPlusPlus::Document::Ptr, doc), Q_ARG(bool, scan));
+    QMetaObject::invokeMethod(this, [=] { queueCppQmlTypeUpdate(doc, scan); });
 }
 
 void ModelManagerInterface::queueCppQmlTypeUpdate(const CPlusPlus::Document::Ptr &doc, bool scan)
@@ -1389,7 +1391,7 @@ void ModelManagerInterface::updateCppQmlTypes(
     qmlModelManager->m_cppDeclarationFiles = newDeclarations;
     if (hasNewInfo)
         // one could get away with re-linking the cpp types...
-        QMetaObject::invokeMethod(qmlModelManager, "asyncReset");
+        QMetaObject::invokeMethod(qmlModelManager, &ModelManagerInterface::asyncReset);
 }
 
 ModelManagerInterface::CppDataHash ModelManagerInterface::cppData() const
@@ -1401,13 +1403,20 @@ ModelManagerInterface::CppDataHash ModelManagerInterface::cppData() const
 LibraryInfo ModelManagerInterface::builtins(const Document::Ptr &doc) const
 {
     const ProjectInfo info = projectInfoForPath(doc->fileName());
-    if (!info.project.isNull() && !info.qtQmlPath.isEmpty())
+    if (!info.qtQmlPath.isEmpty())
         return m_validSnapshot.libraryInfo(info.qtQmlPath);
     return LibraryInfo();
 }
 
 ViewerContext ModelManagerInterface::completeVContext(const ViewerContext &vCtx,
                                                       const Document::Ptr &doc) const
+{
+    return getVContext(vCtx, doc, false);
+}
+
+ViewerContext ModelManagerInterface::getVContext(const ViewerContext &vCtx,
+                                                 const Document::Ptr &doc,
+                                                 bool limitToProject) const
 {
     ViewerContext res = vCtx;
 
@@ -1422,8 +1431,10 @@ ViewerContext ModelManagerInterface::completeVContext(const ViewerContext &vCtx,
         info = projectInfoForPath(doc->fileName());
     ViewerContext defaultVCtx = defaultVContext(res.language, Document::Ptr(nullptr), false);
     ProjectInfo defaultInfo = defaultProjectInfo();
-    if (info.qtQmlPath.isEmpty())
+    if (info.qtQmlPath.isEmpty()) {
         info.qtQmlPath = defaultInfo.qtQmlPath;
+        info.qtVersionString = defaultInfo.qtVersionString;
+    }
     info.applicationDirectories = Utils::filteredUnique(info.applicationDirectories
                                                         + defaultInfo.applicationDirectories);
     switch (res.flags) {
@@ -1446,20 +1457,27 @@ ViewerContext ModelManagerInterface::completeVContext(const ViewerContext &vCtx,
         {
             if (res.language == Dialect::QmlQtQuick2 || res.language == Dialect::QmlQtQuick2Ui)
                 maybeAddPath(res, info.qtQmlPath);
-            QList<ProjectInfo> allProjects;
-            {
-                QMutexLocker locker(&m_mutex);
-                allProjects = m_projects.values();
-            }
-            std::sort(allProjects.begin(), allProjects.end(), &pInfoLessThanImports);
+
             QList<Dialect> languages = res.language.companionLanguages();
-            for (const ProjectInfo &pInfo : qAsConst(allProjects)) {
-                for (const auto &importPath : pInfo.importPaths) {
+            auto addPathsOnLanguageMatch = [&](const PathsAndLanguages &importPaths) {
+                for (const auto &importPath : importPaths) {
                     if (languages.contains(importPath.language())
                             || importPath.language().companionLanguages().contains(res.language)) {
                         maybeAddPath(res, importPath.path().toString());
                     }
                 }
+            };
+            if (limitToProject) {
+                addPathsOnLanguageMatch(info.importPaths);
+            } else {
+                QList<ProjectInfo> allProjects;
+                {
+                    QMutexLocker locker(&m_mutex);
+                    allProjects = m_projects.values();
+                }
+                std::sort(allProjects.begin(), allProjects.end(), &pInfoLessThanImports);
+                for (const ProjectInfo &pInfo : qAsConst(allProjects))
+                    addPathsOnLanguageMatch(pInfo.importPaths);
             }
             const auto environmentPaths = environmentImportPaths();
             for (const QString &path : environmentPaths)
@@ -1518,6 +1536,13 @@ ViewerContext ModelManagerInterface::defaultVContext(Dialect language,
     return autoComplete ? completeVContext(defaultCtx, doc) : defaultCtx;
 }
 
+ViewerContext ModelManagerInterface::projectVContext(Dialect language, const Document::Ptr &doc) const
+{
+    // Returns context limited to the project the file belongs to
+    ViewerContext defaultCtx = defaultVContext(language, doc, false);
+    return getVContext(defaultCtx, doc, true);
+}
+
 ModelManagerInterface::ProjectInfo ModelManagerInterface::defaultProjectInfo() const
 {
     QMutexLocker l(mutex());
@@ -1536,11 +1561,41 @@ void ModelManagerInterface::setDefaultVContext(const ViewerContext &vContext)
     m_defaultVContexts[vContext.language] = vContext;
 }
 
-void ModelManagerInterface::joinAllThreads()
+void ModelManagerInterface::test_joinAllThreads()
 {
-    for (QFuture<void> &future : m_futures)
-        future.waitForFinished();
+    // Loop since futures can spawn more futures as they finish.
+    while (true) {
+        QFuture<void> f;
+        // get one future
+        {
+            QMutexLocker lock(&m_futuresMutex);
+            for (QFuture<void> &future : m_futures) {
+                if (!future.isFinished() && !future.isCanceled()) {
+                    f = future;
+                    break;
+                }
+            }
+        }
+        if (!f.isFinished() && !f.isCanceled()) {
+            f.waitForFinished();
+
+            // Some futures trigger more futures from connected signals
+            // and in tests, we care about finishing all of these too.
+            QEventLoop().processEvents();
+        } else {
+            break;
+        }
+    }
     m_futures.clear();
+}
+
+void ModelManagerInterface::addFuture(const QFuture<void> &future)
+{
+    {
+        QMutexLocker lock(&m_futuresMutex);
+        m_futures.append(future);
+    }
+    cleanupFutures();
 }
 
 Document::Ptr ModelManagerInterface::ensuredGetDocumentForPath(const QString &filePath)
@@ -1570,10 +1625,15 @@ void ModelManagerInterface::resetCodeModel()
         // reset the snapshot
         m_validSnapshot = Snapshot();
         m_newestSnapshot = Snapshot();
+        m_scannedPaths.clear();
     }
 
     // start a reparse thread
     updateSourceFiles(documents, false);
+
+    // rescan import directories
+    m_shouldScanImports = true;
+    updateImportPaths();
 }
 
 } // namespace QmlJS

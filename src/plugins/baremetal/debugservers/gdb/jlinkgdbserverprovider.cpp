@@ -28,12 +28,11 @@
 #include <baremetal/baremetalconstants.h>
 #include <baremetal/debugserverprovidermanager.h>
 
-#include <coreplugin/variablechooser.h>
-
 #include <utils/fileutils.h>
 #include <utils/pathchooser.h>
 #include <utils/qtcassert.h>
 #include <utils/qtcprocess.h>
+#include <utils/variablechooser.h>
 
 #include <QComboBox>
 #include <QFormLayout>
@@ -47,13 +46,13 @@ using namespace Utils;
 namespace BareMetal {
 namespace Internal {
 
-const char executableFileKeyC[] = "BareMetal.JLinkGdbServerProvider.ExecutableFile";
-const char jlinkDeviceKeyC[] = "BareMetal.JLinkGdbServerProvider.JLinkDevice";
-const char jlinkHostInterfaceKeyC[] = "BareMetal.JLinkGdbServerProvider.JLinkHostInterface";
-const char jlinkHostInterfaceIPAddressKeyC[] = "BareMetal.JLinkGdbServerProvider.JLinkHostInterfaceIPAddress";
-const char jlinkTargetInterfaceKeyC[] = "BareMetal.JLinkGdbServerProvider.JLinkTargetInterface";
-const char jlinkTargetInterfaceSpeedKeyC[] = "BareMetal.JLinkGdbServerProvider.JLinkTargetInterfaceSpeed";
-const char additionalArgumentsKeyC[] = "BareMetal.JLinkGdbServerProvider.AdditionalArguments";
+const char executableFileKeyC[] = "ExecutableFile";
+const char jlinkDeviceKeyC[] = "JLinkDevice";
+const char jlinkHostInterfaceKeyC[] = "JLinkHostInterface";
+const char jlinkHostInterfaceIPAddressKeyC[] = "JLinkHostInterfaceIPAddress";
+const char jlinkTargetInterfaceKeyC[] = "JLinkTargetInterface";
+const char jlinkTargetInterfaceSpeedKeyC[] = "JLinkTargetInterfaceSpeed";
+const char additionalArgumentsKeyC[] = "AdditionalArguments";
 
 // JLinkGdbServerProvider
 
@@ -63,7 +62,6 @@ JLinkGdbServerProvider::JLinkGdbServerProvider()
     setInitCommands(defaultInitCommands());
     setResetCommands(defaultResetCommands());
     setChannel("localhost", 2331);
-    setSettingsKeyBase("BareMetal.JLinkGdbServerProvider");
     setTypeDisplayName(GdbServerProvider::tr("JLink"));
     setConfigurationWidgetCreator([this] { return new JLinkGdbServerProviderConfigWidget(this); });
 }
@@ -271,12 +269,10 @@ JLinkGdbServerProviderConfigWidget::JLinkGdbServerProviderConfigWidget(
     m_resetCommandsTextEdit->setToolTip(defaultResetCommandsTooltip());
     m_mainLayout->addRow(tr("Reset commands:"), m_resetCommandsTextEdit);
 
-
-
     addErrorLabel();
     setFromProvider();
 
-    const auto chooser = new Core::VariableChooser(this);
+    const auto chooser = new VariableChooser(this);
     chooser->addSupportedWidget(m_initCommandsTextEdit);
     chooser->addSupportedWidget(m_resetCommandsTextEdit);
 
@@ -313,7 +309,7 @@ void JLinkGdbServerProviderConfigWidget::apply()
     Q_ASSERT(p);
 
     p->setChannel(m_hostWidget->channel());
-    p->m_executableFile = m_executableFileChooser->fileName();
+    p->m_executableFile = m_executableFileChooser->filePath();
     p->m_jlinkDevice = m_jlinkDeviceLineEdit->text();
     p->m_jlinkHost = m_hostInterfaceComboBox->currentText();
     p->m_jlinkHostAddr = m_hostInterfaceAddressLineEdit->text();
@@ -357,7 +353,7 @@ void JLinkGdbServerProviderConfigWidget::setFromProvider()
 
     const QSignalBlocker blocker(this);
     m_hostWidget->setChannel(p->channel());
-    m_executableFileChooser->setFileName(p->m_executableFile);
+    m_executableFileChooser->setFilePath(p->m_executableFile);
     m_jlinkDeviceLineEdit->setText(p->m_jlinkDevice);
     m_additionalArgumentsTextEdit->setPlainText(p->m_additionalArguments);
     m_jlinkDeviceLineEdit->setText( p->m_jlinkDevice);

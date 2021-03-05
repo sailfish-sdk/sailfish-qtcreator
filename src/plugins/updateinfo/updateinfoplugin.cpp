@@ -30,10 +30,11 @@
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/coreconstants.h>
 #include <coreplugin/icore.h>
-#include <coreplugin/infobar.h>
 #include <coreplugin/settingsdatabase.h>
 #include <coreplugin/shellcommand.h>
+#include <utils/algorithm.h>
 #include <utils/fileutils.h>
+#include <utils/infobar.h>
 #include <utils/synchronousprocess.h>
 
 #include <QDate>
@@ -129,7 +130,7 @@ void UpdateInfoPlugin::startCheckForUpdates()
     d->m_checkUpdatesCommand->setDisplayName(tr("Checking for Updates"));
     connect(d->m_checkUpdatesCommand, &ShellCommand::stdOutText, this, &UpdateInfoPlugin::collectCheckForUpdatesOutput);
     connect(d->m_checkUpdatesCommand, &ShellCommand::finished, this, &UpdateInfoPlugin::checkForUpdatesFinished);
-    d->m_checkUpdatesCommand->addJob({Utils::FilePath::fromFileInfo(d->m_maintenanceTool), {"--checkupdates"}},
+    d->m_checkUpdatesCommand->addJob({Utils::FilePath::fromString(d->m_maintenanceTool), {"--checkupdates"}},
                                      60 * 3, // 3 minutes timeout
                                      /*workingDirectory=*/QString(),
                                      [](int /*exitCode*/) { return Utils::SynchronousProcessResponse::Finished; });
@@ -159,18 +160,24 @@ void UpdateInfoPlugin::collectCheckForUpdatesOutput(const QString &contents)
     d->m_collectedOutput += contents;
 }
 
-static QStringList availableUpdates(const QDomDocument &document)
+struct Update
+{
+    QString name;
+    QString version;
+};
+
+static QList<Update> availableUpdates(const QDomDocument &document)
 {
     if (document.isNull() || !document.firstChildElement().hasChildNodes())
         return {};
-    QStringList result;
+    QList<Update> result;
     const QDomNodeList updates = document.firstChildElement().elementsByTagName("update");
     for (int i = 0; i < updates.size(); ++i) {
         const QDomNode node = updates.item(i);
         if (node.isElement()) {
             const QDomElement element = node.toElement();
             if (element.hasAttribute("name"))
-                result.append(element.attribute("name"));
+                result.append({element.attribute("name"), element.attribute("version")});
         }
     }
     return result;
@@ -192,15 +199,19 @@ void UpdateInfoPlugin::checkForUpdatesFinished()
         if (d->m_progress)
             d->m_progress->setKeepOnFinish(FutureProgress::HideOnFinish);
         emit newUpdatesAvailable(true);
-        Core::InfoBarEntry info(InstallUpdates,
-                                tr("New updates are available. Start the update?"));
+        Utils::InfoBarEntry info(InstallUpdates, tr("New updates are available. Start the update?"));
         info.setCustomButtonInfo(tr("Start Update"), [this] {
             Core::ICore::infoBar()->removeInfo(InstallUpdates);
             startUpdater();
         });
-        const QStringList updates = availableUpdates(document);
+        const QList<Update> updates = availableUpdates(document);
         info.setDetailsWidgetCreator([updates]() -> QWidget * {
-            const QString updateText = updates.join("</li><li>");
+            const QString updateText = Utils::transform(updates, [](const Update &u) {
+                                           return u.version.isEmpty()
+                                                      ? u.name
+                                                      : tr("%1 (%2)", "Package name and version")
+                                                            .arg(u.name, u.version);
+                                       }).join("</li><li>");
             auto label = new QLabel;
             label->setText("<qt><p>" + tr("Available updates:") + "<ul><li>" + updateText
                            + "</li></ul></p></qt>");

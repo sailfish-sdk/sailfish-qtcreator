@@ -57,6 +57,7 @@ class NodeListProperty;
 class NodeProperty;
 class NodeAbstractProperty;
 class ModelNode;
+class GlobalAnnotationStatus;
 class Comment;
 class Annotation;
 
@@ -64,7 +65,9 @@ QMLDESIGNERCORE_EXPORT QList<Internal::InternalNodePointer> toInternalNodeList(c
 
 using PropertyListType = QList<QPair<PropertyName, QVariant> >;
 
-class QMLDESIGNERCORE_EXPORT  ModelNode
+static const PropertyName lockedProperty = {("locked")};
+
+class QMLDESIGNERCORE_EXPORT ModelNode
 {
     friend QMLDESIGNERCORE_EXPORT bool operator ==(const ModelNode &firstNode, const ModelNode &secondNode);
     friend QMLDESIGNERCORE_EXPORT bool operator !=(const ModelNode &firstNode, const ModelNode &secondNode);
@@ -90,9 +93,12 @@ public:
     ModelNode(const Internal::InternalNodePointer &internalNode, Model *model, const AbstractView *view);
     ModelNode(const ModelNode &modelNode, AbstractView *view);
     ModelNode(const ModelNode &other);
+    ModelNode(ModelNode &&other);
     ~ModelNode();
 
-    ModelNode& operator=(const ModelNode &other);
+    ModelNode &operator=(const ModelNode &other);
+    ModelNode &operator=(ModelNode &&other);
+
     TypeName type() const;
     QString simplifiedTypeName() const;
     QString displayName() const;
@@ -202,6 +208,21 @@ public:
     void setAnnotation(const Annotation &annotation);
     void removeAnnotation();
 
+    Annotation globalAnnotation() const;
+    bool hasGlobalAnnotation() const;
+    void setGlobalAnnotation(const Annotation &annotation);
+    void removeGlobalAnnotation();
+
+    GlobalAnnotationStatus globalStatus() const;
+    bool hasGlobalStatus() const;
+    void setGlobalStatus(const GlobalAnnotationStatus &status);
+    void removeGlobalStatus();
+
+    bool locked() const;
+    void setLocked(bool value);
+
+    static bool isThisOrAncestorLocked(const ModelNode &node);
+
     qint32 internalId() const;
 
     void setNodeSource(const QString&);
@@ -215,9 +236,19 @@ public:
     bool isSubclassOf(const TypeName &typeName, int majorVersion = -1, int minorVersion = -1) const;
     QIcon typeIcon() const;
 
+    friend void swap(ModelNode &first, ModelNode &second)
+    {
+        using std::swap;
+
+        swap(first.m_internalNode, second.m_internalNode);
+        swap(first.m_model, second.m_model);
+        swap(first.m_view, second.m_view);
+    }
+
 private: // functions
     Internal::InternalNodePointer internalNode() const;
 
+    bool hasLocked() const;
 
 private: // variables
     Internal::InternalNodePointer m_internalNode;

@@ -27,17 +27,21 @@
 
 #include <QCoreApplication>
 
+#include "capturenodeinstanceserverdispatcher.h"
+#include "qt5captureimagenodeinstanceserver.h"
+#include "qt5capturepreviewnodeinstanceserver.h"
 #include "qt5informationnodeinstanceserver.h"
 #include "qt5previewnodeinstanceserver.h"
 #include "qt5rendernodeinstanceserver.h"
 #include "qt5testnodeinstanceserver.h"
+#include "quickitemnodeinstance.h"
 
 #include <designersupportdelegate.h>
 
 #if defined(Q_OS_UNIX)
 #include <unistd.h>
 #elif defined(Q_OS_WIN)
-#include <windows.h>
+#include <Windows.h>
 #endif
 
 namespace QmlDesigner {
@@ -54,21 +58,43 @@ Qt5NodeInstanceClientProxy::Qt5NodeInstanceClientProxy(QObject *parent) :
     NodeInstanceClientProxy(parent)
 {
     prioritizeDown();
-    DesignerSupport::activateDesignerWindowManager();
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    const bool qt6 = false;
+#else
+    const bool qt6 = true;
+#endif
+
+    const bool unifiedRenderPath = qt6 || qEnvironmentVariableIsSet("QMLPUPPET_UNIFIED_RENDER_PATH");
+
+    if (unifiedRenderPath)
+        Internal::QuickItemNodeInstance::enableUnifiedRenderPath(true);
+    else
+        DesignerSupport::activateDesignerWindowManager();
+
     if (QCoreApplication::arguments().at(1) == QLatin1String("--readcapturedstream")) {
         qputenv("DESIGNER_DONT_USE_SHARED_MEMORY", "1");
-        setNodeInstanceServer(new Qt5TestNodeInstanceServer(this));
+        setNodeInstanceServer(std::make_unique<Qt5TestNodeInstanceServer>(this));
         initializeCapturedStream(QCoreApplication::arguments().at(2));
         readDataStream();
         QCoreApplication::exit();
+    } else if (QCoreApplication::arguments().at(2).contains(',')) {
+        const QStringList serverNames = QCoreApplication::arguments().at(2).split(',');
+        setNodeInstanceServer(std::make_unique<CaptureNodeInstanceServerDispatcher>(serverNames, this));
+        initializeSocket();
     } else if (QCoreApplication::arguments().at(2) == QLatin1String("previewmode")) {
-        setNodeInstanceServer(new Qt5PreviewNodeInstanceServer(this));
+        setNodeInstanceServer(std::make_unique<Qt5PreviewNodeInstanceServer>(this));
         initializeSocket();
     } else if (QCoreApplication::arguments().at(2) == QLatin1String("editormode")) {
-        setNodeInstanceServer(new Qt5InformationNodeInstanceServer(this));
+        setNodeInstanceServer(std::make_unique<Qt5InformationNodeInstanceServer>(this));
         initializeSocket();
     } else if (QCoreApplication::arguments().at(2) == QLatin1String("rendermode")) {
-        setNodeInstanceServer(new Qt5RenderNodeInstanceServer(this));
+        setNodeInstanceServer(std::make_unique<Qt5RenderNodeInstanceServer>(this));
+        initializeSocket();
+    } else if (QCoreApplication::arguments().at(2) == QLatin1String("capturemode")) {
+        setNodeInstanceServer(std::make_unique<Qt5CapturePreviewNodeInstanceServer>(this));
+        initializeSocket();
+    } else if (QCoreApplication::arguments().at(2) == QLatin1String("captureiconmode")) {
+        setNodeInstanceServer(std::make_unique<Qt5CaptureImageNodeInstanceServer>(this));
         initializeSocket();
     }
 }

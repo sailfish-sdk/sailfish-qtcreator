@@ -26,9 +26,9 @@
 #pragma once
 
 #include "core_global.h"
-#include "id.h"
 
 #include <utils/fancylineedit.h>
+#include <utils/id.h>
 
 #include <QObject>
 #include <QList>
@@ -58,7 +58,7 @@ public:
     virtual int priorityInStatusBar() const = 0;
 
     virtual void clearContents() = 0;
-    virtual void visibilityChanged(bool visible) = 0;
+    virtual void visibilityChanged(bool visible);
 
     virtual void setFocus() = 0;
     virtual bool hasFocus() const = 0;
@@ -92,9 +92,9 @@ signals:
     void navigateStateUpdate();
     void flashButton();
     void setBadgeNumber(int number);
-    void zoomIn(int range);
-    void zoomOut(int range);
-    void resetZoom();
+    void zoomInRequested(int range);
+    void zoomOutRequested(int range);
+    void resetZoomRequested();
     void wheelZoomEnabledChanged(bool enabled);
     void fontChanged(const QFont &font);
 
@@ -115,9 +115,9 @@ private:
     void filterOutputButtonClicked();
     void setCaseSensitive(bool caseSensitive);
     void setRegularExpressions(bool regularExpressions);
-    Id filterRegexpActionId() const;
-    Id filterCaseSensitivityActionId() const;
-    Id filterInvertedActionId() const;
+    Utils::Id filterRegexpActionId() const;
+    Utils::Id filterCaseSensitivityActionId() const;
+    Utils::Id filterInvertedActionId() const;
 
     Core::CommandButton * const m_zoomInButton;
     Core::CommandButton * const m_zoomOutButton;

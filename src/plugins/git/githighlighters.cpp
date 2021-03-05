@@ -35,10 +35,10 @@ namespace Internal {
 static const char CHANGE_PATTERN[] = "\\b[a-f0-9]{7,40}\\b";
 
 GitSubmitHighlighter::GitSubmitHighlighter(QTextEdit * parent) :
-    TextEditor::SyntaxHighlighter(parent)
+    TextEditor::SyntaxHighlighter(parent),
+    m_keywordPattern("^[\\w-]+:")
 {
     setDefaultTextFormatCategories();
-    m_keywordPattern.setPattern("^[\\w-]+:");
     m_hashChar = '#';
     QTC_CHECK(m_keywordPattern.isValid());
 }
@@ -73,10 +73,11 @@ void GitSubmitHighlighter::highlightBlock(const QString &text)
     }
     case Other:
         // Format key words ("Task:") italic
-        if (m_keywordPattern.indexIn(text, 0, QRegExp::CaretAtZero) == 0) {
+        const QRegularExpressionMatch match = m_keywordPattern.match(text);
+        if (match.hasMatch() && match.capturedStart(0) == 0) {
             QTextCharFormat charFormat = format(0);
             charFormat.setFontItalic(true);
-            setFormat(0, m_keywordPattern.matchedLength(), charFormat);
+            setFormat(0, match.capturedLength(), charFormat);
         }
         break;
     }
@@ -103,6 +104,11 @@ static TextEditor::TextStyle styleForFormat(int format)
     case Format_Squash: return C_ENUMERATION;
     case Format_Fixup: return C_NUMBER;
     case Format_Exec: return C_LABEL;
+    case Format_Break: return C_PREPROCESSOR;
+    case Format_Drop: return C_REMOVED_LINE;
+    case Format_Label: return C_LABEL;
+    case Format_Reset: return C_LABEL;
+    case Format_Merge: return C_LABEL;
     case Format_Count:
         QTC_CHECK(false); // should never get here
         return C_TEXT;
@@ -124,26 +130,32 @@ GitRebaseHighlighter::GitRebaseHighlighter(QTextDocument *parent) :
     m_actions << RebaseAction("^(s|squash)\\b", Format_Squash);
     m_actions << RebaseAction("^(f|fixup)\\b", Format_Fixup);
     m_actions << RebaseAction("^(x|exec)\\b", Format_Exec);
+    m_actions << RebaseAction("^(b|break)\\b", Format_Break);
+    m_actions << RebaseAction("^(d|drop)\\b", Format_Drop);
+    m_actions << RebaseAction("^(l|label)\\b", Format_Label);
+    m_actions << RebaseAction("^(t|reset)\\b", Format_Reset);
+    m_actions << RebaseAction("^(m|merge)\\b", Format_Merge);
 }
 
 void GitRebaseHighlighter::highlightBlock(const QString &text)
 {
     if (text.startsWith(m_hashChar)) {
         setFormat(0, text.size(), formatForCategory(Format_Comment));
-        int changeIndex = 0;
-        while ((changeIndex = m_changeNumberPattern.indexIn(text, changeIndex)) != -1) {
-            const int changeLen = m_changeNumberPattern.matchedLength();
-            setFormat(changeIndex, changeLen, formatForCategory(Format_Change));
-            changeIndex += changeLen;
+        QRegularExpressionMatchIterator it = m_changeNumberPattern.globalMatch(text);
+        while (it.hasNext()) {
+            const QRegularExpressionMatch match = it.next();
+            setFormat(match.capturedStart(), match.capturedLength(), formatForCategory(Format_Change));
         }
     } else {
         for (const RebaseAction &action : qAsConst(m_actions)) {
-            if (action.exp.indexIn(text) != -1) {
-                const int len = action.exp.matchedLength();
+            const QRegularExpressionMatch match = action.exp.match(text);
+            if (match.hasMatch()) {
+                const int len = match.capturedLength();
                 setFormat(0, len, formatForCategory(action.formatCategory));
-                const int changeIndex = m_changeNumberPattern.indexIn(text, len);
-                if (changeIndex != -1) {
-                    const int changeLen = m_changeNumberPattern.matchedLength();
+                const QRegularExpressionMatch changeMatch = m_changeNumberPattern.match(text, len);
+                const int changeIndex = changeMatch.capturedStart();
+                if (changeMatch.hasMatch()) {
+                    const int changeLen = changeMatch.capturedLength();
                     const int descStart = changeIndex + changeLen + 1;
                     setFormat(changeIndex, changeLen, formatForCategory(Format_Change));
                     setFormat(descStart, text.size() - descStart, formatForCategory(Format_Description));

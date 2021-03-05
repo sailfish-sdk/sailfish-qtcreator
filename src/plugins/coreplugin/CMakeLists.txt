@@ -1,3 +1,5 @@
+option(SHOW_BUILD_DATE "Show build date in about dialog" OFF)
+
 add_qtc_plugin(Core
   DEPENDS Qt5::PrintSupport Qt5::Qml Qt5::Sql Qt5::Gui Qt5::GuiPrivate
   PUBLIC_DEPENDS Aggregation ExtensionSystem Utils app_version
@@ -18,6 +20,7 @@ add_qtc_plugin(Core
     coreplugin.cpp coreplugin.h
     designmode.cpp designmode.h
     dialogs/addtovcsdialog.cpp dialogs/addtovcsdialog.h dialogs/addtovcsdialog.ui
+    dialogs/codecselector.cpp dialogs/codecselector.h
     dialogs/externaltoolconfig.cpp dialogs/externaltoolconfig.h dialogs/externaltoolconfig.ui
     dialogs/filepropertiesdialog.cpp dialogs/filepropertiesdialog.h dialogs/filepropertiesdialog.ui
     dialogs/ioptionspage.cpp dialogs/ioptionspage.h
@@ -82,13 +85,11 @@ add_qtc_plugin(Core
     helpmanager.cpp helpmanager.h helpmanager_implementation.h
     icontext.cpp icontext.h
     icore.cpp icore.h
-    id.cpp id.h
     idocument.cpp idocument.h
     idocumentfactory.cpp idocumentfactory.h
     ifilewizardextension.h
     imode.cpp imode.h
     inavigationwidgetfactory.cpp inavigationwidgetfactory.h
-    infobar.cpp infobar.h
     ioutputpane.cpp ioutputpane.h
     iversioncontrol.cpp iversioncontrol.h
     iwelcomepage.cpp iwelcomepage.h
@@ -129,6 +130,7 @@ add_qtc_plugin(Core
     outputwindow.cpp outputwindow.h
     patchtool.cpp patchtool.h
     plugindialog.cpp plugindialog.h
+    plugininstallwizard.cpp plugininstallwizard.h
     progressmanager/futureprogress.cpp progressmanager/futureprogress.h
     progressmanager/progressbar.cpp progressmanager/progressbar.h
     progressmanager/progressmanager.cpp progressmanager/progressmanager.h progressmanager/progressmanager_p.h
@@ -144,12 +146,16 @@ add_qtc_plugin(Core
     systemsettings.cpp systemsettings.h systemsettings.ui
     textdocument.cpp textdocument.h
     themechooser.cpp themechooser.h
-    variablechooser.cpp variablechooser.h
     vcsmanager.cpp vcsmanager.h
     versiondialog.cpp versiondialog.h
     welcomepagehelper.cpp welcomepagehelper.h
     windowsupport.cpp windowsupport.h
   EXPLICIT_MOC dialogs/filepropertiesdialog.h
+)
+
+extend_qtc_plugin(Core
+  CONDITION SHOW_BUILD_DATE
+  DEFINES QTC_SHOW_BUILD_DATE
 )
 
 extend_qtc_plugin(Core
@@ -179,10 +185,22 @@ extend_qtc_plugin(Core
 )
 
 extend_qtc_plugin(Core
-  CONDITION TARGET Qt5::Script
+  CONDITION Qt5_VERSION VERSION_GREATER_EQUAL 5.14.0
   FEATURE_INFO "Script Locator filter"
-  DEPENDS Qt5::Script
   DEFINES WITH_JAVASCRIPTFILTER
   SOURCES
     locator/javascriptfilter.cpp locator/javascriptfilter.h
 )
+
+if ((NOT WIN32) AND (NOT APPLE))
+  # install logo
+  foreach(size 16 24 32 48 64 128 256 512)
+    install(
+      FILES images/logo/${size}/QtProject-qtcreator.png
+      DESTINATION share/icons/hicolor/${size}x${size}/apps
+    )
+  endforeach()
+endif()
+
+# transitional qmake plugin build support
+qtc_add_public_header(coreplugin_dependencies.pri)

@@ -40,7 +40,9 @@
 #include <QApplication>
 #include <QCursor>
 #include <QFontDatabase>
+#include <QMessageBox>
 #include <QQmlContext>
+#include <QWindow>
 
 #include <coreplugin/icore.h>
 
@@ -98,13 +100,22 @@ PropertyEditorContextObject::PropertyEditorContextObject(QObject *parent) :
 
 }
 
-QString PropertyEditorContextObject::convertColorToString(const QColor &color)
+QString PropertyEditorContextObject::convertColorToString(const QVariant &color)
 {
-    QString colorString = color.name();
+    QString colorString;
+    QColor theColor;
+    if (color.canConvert(QVariant::Color)) {
+        theColor = color.value<QColor>();
+    } else if (color.canConvert(QVariant::Vector3D)) {
+        auto vec = color.value<QVector3D>();
+        theColor = QColor::fromRgbF(vec.x(), vec.y(), vec.z());
+    }
 
-    if (color.alpha() != 255) {
-        QString hexAlpha = QString("%1").arg(color.alpha(), 2, 16, QLatin1Char('0'));
-        colorString.remove(0,1);
+    colorString = theColor.name();
+
+    if (theColor.alpha() != 255) {
+        QString hexAlpha = QString("%1").arg(theColor.alpha(), 2, 16, QLatin1Char('0'));
+        colorString.remove(0, 1);
         colorString.prepend(hexAlpha);
         colorString.prepend(QStringLiteral("#"));
     }
@@ -169,9 +180,8 @@ void PropertyEditorContextObject::toogleExportAlias()
     }
 }
 
-void PropertyEditorContextObject::changeTypeName(const QString &typeName)
+void PropertyEditorContextObject::goIntoComponent()
 {
-
     QTC_ASSERT(m_model && m_model->rewriterView(), return);
 
     /* Ideally we should not missuse the rewriterView
@@ -180,19 +190,112 @@ void PropertyEditorContextObject::changeTypeName(const QString &typeName)
 
     QTC_ASSERT(!rewriterView->selectedModelNodes().isEmpty(), return);
 
-    rewriterView->executeInTransaction("PropertyEditorContextObject:changeTypeName", [this, rewriterView, typeName](){
+    const ModelNode selectedNode = rewriterView->selectedModelNodes().constFirst();
+
+    DocumentManager::goIntoComponent(selectedNode);
+}
+
+void PropertyEditorContextObject::changeTypeName(const QString &typeName)
+{
+    QTC_ASSERT(m_model && m_model->rewriterView(), return);
+
+    /* Ideally we should not missuse the rewriterView
+     * If we add more code here we have to forward the property editor view */
+    RewriterView *rewriterView = m_model->rewriterView();
+
+    QTC_ASSERT(!rewriterView->selectedModelNodes().isEmpty(), return);
+
+    try {
+        auto transaction = RewriterTransaction(rewriterView, "PropertyEditorContextObject:changeTypeName");
+
         ModelNode selectedNode = rewriterView->selectedModelNodes().constFirst();
+
+        // Check if the requested type is the same as already set
+        if (selectedNode.simplifiedTypeName() == typeName)
+            return;
 
         NodeMetaInfo metaInfo = m_model->metaInfo(typeName.toLatin1());
         if (!metaInfo.isValid()) {
-            Core::AsynchronousMessageBox::warning(tr("Invalid Type"),  tr("%1 is an invalid type.").arg(typeName));
+            Core::AsynchronousMessageBox::warning(tr("Invalid Type"), tr("%1 is an invalid type.").arg(typeName));
             return;
         }
+
+        // Create a list of properties available for the new type
+        QList<PropertyName> propertiesAndSignals(metaInfo.propertyNames());
+        // Add signals to the list
+        for (const auto &signal : metaInfo.signalNames()) {
+            if (signal.isEmpty())
+                continue;
+
+            PropertyName name = signal;
+            QChar firstChar = QChar(signal.at(0)).toUpper().toLatin1();
+            name[0] = firstChar.toLatin1();
+            name.prepend("on");
+            propertiesAndSignals.append(name);
+        }
+
+        // Add dynamic properties and respective change signals
+        for (const auto &property : selectedNode.properties()) {
+            if (!property.isDynamic())
+                continue;
+
+            // Add dynamic property
+            propertiesAndSignals.append(property.name());
+            // Add its change signal
+            PropertyName name = property.name();
+            QChar firstChar = QChar(property.name().at(0)).toUpper().toLatin1();
+            name[0] = firstChar.toLatin1();
+            name.prepend("on");
+            name.append("Changed");
+            propertiesAndSignals.append(name);
+        }
+
+        // Compare current properties and signals with the once available for change type
+        QList<PropertyName> incompatibleProperties;
+        for (const auto &property : selectedNode.properties()) {
+            if (!propertiesAndSignals.contains(property.name()))
+                incompatibleProperties.append(property.name());
+        }
+
+        Utils::sort(incompatibleProperties);
+
+        // Create a dialog showing incompatible properties and signals
+        if (!incompatibleProperties.empty()) {
+            QString detailedText = QString("<b>Incompatible properties:</b><br>");
+
+            for (const auto &p : incompatibleProperties)
+                detailedText.append("- " + QString::fromUtf8(p) + "<br>");
+
+            detailedText.chop(QString("<br>").size());
+
+            QMessageBox msgBox;
+            msgBox.setTextFormat(Qt::RichText);
+            msgBox.setIcon(QMessageBox::Question);
+            msgBox.setWindowTitle("Change Type");
+            msgBox.setText(QString("Changing the type from %1 to %2 can't be done without removing incompatible properties.<br><br>%3")
+                                   .arg(selectedNode.simplifiedTypeName())
+                                   .arg(typeName)
+                                   .arg(detailedText));
+            msgBox.setInformativeText("Do you want to continue by removing incompatible properties?");
+            msgBox.setStandardButtons(QMessageBox::Ok | QMessageBox::Cancel);
+            msgBox.setDefaultButton(QMessageBox::Ok);
+
+            if (msgBox.exec() == QMessageBox::Cancel)
+                return;
+
+            for (auto p : incompatibleProperties)
+                selectedNode.removeProperty(p);
+        }
+
         if (selectedNode.isRootNode())
             rewriterView->changeRootNodeType(metaInfo.typeName(), metaInfo.majorVersion(), metaInfo.minorVersion());
         else
             selectedNode.changeType(metaInfo.typeName(), metaInfo.majorVersion(), metaInfo.minorVersion());
-    });
+
+        transaction.commit();
+    } catch (const Exception &e) {
+        e.showException();
+    }
 }
 
 void PropertyEditorContextObject::insertKeyframe(const QString &propertyName)
@@ -408,7 +511,9 @@ void PropertyEditorContextObject::hideCursor()
         return;
 
     QApplication::setOverrideCursor(QCursor(Qt::BlankCursor));
-    m_lastPos = QCursor::pos();
+
+    if (QWidget *w = QApplication::activeWindow())
+        m_lastPos = QCursor::pos(w->screen());
 }
 
 void PropertyEditorContextObject::restoreCursor()
@@ -416,14 +521,36 @@ void PropertyEditorContextObject::restoreCursor()
     if (!QApplication::overrideCursor())
         return;
 
-    QCursor::setPos(m_lastPos);
     QApplication::restoreOverrideCursor();
+
+    if (QWidget *w = QApplication::activeWindow())
+        QCursor::setPos(w->screen(), m_lastPos);
+}
+
+void PropertyEditorContextObject::holdCursorInPlace()
+{
+    if (!QApplication::overrideCursor())
+        return;
+
+    if (QWidget *w = QApplication::activeWindow())
+        QCursor::setPos(w->screen(), m_lastPos);
 }
 
 QStringList PropertyEditorContextObject::styleNamesForFamily(const QString &family)
 {
     const QFontDatabase dataBase;
     return dataBase.styles(family);
+}
+
+QStringList PropertyEditorContextObject::allStatesForId(const QString &id)
+{
+      if (m_model && m_model->rewriterView()) {
+          const QmlObjectNode node = m_model->rewriterView()->modelNodeForId(id);
+          if (node.isValid())
+              return node.allStateNames();
+      }
+
+      return {};
 }
 
 void EasingCurveEditor::registerDeclarativeType()

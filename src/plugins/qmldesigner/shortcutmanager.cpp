@@ -154,12 +154,7 @@ void ShortCutManager::registerActions(const Core::Context &qmlDesignerMainContex
     m_deleteAction.setIcon(QIcon::fromTheme(QLatin1String("edit-cut"), Utils::Icons::EDIT_CLEAR_TOOLBAR.icon()));
 
     command = Core::ActionManager::registerAction(&m_deleteAction, QmlDesigner::Constants::C_DELETE, qmlDesignerMainContext);
-    if (Utils::HostOsInfo::isMacHost())
-        command->setDefaultKeySequence(QKeySequence::Backspace);
-    else
-        command->setDefaultKeySequence(QKeySequence::Delete);
-
-    Utils::HostOsInfo::isMacHost() ;
+    command->setDefaultKeySequences({QKeySequence::Delete, QKeySequence::Backspace});
 
     command->setAttribute(Core::Command::CA_Hide); // don't show delete in other modes
     if (!Utils::HostOsInfo::isMacHost())
@@ -193,7 +188,7 @@ void ShortCutManager::registerActions(const Core::Context &qmlDesignerMainContex
     command->setDefaultKeySequence(QKeySequence::SelectAll);
     editMenu->addAction(command, Core::Constants::G_EDIT_SELECTALL);
 
-    Core::ActionContainer *viewsMenu = Core::ActionManager::actionContainer(Core::Constants::M_WINDOW_VIEWS);
+    Core::ActionContainer *viewsMenu = Core::ActionManager::actionContainer(Core::Constants::M_VIEW_VIEWS);
 
     command = Core::ActionManager::registerAction(&m_collapseExpandStatesAction,  Constants::TOGGLE_STATES_EDITOR, qmlDesignerMainContext);
     command->setAttribute(Core::Command::CA_Hide);

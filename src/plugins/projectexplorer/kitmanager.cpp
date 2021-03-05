@@ -44,12 +44,14 @@
 #include <remotelinux/remotelinux_constants.h>
 
 #include <utils/environment.h>
+#include <utils/layoutbuilder.h>
 #include <utils/persistentsettings.h>
 #include <utils/pointeralgorithm.h>
 #include <utils/qtcassert.h>
 #include <utils/stringutils.h>
 
 #include <QHash>
+#include <QLabel>
 #include <QSettings>
 #include <QStyle>
 
@@ -62,7 +64,7 @@ namespace ProjectExplorer {
 class KitList
 {
 public:
-    Core::Id defaultKit;
+    Utils::Id defaultKit;
     std::vector<std::unique_ptr<Kit>> kits;
 };
 
@@ -175,7 +177,7 @@ void KitManager::restoreKits()
     std::vector<std::unique_ptr<Kit>> resultList;
 
     // read all kits from user file
-    Core::Id defaultUserKit;
+    Utils::Id defaultUserKit;
     std::vector<std::unique_ptr<Kit>> kitsToCheck;
     {
         KitList userKits = restoreKitsHelper(settingsFileName());
@@ -235,6 +237,13 @@ void KitManager::restoreKits()
     // Delete all loaded autodetected kits that were not rediscovered:
     kitsToCheck.clear();
 
+    // Remove replacement kits for which the original kit has turned up again.
+    erase(resultList, [&resultList](const std::unique_ptr<Kit> &k) {
+        return k->isReplacementKit() && contains(resultList, [&k](const std::unique_ptr<Kit> &other) {
+            return other->id() == k->id() && other != k;
+        });
+    });
+
     static const auto kitMatchesAbiList = [](const Kit *kit, const Abis &abis) {
         const QList<ToolChain *> toolchains = ToolChainKitAspect::toolChains(kit);
         for (const ToolChain * const tc : toolchains) {
@@ -262,7 +271,7 @@ void KitManager::restoreKits()
 
     if (resultList.empty() || !haveKitForBinary) {
         // No kits exist yet, so let's try to autoconfigure some from the toolchains we know.
-        QHash<Abi, QHash<Core::Id, ToolChain *>> uniqueToolchains;
+        QHash<Abi, QHash<Utils::Id, ToolChain *>> uniqueToolchains;
 
         // On Linux systems, we usually detect a plethora of same-ish toolchains. The following
         // algorithm gives precedence to icecc and ccache and otherwise simply chooses the one with
@@ -437,7 +446,7 @@ void KitManager::saveKits()
                 d->m_defaultKit ? QString::fromLatin1(d->m_defaultKit->id().name()) : QString());
     data.insert(KIT_IRRELEVANT_ASPECTS_KEY,
                 transform<QVariantList>(d->m_irrelevantAspects, &Id::toSetting));
-    d->m_writer->save(data, ICore::mainWindow());
+    d->m_writer->save(data, ICore::dialogParent());
 }
 
 bool KitManager::isLoaded()
@@ -594,7 +603,7 @@ void KitManager::notifyAboutUpdate(Kit *k)
         emit m_instance->unmanagedKitUpdated(k);
 }
 
-Kit *KitManager::registerKit(const std::function<void (Kit *)> &init, Core::Id id)
+Kit *KitManager::registerKit(const std::function<void (Kit *)> &init, Utils::Id id)
 {
     QTC_ASSERT(isLoaded(), return nullptr);
 
@@ -677,10 +686,10 @@ void KitAspect::addToEnvironment(const Kit *k, Environment &env) const
     Q_UNUSED(env)
 }
 
-IOutputParser *KitAspect::createOutputParser(const Kit *k) const
+QList<OutputLineParser *> KitAspect::createOutputParsers(const Kit *k) const
 {
     Q_UNUSED(k)
-    return nullptr;
+    return {};
 }
 
 QString KitAspect::displayNamePostfix(const Kit *k) const
@@ -717,9 +726,27 @@ KitAspectWidget::KitAspectWidget(Kit *kit, const KitAspect *ki) : m_kit(kit),
     m_kitInformation(ki), m_isSticky(kit->isSticky(ki->id()))
 { }
 
-Core::Id KitAspectWidget::kitInformationId() const
+Utils::Id KitAspectWidget::kitInformationId() const
 {
     return m_kitInformation->id();
+}
+
+void KitAspectWidget::addToLayout(LayoutBuilder &builder)
+{
+    QTC_ASSERT(!m_label, delete m_label);
+    m_label = new QLabel(m_kitInformation->displayName() + ':');
+    m_label->setToolTip(m_kitInformation->description());
+
+    builder.addRow({{m_label, 1, LayoutBuilder::AlignAsFormLabel}, mainWidget(), buttonWidget()});
+}
+
+void KitAspectWidget::setVisible(bool visible)
+{
+    mainWidget()->setVisible(visible);
+    if (buttonWidget())
+        buttonWidget()->setVisible(visible);
+    QTC_ASSERT(m_label, return);
+    m_label->setVisible(visible);
 }
 
 QString KitAspectWidget::msgManage()

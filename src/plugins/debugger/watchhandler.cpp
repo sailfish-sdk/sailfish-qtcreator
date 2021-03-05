@@ -297,7 +297,7 @@ public:
 
     void saveGeometry()
     {
-        SessionManager::setValue("DebuggerSeparateWidgetGeometry", geometry());
+        SessionManager::setValue("DebuggerSeparateWidgetGeometry", QVariant(geometry()));
     }
 
     ~SeparatedView() override
@@ -1108,7 +1108,8 @@ bool WatchModel::setData(const QModelIndex &idx, const QVariant &value, int role
         }
 
         if (auto kev = ev.as<QKeyEvent>(QEvent::KeyPress)) {
-            if (item && kev->key() == Qt::Key_Delete && item->isWatcher()) {
+            if (item && (kev->key() == Qt::Key_Delete || kev->key() == Qt::Key_Backspace)
+                && item->isWatcher()) {
                 foreach (const QModelIndex &idx, ev.selectedRows())
                     removeWatchItem(itemForIndex(idx));
                 return true;
@@ -1595,7 +1596,8 @@ static QString removeWatchActionText(QString exp)
 static void copyToClipboard(const QString &clipboardText)
 {
     QClipboard *clipboard = QApplication::clipboard();
-    clipboard->setText(clipboardText, QClipboard::Selection);
+    if (clipboard->supportsSelection())
+        clipboard->setText(clipboardText, QClipboard::Selection);
     clipboard->setText(clipboardText, QClipboard::Clipboard);
 }
 
@@ -1736,15 +1738,15 @@ bool WatchModel::contextMenuEvent(const ItemViewEvent &ev)
 
     menu->addSeparator();
 
-    menu->addAction(action(UseDebuggingHelpers));
-    menu->addAction(action(UseToolTipsInLocalsView));
-    menu->addAction(action(AutoDerefPointers));
-    menu->addAction(action(SortStructMembers));
-    menu->addAction(action(UseDynamicType));
-    menu->addAction(action(SettingsDialog));
+    menu->addAction(action(UseDebuggingHelpers)->action());
+    menu->addAction(action(UseToolTipsInLocalsView)->action());
+    menu->addAction(action(AutoDerefPointers)->action());
+    menu->addAction(action(SortStructMembers)->action());
+    menu->addAction(action(UseDynamicType)->action());
+    menu->addAction(action(SettingsDialog)->action());
 
     Internal::addHideColumnActions(menu, ev.view());
-    menu->addAction(action(SettingsDialog));
+    menu->addAction(action(SettingsDialog)->action());
     connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
     menu->popup(ev.globalPos());
     return true;
@@ -1909,12 +1911,18 @@ QMenu *WatchModel::createFormatMenu(WatchItem *item, QWidget *parent)
                            });
     }
 
+    addAction(menu, tr("Reset All Individual Formats"), true, [this]() {
+        theIndividualFormats.clear();
+        saveFormats();
+        m_engine->updateLocals();
+    });
+
     menu->addSeparator();
     addAction(menu, tr("Change Display for Type \"%1\":").arg(item->type), false);
 
     addCheckableAction(menu, spacer + tr("Automatic"), true, typeFormat == AutomaticFormat,
                        [this, item] {
-                            //const QModelIndexList active = activeRows();
+                           //const QModelIndexList active = activeRows();
                            //for (const QModelIndex &idx : active)
                            //    setModelData(LocalsTypeFormatRole, AutomaticFormat, idx);
                            setTypeFormat(item->type, AutomaticFormat);
@@ -1924,10 +1932,16 @@ QMenu *WatchModel::createFormatMenu(WatchItem *item, QWidget *parent)
     for (int format : alternativeFormats) {
         addCheckableAction(menu, spacer + nameForFormat(format), true, format == typeFormat,
                            [this, format, item] {
-                                setTypeFormat(item->type, format);
-                                m_engine->updateLocals();
+                               setTypeFormat(item->type, format);
+                               m_engine->updateLocals();
                            });
     }
+
+    addAction(menu, tr("Reset All Formats for Types"), true, [this]() {
+        theTypeFormats.clear();
+        saveFormats();
+        m_engine->updateLocals();
+    });
 
     return menu;
 }
@@ -2449,7 +2463,7 @@ void WatchModel::clearWatches()
         return;
 
     const QDialogButtonBox::StandardButton ret = CheckableMessageBox::doNotAskAgainQuestion(
-                ICore::mainWindow(), tr("Remove All Expression Evaluators"),
+                ICore::dialogParent(), tr("Remove All Expression Evaluators"),
                 tr("Are you sure you want to remove all expression evaluators?"),
                 ICore::settings(), "RemoveAllWatchers");
     if (ret != QDialogButtonBox::Yes)
@@ -2671,7 +2685,7 @@ void WatchHandler::addDumpers(const GdbMi &dumpers)
         DisplayFormats formats;
         formats.append(RawFormat);
         QString reportedFormats = dumper["formats"].data();
-        foreach (const QStringRef &format, reportedFormats.splitRef(',')) {
+        foreach (const QString &format, reportedFormats.split(',')) {
             if (int f = format.toInt())
                 formats.append(DisplayFormat(f));
         }

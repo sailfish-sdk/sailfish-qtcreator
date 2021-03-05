@@ -62,6 +62,7 @@
 using namespace Core;
 using namespace ProjectExplorer;
 using namespace QmlProjectManager::Internal;
+using namespace Utils;
 
 namespace {
 Q_LOGGING_CATEGORY(infoLogger, "QmlProjectManager.QmlBuildSystem", QtInfoMsg)
@@ -225,7 +226,7 @@ void QmlBuildSystem::setMainFile(const QString &mainFilePath)
 
 Utils::FilePath QmlBuildSystem::targetDirectory() const
 {
-    if (DeviceTypeKitAspect::deviceTypeId(target()->kit())
+    if (DeviceTypeKitAspect::deviceTypeId(kit())
             == ProjectExplorer::Constants::DESKTOP_DEVICE_TYPE)
         return canonicalProjectDir();
 
@@ -371,7 +372,7 @@ void QmlBuildSystem::generateProjectTree()
 
     auto newRoot = std::make_unique<QmlProjectNode>(project());
 
-    for (const QString &f : m_projectItem.data()->files()) {
+    for (const QString &f : m_projectItem->files()) {
         const Utils::FilePath fileName = Utils::FilePath::fromString(f);
         const FileType fileType = (fileName == projectFilePath())
                 ? FileType::Project : FileNode::fileTypeForFileName(fileName);
@@ -388,7 +389,7 @@ void QmlBuildSystem::updateDeploymentData()
     if (!m_projectItem)
         return;
 
-    if (DeviceTypeKitAspect::deviceTypeId(target()->kit())
+    if (DeviceTypeKitAspect::deviceTypeId(kit())
             == ProjectExplorer::Constants::DESKTOP_DEVICE_TYPE) {
         return;
     }
@@ -473,8 +474,8 @@ bool QmlBuildSystem::renameFile(Node * context, const QString &filePath, const Q
             setMainFile(newFilePath);
 
             // make sure to change it also in the qmlproject file
-            const QString qmlProjectFilePath = project()->projectFilePath().toString();
-            Core::FileChangeBlocker fileChangeBlocker(qmlProjectFilePath);
+            const Utils::FilePath qmlProjectFilePath = project()->projectFilePath();
+            Core::FileChangeBlocker fileChangeBlocker(qmlProjectFilePath.toString());
             const QList<Core::IEditor *> editors = Core::DocumentModel::editorsForFilePath(qmlProjectFilePath);
             TextEditor::TextDocument *document = nullptr;
             if (!editors.isEmpty()) {
@@ -488,7 +489,7 @@ bool QmlBuildSystem::renameFile(Node * context, const QString &filePath, const Q
             QString error;
             Utils::TextFileFormat textFileFormat;
             const QTextCodec *codec = QTextCodec::codecForName("UTF-8"); // qml files are defined to be utf-8
-            if (Utils::TextFileFormat::readFile(qmlProjectFilePath, codec, &fileContent, &textFileFormat, &error)
+            if (Utils::TextFileFormat::readFile(qmlProjectFilePath.toString(), codec, &fileContent, &textFileFormat, &error)
                     != Utils::TextFileFormat::ReadSuccess) {
                 qWarning() << "Failed to read file" << qmlProjectFilePath << ":" << error;
             }
@@ -501,7 +502,7 @@ bool QmlBuildSystem::renameFile(Node * context, const QString &filePath, const Q
 
             fileContent.replace(match.capturedStart(1), match.capturedLength(1), QFileInfo(newFilePath).fileName());
 
-            if (!textFileFormat.writeFile(qmlProjectFilePath, fileContent, &error))
+            if (!textFileFormat.writeFile(qmlProjectFilePath.toString(), fileContent, &error))
                 qWarning() << "Failed to write file" << qmlProjectFilePath << ":" << error;
 
             refresh(Everything);

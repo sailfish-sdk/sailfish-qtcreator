@@ -220,17 +220,13 @@ static PyObject *cdbext_listOfLocals(PyObject *, PyObject *args) // -> [ Value ]
         ++currentPartialIname; // skip "local" part
 
         ULONG symbolGroupIndex = 0;
-        ULONG childEndIndex = 0;
         for (;symbolGroupIndex < scopeEnd; ++symbolGroupIndex) {
             PyValue value(symbolGroupIndex, symbolGroup);
-            if (childEndIndex <= symbolGroupIndex) { // do not return a child value
-                if (value.name() == *currentPartialIname) {
-                    PyList_Append(locals, createPythonObject(value));
-                    return locals;
-                }
-                ++childEndIndex;
+            if (value.name() == *currentPartialIname) {
+                PyList_Append(locals, createPythonObject(value));
+                return locals;
             }
-            childEndIndex += ULONG(value.childCount());
+            symbolGroupIndex += value.currentNumberOfDescendants();
         }
     }
 
@@ -450,12 +446,10 @@ std::string collectOutput()
     // Add a child to messages for every line.
     while (std::getline(pyStdout, line)) {
         // there are two kinds of messages we want to handle here:
-        if (line.find("bridgemessage=") == 0) { // preformatted gdmi bridgemessages from warn()
+        if (line.find("bridgemessage=") == 0) // preformatted gdmi bridgemessages from warn()
             ret << line << ',';
-        } else { // and a line of "normal" python output
-            replace(line, '"', '$'); // otherwise creators gdbmi parser would fail
-            ret << "line=\"" << line << "\",";
-        }
+        else // and a line of "normal" python output
+            ret << "line=\"" << gdbmiStringFormat(line) << "\",";
     }
     ret << "]," << results << "]";
     results.clear();

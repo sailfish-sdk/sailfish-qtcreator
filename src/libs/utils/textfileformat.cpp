@@ -41,7 +41,8 @@ QDebug operator<<(QDebug d, const TextFileFormat &format)
     nsp << "TextFileFormat: ";
     if (format.codec) {
         nsp << format.codec->name();
-        foreach (const QByteArray &alias, format.codec->aliases())
+        const QList<QByteArray> aliases = format.codec->aliases();
+        for (const QByteArray &alias : aliases)
             nsp << ' ' << alias;
     } else {
         nsp << "NULL";
@@ -288,6 +289,8 @@ TextFileFormat::ReadResult TextFileFormat::readFileUTF8(const QString &fileName,
     if (format.codec->name() == "UTF-8" || !format.decode(data, &target)) {
         if (format.hasUtf8Bom)
             data.remove(0, 3);
+        if (format.lineTerminationMode == TextFileFormat::CRLFLineTerminator)
+            data.replace("\r\n", "\n");
         *plainText = data;
         return TextFileFormat::ReadSuccess;
     }
@@ -304,7 +307,7 @@ bool TextFileFormat::writeFile(const QString &fileName, QString plainText, QStri
     QTC_ASSERT(codec, return false);
 
     // Does the user want CRLF? If that is native,
-    // do net let QFile do the work, because it replaces the line ending after the text was encoded,
+    // do not let QFile do the work, because it replaces the line ending after the text was encoded,
     // and this could lead to undecodable file contents.
     QIODevice::OpenMode fileMode = QIODevice::NotOpen;
     if (lineTerminationMode == CRLFLineTerminator)

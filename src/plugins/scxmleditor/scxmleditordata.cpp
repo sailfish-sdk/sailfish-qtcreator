@@ -25,7 +25,6 @@
 
 #include "scxmleditordata.h"
 #include "mainwidget.h"
-#include "scxmlcontext.h"
 #include "scxmleditorconstants.h"
 #include "scxmleditordocument.h"
 #include "scxmleditorstack.h"
@@ -37,21 +36,22 @@
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/idocument.h>
-#include <coreplugin/infobar.h>
 #include <coreplugin/minisplitter.h>
 #include <coreplugin/modemanager.h>
 #include <coreplugin/outputpane.h>
 
 #include <projectexplorer/projectexplorerconstants.h>
 
-#include <utils/qtcassert.h>
 #include <utils/icon.h>
+#include <utils/infobar.h>
+#include <utils/qtcassert.h>
 #include <utils/utilsicons.h>
 
 #include <QVBoxLayout>
 
 using namespace ScxmlEditor::Common;
 using namespace ScxmlEditor::PluginInterface;
+using namespace Utils;
 
 namespace ScxmlEditor {
 
@@ -111,9 +111,6 @@ ScxmlEditorData::ScxmlEditorData()
 
 ScxmlEditorData::~ScxmlEditorData()
 {
-    if (m_context)
-        ICore::removeContextObject(m_context);
-
     if (m_modeWidget) {
         DesignMode::unregisterDesignWidget(m_modeWidget);
         delete m_modeWidget;
@@ -146,8 +143,10 @@ void ScxmlEditorData::fullInit()
 
     Context scxmlContexts = m_contexts;
     scxmlContexts.add(Core::Constants::C_EDITORMANAGER);
-    m_context = new ScxmlContext(scxmlContexts, m_modeWidget, this);
-    ICore::addContextObject(m_context);
+    auto context = new IContext(this);
+    context->setContext(scxmlContexts);
+    context->setWidget(m_modeWidget);
+    ICore::addContextObject(context);
 
     DesignMode::registerDesignWidget(m_modeWidget, QStringList(QLatin1String(ProjectExplorer::Constants::SCXML_MIMETYPE)), m_contexts);
 }
@@ -162,8 +161,8 @@ IEditor *ScxmlEditorData::createEditor()
     m_mainToolBar->addEditor(xmlEditor);
 
     if (xmlEditor) {
-        InfoBarEntry info(Id(Constants::INFO_READ_ONLY),
-            tr("This file can only be edited in <b>Design</b> mode."));
+        Utils::InfoBarEntry info(Id(Constants::INFO_READ_ONLY),
+                                 tr("This file can only be edited in <b>Design</b> mode."));
         info.setCustomButtonInfo(tr("Switch Mode"), []() { ModeManager::activateMode(Core::Constants::MODE_DESIGN); });
         xmlEditor->document()->infoBar()->addInfo(info);
     }

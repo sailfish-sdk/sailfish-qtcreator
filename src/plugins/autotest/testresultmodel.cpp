@@ -29,6 +29,8 @@
 #include "testresultdelegate.h"
 #include "testrunner.h"
 #include "testsettings.h"
+#include "testtreeitem.h"
+#include "testtreemodel.h"
 
 #include <projectexplorer/projectexplorericons.h>
 #include <utils/qtcassert.h>
@@ -242,6 +244,16 @@ void TestResultModel::updateParent(const TestResultItem *item)
     updateParent(parentItem);
 }
 
+static bool isFailed(ResultType type)
+{
+    switch (type) {
+    case ResultType::Fail: case ResultType::UnexpectedPass: case ResultType::MessageFatal:
+        return true;
+    default:
+        return false;
+    }
+}
+
 void TestResultModel::addTestResult(const TestResultPtr &testResult, bool autoExpand)
 {
     const int lastRow = rootItem()->childCount() - 1;
@@ -289,8 +301,11 @@ void TestResultModel::addTestResult(const TestResultPtr &testResult, bool autoEx
     addFileName(testResult->fileName()); // ensure we calculate the results pane correctly
     if (parentItem) {
         parentItem->appendChild(newItem);
-        if (autoExpand)
+        if (autoExpand) {
             parentItem->expand();
+            newItem->expand();
+            newItem->forAllChildren([](Utils::TreeItem *it) { it->expand(); });
+        }
         updateParent(newItem);
     } else {
         if (lastRow >= 0) {
@@ -303,6 +318,13 @@ void TestResultModel::addTestResult(const TestResultPtr &testResult, bool autoEx
         }
         // there is no MessageCurrentTest at the last row, but we have a toplevel item - just add it
         rootItem()->appendChild(newItem);
+    }
+
+    if (isFailed(testResult->result())) {
+        if (const TestTreeItem *it = testResult->findTestTreeItem()) {
+            TestTreeModel *model = TestTreeModel::instance();
+            model->setData(model->indexForItem(it), true, FailedRole);
+        }
     }
 }
 
@@ -373,13 +395,10 @@ int TestResultModel::resultTypeCount(ResultType type) const
 {
     int result = 0;
 
-    for (auto resultsForId : m_testResultCount.values())
-        result += resultsForId.value(type, 0);
-
-    for (auto id : m_reportedSummary.keys()) {
-        if (int counted = m_testResultCount.value(id).value(type))
-            result -= counted;
-        result += m_reportedSummary[id].value(type);
+    for (const auto &id : m_testResultCount.keys()) {
+        // if we got a result count from the framework prefer that over our counted results
+        int reported = m_reportedSummary[id].value(type);
+        result += reported != 0 ? reported : m_testResultCount.value(id).value(type);
     }
     return result;
 }

@@ -131,25 +131,19 @@ defineReplace(extractWarnings) {
     return($$result)
 }
 
-CLANGTOOLING_LIBS=-lclangTooling -lclangIndex -lclangFrontend -lclangParse -lclangSerialization \
-                  -lclangSema -lclangEdit -lclangAnalysis -lclangDriver -lclangDynamicASTMatchers \
-                  -lclangASTMatchers -lclangToolingCore -lclangAST -lclangLex -lclangBasic
-win32:CLANGTOOLING_LIBS += -lversion
-
 BIN_EXTENSION =
 win32: BIN_EXTENSION = .exe
 
 isEmpty(LLVM_INSTALL_DIR) {
     unix {
-      llvm_config = $$system(which llvm-config-8)
+        llvm_config = $$system(which llvm-config-11)
+        isEmpty(llvm_config): llvm_config = $$system(which llvm-config-10)
+        isEmpty(llvm_config): llvm_config = $$system(which llvm-config-9)
     }
-
-    isEmpty(llvm_config) {
-        llvm_config = llvm-config
-    }
+    isEmpty(llvm_config): llvm_config = llvm-config
 } else {
-    exists($$LLVM_INSTALL_DIR/bin/llvm-config-8$$BIN_EXTENSION) {
-      llvm_config = $$system_quote($$LLVM_INSTALL_DIR/bin/llvm-config-8)
+    exists($$LLVM_INSTALL_DIR/bin/llvm-config-11$$BIN_EXTENSION) {
+      llvm_config = $$system_quote($$LLVM_INSTALL_DIR/bin/llvm-config-11)
     } else {
       llvm_config = $$system_quote($$LLVM_INSTALL_DIR/bin/llvm-config)
       requires(exists($$llvm_config$$BIN_EXTENSION))
@@ -163,14 +157,14 @@ isEmpty(LLVM_VERSION) {
     $$llvmWarningOrError(\
         "Cannot determine clang version. Set LLVM_INSTALL_DIR to build the Clang Code Model",\
         "LLVM_INSTALL_DIR does not contain a valid llvm-config, candidate: $$llvm_config")
-} else:!versionIsAtLeast($$LLVM_VERSION, 8, 0, 0): {
+} else:!versionIsAtLeast($$LLVM_VERSION, 9, 0, 0): {
     # CLANG-UPGRADE-CHECK: Adapt minimum version numbers.
     $$llvmWarningOrError(\
-        "LLVM/Clang version >= 8.0.0 required, version provided: $$LLVM_VERSION")
+        "LLVM/Clang version >= 9.0.0 required, version provided: $$LLVM_VERSION")
     LLVM_VERSION =
 } else {
     # CLANG-UPGRADE-CHECK: Remove suppression if this warning is resolved.
-    gcc {
+    gcc:!clang: {
         # GCC6 shows full version (6.4.0), while GCC7 and up show only major version (8)
         GCC_VERSION = $$system("$$QMAKE_CXX -dumpversion")
         GCC_MAJOR_VERSION = $$section(GCC_VERSION, ., 0, 0)
@@ -185,6 +179,8 @@ isEmpty(LLVM_VERSION) {
     LLVM_BINDIR = $$quote($$system($$llvm_config --bindir, lines))
     LLVM_INCLUDEPATH = $$system($$llvm_config --includedir, lines)
     msvc {
+        # llvm-config returns mixed path separators for --includedir
+        LLVM_INCLUDEPATH = $$replace(LLVM_INCLUDEPATH, /, \\)
         # CLANG-UPGRADE-CHECK: Remove suppression if this warning is resolved.
         # Suppress unreferenced formal parameter warnings
         QMAKE_CXXFLAGS += -wd4100
@@ -207,12 +203,17 @@ isEmpty(LLVM_VERSION) {
     isEmpty(QTC_CLANG_BUILDMODE_MISMATCH)|!equals(QTC_CLANG_BUILDMODE_MISMATCH, 1) {
         CLANGFORMAT_MAIN_HEADER = $$LLVM_INCLUDEPATH/clang/Format/Format.h
         exists($$CLANGFORMAT_MAIN_HEADER) {
-            CLANGFORMAT_LIBS=-lclangFormat -lclangToolingInclusions -lclangToolingCore -lclangRewrite -lclangLex -lclangBasic
-            ALL_CLANG_LIBS=-lclangFormat -lclangToolingInclusions -lclangTooling -lclangToolingCore \
-                           -lclangRewrite -lclangIndex -lclangFrontend -lclangParse -lclangSerialization \
-                           -lclangSema -lclangEdit -lclangAnalysis -lclangDriver -lclangDynamicASTMatchers \
-                           -lclangASTMatchers -lclangAST -lclangLex -lclangBasic
-            win32:CLANGFORMAT_LIBS += -lversion
+            exists($$LLVM_LIBDIR/*clangBasic*) {
+                CLANGFORMAT_LIBS=-lclangFormat -lclangToolingInclusions -lclangToolingCore -lclangRewrite -lclangLex -lclangBasic
+                ALL_CLANG_LIBS=-lclangFormat -lclangToolingInclusions -lclangTooling -lclangToolingCore \
+                               -lclangRewrite -lclangIndex -lclangFrontend -lclangParse -lclangSerialization \
+                               -lclangSema -lclangEdit -lclangAnalysis -lclangDriver -lclangDynamicASTMatchers \
+                               -lclangASTMatchers -lclangAST -lclangLex -lclangBasic
+                win32:CLANGFORMAT_LIBS += -lversion
+            } else {
+                CLANGFORMAT_LIBS = -lclang-cpp
+                ALL_CLANG_LIBS = -lclang-cpp
+            }
         }
     }
     win32:ALL_CLANG_LIBS += -lversion
@@ -233,12 +234,20 @@ isEmpty(LLVM_VERSION) {
         $$llvmWarningOrError("Cannot find Clang shared library in $$LLVM_LIBDIR")
     }
 
-    !contains(QMAKE_DEFAULT_LIBDIRS, $$LLVM_LIBDIR): LIBCLANG_LIBS = -L$${LLVM_LIBDIR}
+    !contains(QMAKE_DEFAULT_LIBDIRS, $$re_escape($$LLVM_LIBDIR)): LIBCLANG_LIBS = -L$${LLVM_LIBDIR}
     LIBCLANG_LIBS += $${CLANG_LIB}
 
     isEmpty(QTC_CLANG_BUILDMODE_MISMATCH)|!equals(QTC_CLANG_BUILDMODE_MISMATCH, 1) {
-        QTC_DISABLE_CLANG_REFACTORING=$$(QTC_DISABLE_CLANG_REFACTORING)
-        isEmpty(QTC_DISABLE_CLANG_REFACTORING) {
+        QTC_ENABLE_CLANG_REFACTORING=$$(QTC_ENABLE_CLANG_REFACTORING)
+        !isEmpty(QTC_ENABLE_CLANG_REFACTORING) {
+            exists($$LLVM_LIBDIR/*clangBasic*) {
+                CLANGTOOLING_LIBS=-lclangTooling -lclangIndex -lclangFrontend -lclangParse -lclangSerialization \
+                          -lclangSema -lclangEdit -lclangAnalysis -lclangDriver -lclangDynamicASTMatchers \
+                          -lclangASTMatchers -lclangToolingCore -lclangAST -lclangLex -lclangBasic
+                win32:CLANGTOOLING_LIBS += -lversion
+            } else {
+                CLANGTOOLING_LIBS = -lclang-cpp
+            }
             !contains(QMAKE_DEFAULT_LIBDIRS, $$LLVM_LIBDIR): LIBTOOLING_LIBS = -L$${LLVM_LIBDIR}
             LIBTOOLING_LIBS += $$CLANGTOOLING_LIBS $$LLVM_STATIC_LIBS
         }
@@ -249,7 +258,7 @@ isEmpty(LLVM_VERSION) {
     }
     ALL_CLANG_LIBS = -L$${LLVM_LIBDIR} $$ALL_CLANG_LIBS $$CLANG_LIB $$LLVM_STATIC_LIBS
 
-    contains(QMAKE_DEFAULT_INCDIRS, $$LLVM_INCLUDEPATH): LLVM_INCLUDEPATH =
+    contains(QMAKE_DEFAULT_INCDIRS, $$re_escape($$LLVM_INCLUDEPATH)): LLVM_INCLUDEPATH =
 
     # Remove unwanted flags. It is a workaround for linking.
     # It is not intended for cross compiler linking.

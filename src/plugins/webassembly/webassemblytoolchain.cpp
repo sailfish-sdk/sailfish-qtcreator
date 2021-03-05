@@ -138,18 +138,17 @@ WebAssemblyToolChain::WebAssemblyToolChain() :
     const CompilerConfiguration configuration = compilerConfiguration();
     const QString command = configuration.llvmRoot.toString()
             + Utils::HostOsInfo::withExecutableSuffix("/clang");
-    setLanguage(ProjectExplorer::Constants::CXX_LANGUAGE_ID);
     setCompilerCommand(Utils::FilePath::fromString(command));
     setSupportedAbis({toolChainAbi()});
     setTargetAbi(toolChainAbi());
-    const QString typeAndDisplayName = WebAssemblyToolChainFactory::tr("Emscripten Compiler");
+    const QString typeAndDisplayName = tr("Emscripten Compiler");
     setDisplayName(typeAndDisplayName);
     setTypeDisplayName(typeAndDisplayName);
 }
 
 WebAssemblyToolChainFactory::WebAssemblyToolChainFactory()
 {
-    setDisplayName(tr("WebAssembly"));
+    setDisplayName(WebAssemblyToolChain::tr("WebAssembly"));
     setSupportedToolChainType(Constants::WEBASSEMBLY_TOOLCHAIN_TYPEID);
     setSupportedLanguages({ProjectExplorer::Constants::C_LANGUAGE_ID,
                            ProjectExplorer::Constants::CXX_LANGUAGE_ID});

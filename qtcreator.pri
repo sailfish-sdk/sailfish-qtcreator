@@ -7,7 +7,9 @@ include($$PWD/qtcreator_ide_branding.pri)
 PRODUCT_BUNDLE_IDENTIFIER=$${PRODUCT_BUNDLE_ORGANIZATION}.$${IDE_ID}
 VERSION = $$QTCREATOR_VERSION
 
-CONFIG += c++14
+# include c++1z as an alias for c++17 for compatibility for older Qt versions
+# that we use for sdktool
+CONFIG += c++17 c++1z
 
 defineReplace(qtLibraryTargetName) {
    unset(LIBRARY_NAME)
@@ -216,8 +218,7 @@ DEFINES += \
     QT_NO_CAST_TO_ASCII \
     QT_RESTRICTED_CAST_FROM_ASCII \
     QT_DISABLE_DEPRECATED_BEFORE=0x050900 \
-    QT_USE_FAST_OPERATOR_PLUS \
-    QT_USE_FAST_CONCATENATION
+    QT_USE_QSTRINGBUILDER
 
 unix {
     CONFIG(debug, debug|release):OBJECTS_DIR = $${OUT_PWD}/.obj/debug-shared
@@ -240,11 +241,13 @@ msvc {
 
 qt {
     contains(QT, core): QT += concurrent
+    contains(QT, core): greaterThan(QT_MAJOR_VERSION, 5): QT += core5compat
     contains(QT, gui): QT += widgets
 }
 
 QBSFILE = $$replace(_PRO_FILE_, \\.pro$, .qbs)
 exists($$QBSFILE):DISTFILES += $$QBSFILE
+DISTFILES += $$_PRO_FILE_PWD_/CMakeLists.txt
 
 !isEmpty(QTC_PLUGIN_DEPENDS) {
     LIBS *= -L$$IDE_PLUGIN_PATH  # plugin path from output directory

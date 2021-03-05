@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include "searchresultcolor.h"
 #include "searchresultitem.h"
 
 #include <coreplugin/ioutputpane.h>
@@ -60,6 +61,7 @@ public:
     int count() const;
     void setSearchAgainSupported(bool supported);
     QWidget *additionalReplaceWidget() const;
+    void setAdditionalReplaceWidget(QWidget *widget);
 
 public slots:
     void addResult(const QString &fileName,
@@ -67,21 +69,25 @@ public slots:
                    const QString &lineText,
                    int searchTermStart,
                    int searchTermLength,
-                   const QVariant &userData = QVariant());
+                   const QVariant &userData = QVariant(),
+                   SearchResultColor::Style style = SearchResultColor::Style::Default);
     void addResult(const QString &fileName,
                    const QString &lineText,
                    Search::TextRange mainRange,
-                   const QVariant &userData = QVariant());
+                   const QVariant &userData = QVariant(),
+                   SearchResultColor::Style style = SearchResultColor::Style::Default);
     void addResults(const QList<SearchResultItem> &items, AddMode mode);
     void finishSearch(bool canceled);
     void setTextToReplace(const QString &textToReplace);
     void restart();
+    void setReplaceEnabled(bool enabled);
     void setSearchAgainEnabled(bool enabled);
     void popup();
 
 signals:
     void activated(const Core::SearchResultItem &item);
     void replaceButtonClicked(const QString &replaceText, const QList<Core::SearchResultItem> &checkedItems, bool preserveCase);
+    void replaceTextChanged(const QString &replaceText);
     void cancelled();
     void paused(bool paused);
     void visibilityChanged(bool visible);
@@ -134,11 +140,7 @@ public:
     void goToPrev() override;
     bool canNavigate() const override;
 
-    void setTextEditorFont(const QFont &font,
-                           const QColor &textForegroundColor,
-                           const QColor &textBackgroundColor,
-                           const QColor &highlightForegroundColor,
-                           const QColor &highlightBackgroundColor);
+    void setTextEditorFont(const QFont &font, const SearchResultColors &colors);
     void setTabWidth(int width);
     void openNewSearchPanel();
 

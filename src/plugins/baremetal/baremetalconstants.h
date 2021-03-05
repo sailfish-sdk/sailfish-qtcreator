@@ -39,12 +39,14 @@ const char DEBUG_SERVER_PROVIDERS_SETTINGS_ID[] = "EE.BareMetal.DebugServerProvi
 // GDB Debugger Server Provider Ids.
 const char GDBSERVER_OPENOCD_PROVIDER_ID[] = "BareMetal.GdbServerProvider.OpenOcd";
 const char GDBSERVER_JLINK_PROVIDER_ID[] = "BareMetal.GdbServerProvider.JLink";
+const char GDBSERVER_GENERIC_PROVIDER_ID[] = "BareMetal.GdbServerProvider.Generic";
 const char GDBSERVER_STLINK_UTIL_PROVIDER_ID[] = "BareMetal.GdbServerProvider.STLinkUtil";
 const char GDBSERVER_EBLINK_PROVIDER_ID[] = "BareMetal.GdbServerProvider.EBlink";
 
 // uVision Debugger Server Provider Ids.
 const char UVSC_SIMULATOR_PROVIDER_ID[] = "BareMetal.UvscServerProvider.Simulator";
 const char UVSC_STLINK_PROVIDER_ID[] = "BareMetal.UvscServerProvider.StLink";
+const char UVSC_JLINK_PROVIDER_ID[] = "BareMetal.UvscServerProvider.JLink";
 
 // Toolchain types.
 const char IAREW_TOOLCHAIN_TYPEID[] = "BareMetal.ToolChain.Iar";

@@ -547,6 +547,8 @@ public:
         mainWindow->addSubPerspectiveSwitcher(EngineManager::engineChooser());
 
         setWidget(splitter);
+
+        setMenu(DebuggerMainWindow::perspectiveMenu());
     }
 
     ~DebugMode() { delete widget(); }
@@ -1195,7 +1197,7 @@ DebuggerPluginPrivate::DebuggerPluginPrivate(const QStringList &arguments)
             this, &DebuggerPluginPrivate::updateBreakMenuItem);
 
     // Application interaction
-    connect(action(SettingsDialog), &QAction::triggered,
+    connect(action(SettingsDialog)->action(), &QAction::triggered,
             [] { ICore::showOptionsDialog(DEBUGGER_COMMON_SETTINGS_ID); });
 
     m_perspective.useSubPerspectiveSwitcher(EngineManager::engineChooser());
@@ -1276,6 +1278,7 @@ bool DebuggerPluginPrivate::parseArgument(QStringList::const_iterator &it,
         FilePath executable;
         QString remoteChannel;
         QString coreFile;
+        QString sysRoot;
         bool useTerminal = false;
 
         if (!pid) {
@@ -1303,6 +1306,8 @@ bool DebuggerPluginPrivate::parseArgument(QStringList::const_iterator &it,
                     coreFile = val;
                 } else if (key == "terminal") {
                     useTerminal = true;
+                } else if (key == "sysroot") {
+                    sysRoot = val;
                 }
             }
         }
@@ -1313,6 +1318,8 @@ bool DebuggerPluginPrivate::parseArgument(QStringList::const_iterator &it,
         runControl->setKit(kit);
         auto debugger = new DebuggerRunTool(runControl);
         debugger->setInferiorExecutable(executable);
+        if (!sysRoot.isEmpty())
+            debugger->setSysRoot(FilePath::fromUserInput(sysRoot));
         if (pid) {
             debugger->setStartMode(AttachExternal);
             debugger->setCloseMode(DetachAtClose);
@@ -1546,6 +1553,7 @@ void DebuggerPluginPrivate::attachCore()
     dlg.setLocalCoreFile(configValue("LastLocalCoreFile").toString());
     dlg.setRemoteCoreFile(configValue("LastRemoteCoreFile").toString());
     dlg.setOverrideStartScript(configValue("LastExternalStartScript").toString());
+    dlg.setSysRoot(configValue("LastSysRoot").toString());
     dlg.setForceLocalCoreFile(configValue("LastForceLocalCoreFile").toBool());
 
     if (dlg.exec() != QDialog::Accepted)
@@ -1556,6 +1564,7 @@ void DebuggerPluginPrivate::attachCore()
     setConfigValue("LastRemoteCoreFile", dlg.remoteCoreFile());
     setConfigValue("LastExternalKit", dlg.kit()->id().toSetting());
     setConfigValue("LastExternalStartScript", dlg.overrideStartScript());
+    setConfigValue("LastSysRoot", dlg.sysRoot().toString());
     setConfigValue("LastForceLocalCoreFile", dlg.forcesLocalCoreFile());
 
     auto runControl = new RunControl(ProjectExplorer::Constants::DEBUG_RUN_MODE);
@@ -1568,6 +1577,9 @@ void DebuggerPluginPrivate::attachCore()
     debugger->setStartMode(AttachCore);
     debugger->setCloseMode(DetachAtClose);
     debugger->setOverrideStartScript(dlg.overrideStartScript());
+    const FilePath sysRoot = dlg.sysRoot();
+    if (!sysRoot.isEmpty())
+        debugger->setSysRoot(sysRoot);
     debugger->startRunControl();
 }
 
@@ -1756,7 +1768,7 @@ void DebuggerPlugin::getEnginesState(QByteArray *json) const
 
 void DebuggerPluginPrivate::attachToQmlPort()
 {
-    AttachToQmlPortDialog dlg(ICore::mainWindow());
+    AttachToQmlPortDialog dlg(ICore::dialogParent());
 
     const QVariant qmlServerPort = configValue("LastQmlServerPort");
     if (qmlServerPort.isValid())
@@ -1961,7 +1973,7 @@ void DebuggerPluginPrivate::dumpLog()
     LogWindow *logWindow = engine->logWindow();
     QTC_ASSERT(logWindow, return);
 
-    QString fileName = QFileDialog::getSaveFileName(ICore::mainWindow(),
+    QString fileName = QFileDialog::getSaveFileName(ICore::dialogParent(),
         tr("Save Debugger Log"), Utils::TemporaryDirectory::masterDirectoryPath());
     if (fileName.isEmpty())
         return;
@@ -1973,7 +1985,7 @@ void DebuggerPluginPrivate::dumpLog()
         ts << logWindow->combinedContents();
         saver.setResult(&ts);
     }
-    saver.finalize(ICore::mainWindow());
+    saver.finalize(ICore::dialogParent());
 }
 
 void DebuggerPluginPrivate::aboutToShutdown()
@@ -2042,7 +2054,7 @@ SavedAction *DebuggerPluginPrivate::action(int code)
 
 QWidget *DebuggerPluginPrivate::addSearch(BaseTreeView *treeView)
 {
-    QAction *act = action(UseAlternatingRowColors);
+    QAction *act = action(UseAlternatingRowColors)->action();
     treeView->setAlternatingRowColors(act->isChecked());
     treeView->setProperty(PerspectiveState::savesHeaderKey(), true);
     connect(act, &QAction::toggled, treeView, &BaseTreeView::setAlternatingRowColors);
@@ -2123,7 +2135,9 @@ DebuggerPlugin::DebuggerPlugin()
     m_instance = this;
 
     qRegisterMetaType<PerspectiveState>("Utils::PerspectiveState");
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     qRegisterMetaTypeStreamOperators<PerspectiveState>("Utils::PerspectiveState");
+#endif
 }
 
 DebuggerPlugin::~DebuggerPlugin()
@@ -2193,7 +2207,7 @@ static BuildConfiguration::BuildType startupBuildType()
 
 void showCannotStartDialog(const QString &text)
 {
-    auto errorDialog = new QMessageBox(ICore::mainWindow());
+    auto errorDialog = new QMessageBox(ICore::dialogParent());
     errorDialog->setAttribute(Qt::WA_DeleteOnClose);
     errorDialog->setIcon(QMessageBox::Warning);
     errorDialog->setWindowTitle(text);
@@ -2258,7 +2272,7 @@ bool wantRunTool(ToolMode toolMode, const QString &toolName)
             "or otherwise insufficient output.</p><p>"
             "Do you want to continue and run the tool in %2 mode?</p></body></html>")
                 .arg(toolName).arg(currentMode).arg(toolModeString);
-        if (Utils::CheckableMessageBox::doNotAskAgainQuestion(ICore::mainWindow(),
+        if (Utils::CheckableMessageBox::doNotAskAgainQuestion(ICore::dialogParent(),
                 title, message, ICore::settings(), "AnalyzerCorrectModeWarning")
                     != QDialogButtonBox::Yes)
             return false;

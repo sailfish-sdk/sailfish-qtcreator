@@ -30,7 +30,7 @@
 #include "cpphighlighter.h"
 #include "cppquickfixassistant.h"
 
-#include <coreplugin/infobar.h>
+#include <coreplugin/editormanager/editormanager.h>
 
 #include <cpptools/baseeditordocumentparser.h>
 #include <cpptools/builtineditordocumentprocessor.h>
@@ -48,8 +48,8 @@
 #include <texteditor/textdocumentlayout.h>
 #include <texteditor/texteditorsettings.h>
 
-#include <coreplugin/editormanager/editormanager.h>
 #include <utils/executeondestruction.h>
+#include <utils/infobar.h>
 #include <utils/mimetypes/mimedatabase.h>
 #include <utils/qtcassert.h>
 #include <utils/runextensions.h>
@@ -142,6 +142,11 @@ CppTools::CppCompletionAssistProvider *CppEditorDocument::completionAssistProvid
     return m_completionAssistProvider;
 }
 
+CppTools::CppCompletionAssistProvider *CppEditorDocument::functionHintAssistProvider() const
+{
+    return m_functionHintAssistProvider;
+}
+
 TextEditor::IAssistProvider *CppEditorDocument::quickFixAssistProvider() const
 {
     return CppEditorPlugin::instance()->quickFixProvider();
@@ -195,6 +200,7 @@ void CppEditorDocument::onMimeTypeChanged()
     m_isObjCEnabled = (mt == QLatin1String(CppTools::Constants::OBJECTIVE_C_SOURCE_MIMETYPE)
                        || mt == QLatin1String(CppTools::Constants::OBJECTIVE_CPP_SOURCE_MIMETYPE));
     m_completionAssistProvider = mm()->completionAssistProvider();
+    m_functionHintAssistProvider = mm()->functionHintAssistProvider();
 
     initializeTimer();
 }
@@ -351,13 +357,13 @@ void CppEditorDocument::releaseResources()
 
 void CppEditorDocument::showHideInfoBarAboutMultipleParseContexts(bool show)
 {
-    const Core::Id id = Constants::MULTIPLE_PARSE_CONTEXTS_AVAILABLE;
+    const Utils::Id id = Constants::MULTIPLE_PARSE_CONTEXTS_AVAILABLE;
 
     if (show) {
-        Core::InfoBarEntry info(id,
-                                tr("Note: Multiple parse contexts are available for this file. "
-                                   "Choose the preferred one from the editor toolbar."),
-                                Core::InfoBarEntry::GlobalSuppression::Enabled);
+        Utils::InfoBarEntry info(id,
+                                 tr("Note: Multiple parse contexts are available for this file. "
+                                    "Choose the preferred one from the editor toolbar."),
+                                 Utils::InfoBarEntry::GlobalSuppression::Enabled);
         info.removeCancelButton();
         if (infoBar()->canInfoBeAdded(id))
             infoBar()->addInfo(info);

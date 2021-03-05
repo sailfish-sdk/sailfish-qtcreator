@@ -695,3 +695,44 @@ protected:
 private:
     static int privateValue;
 };
+
+template <int i, int j> struct S { };
+template <int i> using spec = S<i, 1>;
+spec<2> s;
+
+class Property {
+    Q_PROPERTY(
+
+            const
+
+            volatile
+
+            unsigned
+
+            long
+
+            long
+
+            *
+
+            prop
+
+            READ
+
+            getProp
+
+            WRITE
+
+            setProp
+
+            NOTIFY
+
+            propChanged
+
+            )
+};
+
+void structuredBindingTest() {
+    const int a[] = {1, 2};
+    const auto [x, y] = a;
+}

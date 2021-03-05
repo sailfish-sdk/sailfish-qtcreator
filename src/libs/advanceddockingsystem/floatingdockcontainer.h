@@ -132,10 +132,10 @@ protected:
      * Use moveToGlobalPos() to move the widget to a new position
      * depending on the start position given in Pos parameter
      */
-    virtual void startFloating(const QPoint &dragStartMousePos,
-                               const QSize &size,
-                               eDragState dragState,
-                               QWidget *mouseEventHandler) override;
+    void startFloating(const QPoint &dragStartMousePos,
+                       const QSize &size,
+                       eDragState dragState,
+                       QWidget *mouseEventHandler) override;
 
     /**
      * Call this function to start dragging the floating widget
@@ -151,7 +151,7 @@ protected:
      * Call this function if you explicitly want to signal that dragging has
      * finished
      */
-    virtual void finishDragging() override;
+    void finishDragging() override;
 
     /**
      * Call this function if you just want to initialize the position
@@ -182,13 +182,26 @@ protected:
     void updateWindowTitle();
 
 protected: // reimplements QWidget
-    virtual void changeEvent(QEvent *event) override;
-    virtual void moveEvent(QMoveEvent *event) override;
+    void changeEvent(QEvent *event) override;
+    void closeEvent(QCloseEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
+    void showEvent(QShowEvent *event) override;
+
+#ifdef Q_OS_MACOS
     virtual bool event(QEvent *event) override;
-    virtual void closeEvent(QCloseEvent *event) override;
-    virtual void hideEvent(QHideEvent *event) override;
-    virtual void showEvent(QShowEvent *event) override;
-    virtual bool eventFilter(QObject *watched, QEvent *event) override;
+    virtual void moveEvent(QMoveEvent *event) override;
+#endif
+
+#ifdef Q_OS_WIN
+    /**
+     * Native event filter for handling WM_MOVING messages on Windows
+     */
+# if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    bool nativeEvent(const QByteArray &eventType, void *message, long *result) override;
+# else
+    bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
+#endif
+#endif
 
 public:
     using Super = QWidget;
@@ -211,7 +224,7 @@ public:
     /**
      * Virtual Destructor
      */
-    virtual ~FloatingDockContainer() override;
+    ~FloatingDockContainer() override;
 
     /**
      * Access function for the internal dock container

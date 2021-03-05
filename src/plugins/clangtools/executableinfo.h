@@ -25,11 +25,16 @@
 
 #pragma once
 
+#include <utils/fileutils.h>
+
+#include <QPair>
 #include <QStringList>
 #include <QVector>
 
 namespace ClangTools {
 namespace Internal {
+
+QPair<Utils::FilePath, QString> getClangIncludeDirAndVersion(const Utils::FilePath &clangToolPath);
 
 class ClangTidyInfo
 {

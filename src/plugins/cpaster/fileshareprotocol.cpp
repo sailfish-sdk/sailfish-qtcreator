@@ -101,7 +101,7 @@ static bool parse(const QString &fileName,
     QXmlStreamReader reader(&file);
     while (!reader.atEnd()) {
         if (reader.readNext() == QXmlStreamReader::StartElement) {
-            const QStringRef elementName = reader.name();
+            const auto elementName = reader.name();
             // Check start element
             if (elementCount == 0 && elementName != QLatin1String(pasterElementC)) {
                 *errorMessage = FileShareProtocol::tr("%1 does not appear to be a paster file.").arg(fileName);
@@ -177,11 +177,15 @@ void FileShareProtocol::list()
     emit listDone(name(), entries);
 }
 
-void FileShareProtocol::paste(const QString &text,
-                              ContentType /* ct */, int /* expiryDays */,
-                              const QString &username,
-                              const QString & /* comment */,
-                              const QString &description)
+void FileShareProtocol::paste(
+        const QString &text,
+        ContentType /* ct */,
+        int /* expiryDays */,
+        bool /* publicPaste */,
+        const QString &username,
+        const QString & /* comment */,
+        const QString &description
+        )
 {
     // Write out temp XML file
     Utils::TempFileSaver saver(m_settings->path + QLatin1Char('/') + QLatin1String(tempPatternC));

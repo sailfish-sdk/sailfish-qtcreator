@@ -52,7 +52,7 @@ Column {
             }
 
             Label {
-                text: qsTr("Border Left")
+                text: qsTr("Border left")
             }
 
             SecondColumnLayout {
@@ -70,7 +70,7 @@ Column {
             }
 
             Label {
-                text: qsTr("Border Right")
+                text: qsTr("Border right")
             }
 
             SecondColumnLayout {
@@ -88,7 +88,7 @@ Column {
             }
 
             Label {
-                text: qsTr("Border Top")
+                text: qsTr("Border top")
             }
 
             SecondColumnLayout {
@@ -106,7 +106,7 @@ Column {
             }
 
             Label {
-                text: qsTr("Border Bottom")
+                text: qsTr("Border bottom")
             }
 
             SecondColumnLayout {
@@ -124,7 +124,8 @@ Column {
             }
 
             Label {
-                text: qsTr("Horizontal Fill mode")
+                text: qsTr("Horizontal tile mode")
+                disabledState: !backendValues.horizontalTileMode.isAvailable
             }
 
             SecondColumnLayout {
@@ -134,11 +135,13 @@ Column {
                     implicitWidth: 180
                     Layout.fillWidth: true
                     scope: "BorderImage"
+                    enabled: backendValue.isAvailable
                 }
             }
 
             Label {
-                text: qsTr("Vertical Fill mode")
+                text: qsTr("Vertical tile mode")
+                disabledState: !backendValues.verticalTileMode.isAvailable
             }
 
             SecondColumnLayout {
@@ -148,43 +151,112 @@ Column {
                     implicitWidth: 180
                     Layout.fillWidth: true
                     scope: "BorderImage"
+                    enabled: backendValue.isAvailable
                 }
-
             }
 
 
             Label {
                 text: qsTr("Source size")
+                disabledState: !backendValues.sourceSize.isAvailable
             }
 
             SecondColumnLayout {
                 Label {
                     text: "W"
                     width: 12
+                    disabledStateSoft: !backendValues.sourceSize_width.isAvailable
                 }
 
                 SpinBox {
                     backendValue: backendValues.sourceSize_width
                     minimumValue: -2000
                     maximumValue: 2000
+                    enabled: backendValue.isAvailable
                     decimals: 0
                 }
 
                 Label {
                     text: "H"
                     width: 12
+                    disabledStateSoft: !backendValues.sourceSize_height.isAvailable
                 }
 
                 SpinBox {
                     backendValue: backendValues.sourceSize_height
                     minimumValue: -2000
                     maximumValue: 2000
+                    enabled: backendValue.isAvailable
                     decimals: 0
                 }
 
                 ExpandingSpacer {
 
                 }
+            }
+
+            Label {
+                text: qsTr("Mirror")
+                tooltip: qsTr("Specifies whether the image should be horizontally inverted.")
+                disabledState: !backendValues.mirror.isAvailable
+            }
+
+            SecondColumnLayout {
+                CheckBox {
+                    enabled: backendValues.mirror.isAvailable
+                    text: backendValues.mirror.valueToString
+                    backendValue: backendValues.mirror
+                    implicitWidth: 180
+                }
+                ExpandingSpacer {}
+            }
+
+            Label {
+                text: qsTr("Smooth")
+                tooltip: qsTr("Specifies whether the image is smoothly filtered when scaled or transformed.")
+                disabledState: !backendValues.smooth.isAvailable
+            }
+
+            SecondColumnLayout {
+                CheckBox {
+                    enabled: backendValues.smooth.isAvailable
+                    text: backendValues.smooth.valueToString
+                    backendValue: backendValues.smooth
+                    implicitWidth: 180
+                }
+                ExpandingSpacer {}
+            }
+
+            Label {
+                text: qsTr("Cache")
+                tooltip: qsTr("Specifies whether the image should be cached.")
+                disabledState: !backendValues.cache.isAvailable
+            }
+
+            SecondColumnLayout {
+                CheckBox {
+                    enabled: backendValues.cache.isAvailable
+                    text: backendValues.cache.valueToString
+                    backendValue: backendValues.cache
+                    implicitWidth: 180
+                }
+                ExpandingSpacer {}
+            }
+
+            Label {
+                text: qsTr("Asynchronous")
+                tooltip: qsTr("Specifies that images on the local filesystem should be loaded asynchronously in a separate thread.")
+                disabledState: !backendValues.asynchronous.isAvailable
+            }
+
+            SecondColumnLayout {
+                CheckBox {
+                    enabled: backendValues.asynchronous.isAvailable
+                    text: backendValues.asynchronous.valueToString
+                    backendValue: backendValues.asynchronous
+                    implicitWidth: 180
+                }
+                ExpandingSpacer {}
             }
         }
     }

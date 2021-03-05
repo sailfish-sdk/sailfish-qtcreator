@@ -160,13 +160,26 @@ void ComponentItem::update()
 
 bool ComponentItem::intersectShapeWithLine(const QLineF &line, QPointF *intersectionPoint, QLineF *intersectionLine) const
 {
-    QPolygonF polygon;
     if (m_customIcon) {
-        // TODO use customIcon path as shape
-        QRectF rect = object()->rect();
-        rect.translate(object()->pos());
-        polygon << rect.topLeft() << rect.topRight() << rect.bottomRight() << rect.bottomLeft() << rect.topLeft();
-    } else if (hasPlainShape()) {
+        QList<QPolygonF> polygons = m_customIcon->outline();
+        for (int i = 0; i < polygons.size(); ++i)
+            polygons[i].translate(object()->pos() + object()->rect().topLeft());
+        if (shapeIcon().textAlignment() == qmt::StereotypeIcon::TextalignBelow) {
+            if (nameItem()) {
+                QPolygonF polygon(nameItem()->boundingRect());
+                polygon.translate(object()->pos() + nameItem()->pos());
+                polygons.append(polygon);
+            }
+            if (m_contextLabel) {
+                QPolygonF polygon(m_contextLabel->boundingRect());
+                polygon.translate(object()->pos() + m_contextLabel->pos());
+                polygons.append(polygon);
+            }
+        }
+        return GeometryUtilities::intersect(polygons, line, nullptr, intersectionPoint, intersectionLine);
+    }
+    QPolygonF polygon;
+    if (hasPlainShape()) {
         QRectF rect = object()->rect();
         rect.translate(object()->pos());
         polygon << rect.topLeft() << rect.topRight() << rect.bottomRight() << rect.bottomLeft() << rect.topLeft();
@@ -177,10 +190,14 @@ bool ComponentItem::intersectShapeWithLine(const QLineF &line, QPointF *intersec
                 << rect.topRight()
                 << rect.bottomRight()
                 << rect.bottomLeft()
-                << rect.bottomLeft() + QPointF(0, UPPER_RECT_Y + RECT_HEIGHT + RECT_Y_DISTANCE + RECT_HEIGHT)
-                << rect.bottomLeft() + QPointF(-RECT_WIDTH * 0.5, UPPER_RECT_Y + RECT_HEIGHT + RECT_Y_DISTANCE + RECT_HEIGHT)
-                << rect.bottomLeft() + QPointF(-RECT_WIDTH * 0.5, UPPER_RECT_Y)
-                << rect.bottomLeft() + QPointF(0, UPPER_RECT_Y)
+                << rect.topLeft() + QPointF(0, UPPER_RECT_Y + RECT_HEIGHT + RECT_Y_DISTANCE + RECT_HEIGHT)
+                << rect.topLeft() + QPointF(-RECT_WIDTH * 0.5, UPPER_RECT_Y + RECT_HEIGHT + RECT_Y_DISTANCE + RECT_HEIGHT)
+                << rect.topLeft() + QPointF(-RECT_WIDTH * 0.5, UPPER_RECT_Y + RECT_HEIGHT + RECT_Y_DISTANCE)
+                << rect.topLeft() + QPointF(0, UPPER_RECT_Y + RECT_HEIGHT + RECT_Y_DISTANCE)
+                << rect.topLeft() + QPointF(0, UPPER_RECT_Y + RECT_HEIGHT)
+                << rect.topLeft() + QPointF(-RECT_WIDTH * 0.5, UPPER_RECT_Y + RECT_HEIGHT)
+                << rect.topLeft() + QPointF(-RECT_WIDTH * 0.5, UPPER_RECT_Y)
+                << rect.topLeft() + QPointF(0, UPPER_RECT_Y)
                 << rect.topLeft();
     }
     return GeometryUtilities::intersect(polygon, line, intersectionPoint, intersectionLine);

@@ -36,6 +36,7 @@
 #include <QtQuick3D/private/qquick3dmodel_p.h>
 #include <QtQuick3D/private/qquick3dviewport_p.h>
 #include <QtQuick3D/private/qquick3ddefaultmaterial_p.h>
+#include <QtQuick3D/private/qquick3dscenemanager_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrendercontextcore_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrenderbuffermanager_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrendermodel_p.h>
@@ -48,6 +49,8 @@ namespace QmlDesigner {
 namespace Internal {
 
 const QString _globalStateId = QStringLiteral("@GTS"); // global tool state
+const QString _lastSceneIdKey = QStringLiteral("lastSceneId");
+const QString _rootSizeKey = QStringLiteral("rootSize");
 
 GeneralHelper::GeneralHelper()
     : QObject()
@@ -64,8 +67,9 @@ GeneralHelper::GeneralHelper()
 
 void GeneralHelper::requestOverlayUpdate()
 {
-    if (!m_overlayUpdateTimer.isActive())
-        m_overlayUpdateTimer.start();
+    // Restart the timer on each request in attempt to ensure there's one frame between the last
+    // request and actual update.
+    m_overlayUpdateTimer.start();
 }
 
 QString GeneralHelper::generateUniqueName(const QString &nameRoot)
@@ -148,7 +152,7 @@ float GeneralHelper::zoomCamera(QQuick3DCamera *camera, float distance, float de
 // Return value contains new lookAt point (xyz) and zoom factor (w)
 QVector4D GeneralHelper::focusObjectToCamera(QQuick3DCamera *camera, float defaultLookAtDistance,
                                              QQuick3DNode *targetObject, QQuick3DViewport *viewPort,
-                                             float oldZoom, bool updateZoom)
+                                             float oldZoom, bool updateZoom, bool closeUp)
 {
     if (!camera)
         return QVector4D(0.f, 0.f, 0.f, 1.f);
@@ -163,7 +167,12 @@ QVector4D GeneralHelper::focusObjectToCamera(QQuick3DCamera *camera, float defau
         if (auto renderModel = static_cast<QSSGRenderModel *>(targetPriv->spatialNode)) {
             QWindow *window = static_cast<QWindow *>(viewPort->window());
             if (window) {
-                auto context = QSSGRenderContextInterface::getRenderContextInterface(quintptr(window));
+                QSSGRef<QSSGRenderContextInterface> context;
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+                context = QSSGRenderContextInterface::getRenderContextInterface(quintptr(window));
+#else
+                context = targetPriv->sceneManager->rci;
+#endif
                 if (!context.isNull()) {
                     QSSGBounds3 bounds;
                     auto geometry = qobject_cast<SelectionBoxGeometry *>(modelNode->geometry());
@@ -200,10 +209,17 @@ QVector4D GeneralHelper::focusObjectToCamera(QQuick3DCamera *camera, float defau
 
     camera->setPosition(lookAt + newLookVector);
 
-    float newZoomFactor = updateZoom ? qBound(.01f, float(maxExtent / 900.), 100.f) : oldZoom;
+    qreal divisor = closeUp ? 900. : 725.;
+
+    float newZoomFactor = updateZoom ? qBound(.01f, float(maxExtent / divisor), 100.f) : oldZoom;
     float cameraZoomFactor = zoomCamera(camera, 0, defaultLookAtDistance, lookAt, newZoomFactor, false);
 
     return QVector4D(lookAt, cameraZoomFactor);
+}
+
+bool GeneralHelper::fuzzyCompare(double a, double b)
+{
+    return qFuzzyCompare(a, b);
 }
 
 void GeneralHelper::delayedPropertySet(QObject *obj, int delay, const QString &property,
@@ -226,6 +242,40 @@ QQuick3DNode *GeneralHelper::resolvePick(QQuick3DNode *pickNode)
         }
     }
     return pickNode;
+}
+
+void GeneralHelper::registerGizmoTarget(QQuick3DNode *node)
+{
+    if (!m_gizmoTargets.contains(node)) {
+        m_gizmoTargets.insert(node);
+        node->installEventFilter(this);
+    }
+}
+
+void GeneralHelper::unregisterGizmoTarget(QQuick3DNode *node)
+{
+    if (m_gizmoTargets.contains(node)) {
+        m_gizmoTargets.remove(node);
+        node->removeEventFilter(this);
+    }
+}
+
+bool GeneralHelper::isLocked(QQuick3DNode *node)
+{
+    if (node) {
+        QVariant lockValue = node->property("_edit3dLocked");
+        return lockValue.isValid() && lockValue.toBool();
+    }
+    return false;
+}
+
+bool GeneralHelper::isHidden(QQuick3DNode *node)
+{
+    if (node) {
+        QVariant hideValue = node->property("_edit3dHidden");
+        return hideValue.isValid() && hideValue.toBool();
+    }
+    return false;
 }
 
 void GeneralHelper::storeToolState(const QString &sceneId, const QString &tool, const QVariant &state,
@@ -277,6 +327,26 @@ QString GeneralHelper::globalStateId() const
     return _globalStateId;
 }
 
+QString GeneralHelper::lastSceneIdKey() const
+{
+    return _lastSceneIdKey;
+}
+
+QString GeneralHelper::rootSizeKey() const
+{
+    return _rootSizeKey;
+}
+
+double GeneralHelper::brightnessScaler() const
+{
+    // Light brightness was rescaled in Qt6 from 100 -> 1.
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    return 100.;
+#else
+    return 1.;
+#endif
+}
+
 bool GeneralHelper::isMacOS() const
 {
 #ifdef Q_OS_MACOS
@@ -284,6 +354,21 @@ bool GeneralHelper::isMacOS() const
 #else
     return false;
 #endif
+}
+
+bool GeneralHelper::eventFilter(QObject *obj, QEvent *event)
+{
+    if (event->type() == QEvent::DynamicPropertyChange) {
+        auto node = qobject_cast<QQuick3DNode *>(obj);
+        if (m_gizmoTargets.contains(node)) {
+            auto de = static_cast<QDynamicPropertyChangeEvent *>(event);
+            if (de->propertyName() == "_edit3dLocked")
+                emit lockedStateChanged(node);
+            else if (de->propertyName() == "_edit3dHidden")
+                emit hiddenStateChanged(node);
+        }
+    }
+    return QObject::eventFilter(obj, event);
 }
 
 void GeneralHelper::handlePendingToolStateUpdate()

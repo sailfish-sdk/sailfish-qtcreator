@@ -37,14 +37,14 @@
 using namespace ProjectExplorer;
 using namespace ProjectExplorer::Internal;
 
-ConfigTaskHandler::ConfigTaskHandler(const Task &pattern, Core::Id page) :
+ConfigTaskHandler::ConfigTaskHandler(const Task &pattern, Utils::Id page) :
     m_pattern(pattern),
     m_targetPage(page)
 { }
 
 bool ConfigTaskHandler::canHandle(const Task &task) const
 {
-    return task.description == m_pattern.description
+    return task.description() == m_pattern.description()
             && task.category == m_pattern.category;
 }
 

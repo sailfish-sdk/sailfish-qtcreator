@@ -63,14 +63,14 @@ static CommandLine emrunCommand(Target *target, const QString &browser, const QS
 class EmrunRunConfiguration : public ProjectExplorer::RunConfiguration
 {
 public:
-    EmrunRunConfiguration(Target *target, Core::Id id)
+    EmrunRunConfiguration(Target *target, Utils::Id id)
             : RunConfiguration(target, id)
     {
         auto webBrowserAspect = addAspect<WebBrowserSelectionAspect>(target);
 
-        auto effectiveEmrunCall = addAspect<BaseStringAspect>();
+        auto effectiveEmrunCall = addAspect<StringAspect>();
         effectiveEmrunCall->setLabelText(EmrunRunConfigurationFactory::tr("Effective emrun call:"));
-        effectiveEmrunCall->setDisplayStyle(BaseStringAspect::TextEditDisplay);
+        effectiveEmrunCall->setDisplayStyle(StringAspect::TextEditDisplay);
         effectiveEmrunCall->setReadOnly(true);
 
         setUpdater([target, effectiveEmrunCall, webBrowserAspect] {

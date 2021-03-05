@@ -6,47 +6,9 @@ import qbs.Process
 import qbs.Utilities
 
 QtcLibrary {
-    condition: qbs.toolchain.contains("msvc") && cdbPath
+    condition: qbs.toolchain.contains("msvc")
     name: "qtcreatorcdbext"
     targetName: name
-    property string cdbPath: {
-        var paths = [
-            Environment.getEnv("CDB_PATH"),
-            Environment.getEnv("ProgramFiles") + "/Debugging Tools For Windows/sdk",
-            Environment.getEnv("ProgramFiles") + "/Debugging Tools For Windows (x86)/sdk",
-            Environment.getEnv("ProgramFiles") + "/Debugging Tools For Windows (x64)/sdk",
-            Environment.getEnv("ProgramFiles") + "/Debugging Tools For Windows 64-bit/sdk",
-            Environment.getEnv("ProgramW6432") + "/Debugging Tools For Windows (x86)/sdk",
-            Environment.getEnv("ProgramW6432") + "/Debugging Tools For Windows (x64)/sdk",
-            Environment.getEnv("ProgramW6432") + "/Debugging Tools For Windows 64-bit/sdk",
-            Environment.getEnv("ProgramFiles") + "/Windows Kits/8.0/Debuggers",
-            Environment.getEnv("ProgramFiles") + "/Windows Kits/8.1/Debuggers",
-            Environment.getEnv("ProgramFiles") + "/Windows Kits/10/Debuggers",
-            Environment.getEnv("ProgramFiles(x86)") + "/Windows Kits/8.0/Debuggers/inc",
-            Environment.getEnv("ProgramFiles(x86)") + "/Windows Kits/8.1/Debuggers/inc",
-            Environment.getEnv("ProgramFiles(x86)") + "/Windows Kits/10/Debuggers/inc"
-        ];
-        var c = paths.length;
-        for (var i = 0; i < c; ++i) {
-            if (File.exists(paths[i])) {
-                // The inc subdir is just used for detection. See qtcreatorcdbext.pro.
-                return paths[i].endsWith("/inc") ? paths[i].substr(0, paths[i].length - 4)
-                                                 : paths[i];
-            }
-        }
-        return undefined;
-    }
-    property string cdbLibPath: {
-        var paths = qbs.architecture.contains("x86_64") ? ["x64", "amd64"] : ["x86", "i386"];
-        var c = paths.length;
-        for (var i = 0; i < c; ++i) {
-            var libPath = FileInfo.joinPaths(cdbPath, "lib", paths[i]);
-            if (File.exists(libPath)) {
-                return libPath;
-            }
-        }
-        return undefined;
-    }
 
     property string pythonInstallDir: Environment.getEnv("PYTHON_INSTALL_DIR")
 
@@ -88,10 +50,11 @@ QtcLibrary {
                             + output + "'");
                     return;
                 }
-                if (Utilities.versionCompare(versionNumberString, "3.5") < 0) {
+                var pythonMinVersion = "3.8";
+                if (Utilities.versionCompare(versionNumberString, pythonMinVersion) < 0) {
                     printWarning("The python installation at '" + pythonDir
-                                 + "' has version " + versionNumberString + ", but 3.5 or higher "
-                                 + "is required.");
+                                 + "' has version " + versionNumberString + ", but "
+                                 + pythonMinVersion + " or higher is required.");
                     return;
                 }
                 found = true;
@@ -127,13 +90,12 @@ QtcLibrary {
         cpp.defines: ["WITH_PYTHON=1"]
     }
     cpp.includePaths: {
-        var paths = [FileInfo.joinPaths(cdbPath, "inc")];
         if (pythonDllProbe.found)
-            paths.push(FileInfo.joinPaths(pythonInstallDir, "include"));
-        return paths;
+            return [ FileInfo.joinPaths(pythonInstallDir, "include") ];
+        return [ ];
     }
     cpp.dynamicLibraries: {
-        var libs = [ "user32.lib", FileInfo.joinPaths(cdbLibPath, "dbgeng.lib") ];
+        var libs = [ "user32.lib", "dbgeng.lib" ];
         if (pythonDllProbe.found)
             libs.push(FileInfo.joinPaths(pythonInstallDir, "libs",
                                          pythonDllProbe.fileNamePrefix + ".lib"));

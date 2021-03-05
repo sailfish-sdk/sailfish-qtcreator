@@ -124,7 +124,7 @@ void QmakeKitAspect::addToMacroExpander(Kit *kit, MacroExpander *expander) const
                 });
 }
 
-Core::Id QmakeKitAspect::id()
+Utils::Id QmakeKitAspect::id()
 {
     return Constants::KIT_INFORMATION_ID;
 }
@@ -159,8 +159,7 @@ QString QmakeKitAspect::defaultMkspec(const Kit *k)
     if (!version) // No version, so no qmake
         return {};
 
-    return version->mkspecFor(ToolChainKitAspect::toolChain(k,
-                        ProjectExplorer::Constants::CXX_LANGUAGE_ID));
+    return version->mkspecFor(ToolChainKitAspect::cxxToolChain(k));
 }
 
 } // namespace Internal

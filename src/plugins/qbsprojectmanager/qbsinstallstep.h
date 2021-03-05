@@ -31,8 +31,11 @@
 #include <projectexplorer/buildstep.h>
 #include <projectexplorer/task.h>
 
+#include <utils/aspects.h>
+
 namespace QbsProjectManager {
 namespace Internal {
+
 class ErrorInfo;
 class QbsSession;
 
@@ -41,25 +44,17 @@ class QbsInstallStep : public ProjectExplorer::BuildStep
     Q_OBJECT
 
 public:
-    QbsInstallStep(ProjectExplorer::BuildStepList *bsl, Core::Id id);
+    QbsInstallStep(ProjectExplorer::BuildStepList *bsl, Utils::Id id);
     ~QbsInstallStep() override;
 
     QString installRoot() const;
-    bool removeFirst() const { return m_cleanInstallRoot; }
-    bool dryRun() const { return m_dryRun; }
-    bool keepGoing() const { return m_keepGoing; }
     QbsBuildStepData stepData() const;
-
-signals:
-    void changed();
 
 private:
     bool init() override;
     void doRun() override;
     void doCancel() override;
-    ProjectExplorer::BuildStepConfigWidget *createConfigWidget() override;
-    bool fromMap(const QVariantMap &map) override;
-    QVariantMap toMap() const override;
+    QWidget *createConfigWidget() override;
 
     const QbsBuildConfiguration *buildConfig() const;
     void installDone(const ErrorInfo &error);
@@ -69,18 +64,13 @@ private:
     void createTaskAndOutput(ProjectExplorer::Task::TaskType type,
                              const QString &message, const Utils::FilePath &file, int line);
 
-    void setRemoveFirst(bool rf);
-    void setDryRun(bool dr);
-    void setKeepGoing(bool kg);
-
-    bool m_cleanInstallRoot = false;
-    bool m_dryRun = false;
-    bool m_keepGoing = false;
+    Utils::BoolAspect *m_cleanInstallRoot = nullptr;
+    Utils::BoolAspect *m_dryRun = nullptr;
+    Utils::BoolAspect *m_keepGoing = nullptr;
 
     QbsSession *m_session = nullptr;
     QString m_description;
     int m_maxProgress;
-    ProjectExplorer::IOutputParser *m_parser = nullptr;
 
     friend class QbsInstallStepConfigWidget;
 };

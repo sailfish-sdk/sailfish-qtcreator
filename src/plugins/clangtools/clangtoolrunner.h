@@ -44,7 +44,7 @@ class ClangToolRunner : public QObject
     Q_OBJECT
 
 public:
-    ClangToolRunner(QObject *parent = nullptr) : QObject(parent) {}
+    ClangToolRunner(QObject *parent = nullptr);
     ~ClangToolRunner() override;
 
     void init(const QString &outputDirPath, const Utils::Environment &environment);
@@ -52,12 +52,15 @@ public:
     void setExecutable(const QString &executable) { m_executable = executable; }
     void setArgsCreator(const ArgsCreator &argsCreator) { m_argsCreator = argsCreator; }
     void setOutputFileFormat(const OutputFileFormat &format) { m_outputFileFormat = format; }
+    void setVFSOverlay(const QString overlayFilePath) { m_overlayFilePath = overlayFilePath; }
 
     QString name() const { return m_name; }
     QString executable() const { return m_executable; }
     OutputFileFormat outputFileFormat() const { return m_outputFileFormat; }
     QString fileToAnalyze() const { return m_fileToAnalyze; }
     QString outputFilePath() const { return m_outputFilePath; }
+    QStringList mainToolArguments() const;
+    bool supportsVFSOverlay() const;
 
     // compilerOptions is expected to contain everything except:
     //   (1) file to analyze
@@ -68,6 +71,9 @@ signals:
     void finishedWithSuccess(const QString &fileToAnalyze);
     void finishedWithFailure(const QString &errorMessage, const QString &errorDetails);
 
+protected:
+    QString m_overlayFilePath;
+
 private:
     void onProcessOutput();
     void onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
@@ -77,7 +83,7 @@ private:
 
 private:
     QString m_outputDirPath;
-    QProcess m_process;
+    QProcess *m_process = nullptr;
     QByteArray m_processOutput;
 
     QString m_name;

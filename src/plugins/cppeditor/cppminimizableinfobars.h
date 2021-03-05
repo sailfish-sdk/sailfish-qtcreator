@@ -25,14 +25,15 @@
 
 #pragma once
 
+#include <utils/id.h>
+
 #include <QAction>
 #include <QHash>
 #include <QObject>
 
 #include <functional>
 
-namespace Core {
-class Id;
+namespace Utils {
 class InfoBar;
 }
 
@@ -46,30 +47,30 @@ class MinimizableInfoBars : public QObject
 public:
     using DiagnosticWidgetCreator = std::function<QWidget *()>;
     using ActionCreator = std::function<QAction *(QWidget *widget)>;
-    using Actions = QHash<Core::Id, QAction *>;
+    using Actions = QHash<Utils::Id, QAction *>;
 
     static Actions createShowInfoBarActions(const ActionCreator &actionCreator);
 
 public:
-    explicit MinimizableInfoBars(Core::InfoBar &infoBar, QObject *parent = nullptr);
+    explicit MinimizableInfoBars(Utils::InfoBar &infoBar, QObject *parent = nullptr);
 
     // Expected call order: processHasProjectPart(), processHeaderDiagnostics()
     void processHasProjectPart(bool hasProjectPart);
     void processHeaderDiagnostics(const DiagnosticWidgetCreator &diagnosticWidgetCreator);
 
 signals:
-    void showAction(const Core::Id &id, bool show);
+    void showAction(const Utils::Id &id, bool show);
 
 private:
     void updateNoProjectConfiguration();
     void updateHeaderErrors();
 
-    void addNoProjectConfigurationEntry(const Core::Id &id);
-    void addHeaderErrorEntry(const Core::Id &id,
+    void addNoProjectConfigurationEntry(const Utils::Id &id);
+    void addHeaderErrorEntry(const Utils::Id &id,
                              const DiagnosticWidgetCreator &diagnosticWidgetCreator);
 
 private:
-    Core::InfoBar &m_infoBar;
+    Utils::InfoBar &m_infoBar;
 
     bool m_hasProjectPart = true;
     DiagnosticWidgetCreator m_diagnosticWidgetCreator;

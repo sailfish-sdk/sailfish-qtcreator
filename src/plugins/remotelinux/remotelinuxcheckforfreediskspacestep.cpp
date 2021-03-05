@@ -27,29 +27,28 @@
 
 #include "remotelinuxcheckforfreediskspaceservice.h"
 
-#include <projectexplorer/projectconfigurationaspects.h>
+#include <utils/aspects.h>
 
 #include <limits>
 
 using namespace ProjectExplorer;
+using namespace Utils;
 
 namespace RemoteLinux {
 
 RemoteLinuxCheckForFreeDiskSpaceStep::RemoteLinuxCheckForFreeDiskSpaceStep
-    (BuildStepList *bsl, Core::Id id)
+    (BuildStepList *bsl, Utils::Id id)
         : AbstractRemoteLinuxDeployStep(bsl, id)
 {
-    setDefaultDisplayName(displayName());
-
     auto service = createDeployService<RemoteLinuxCheckForFreeDiskSpaceService>();
 
-    auto pathToCheckAspect = addAspect<BaseStringAspect>();
+    auto pathToCheckAspect = addAspect<StringAspect>();
     pathToCheckAspect->setSettingsKey("RemoteLinux.CheckForFreeDiskSpaceStep.PathToCheck");
-    pathToCheckAspect->setDisplayStyle(BaseStringAspect::LineEditDisplay);
+    pathToCheckAspect->setDisplayStyle(StringAspect::LineEditDisplay);
     pathToCheckAspect->setValue("/");
     pathToCheckAspect->setLabelText(tr("Remote path to check for free space:"));
 
-    auto requiredSpaceAspect = addAspect<BaseIntegerAspect>();
+    auto requiredSpaceAspect = addAspect<IntegerAspect>();
     requiredSpaceAspect->setSettingsKey("RemoteLinux.CheckForFreeDiskSpaceStep.RequiredSpace");
     requiredSpaceAspect->setLabel(tr("Required disk space:"));
     requiredSpaceAspect->setDisplayScaleFactor(1024*1024);
@@ -66,7 +65,7 @@ RemoteLinuxCheckForFreeDiskSpaceStep::RemoteLinuxCheckForFreeDiskSpaceStep
 
 RemoteLinuxCheckForFreeDiskSpaceStep::~RemoteLinuxCheckForFreeDiskSpaceStep() = default;
 
-Core::Id RemoteLinuxCheckForFreeDiskSpaceStep::stepId()
+Utils::Id RemoteLinuxCheckForFreeDiskSpaceStep::stepId()
 {
     return "RemoteLinux.CheckForFreeDiskSpaceStep";
 }

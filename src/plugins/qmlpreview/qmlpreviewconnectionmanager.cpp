@@ -36,15 +36,13 @@
 namespace QmlPreview {
 namespace Internal {
 
-QmlPreviewConnectionManager::~QmlPreviewConnectionManager()
-{
-}
-
 QmlPreviewConnectionManager::QmlPreviewConnectionManager(QObject *parent) :
     QmlDebug::QmlDebugConnectionManager(parent)
 {
     setTarget(nullptr);
 }
+
+QmlPreviewConnectionManager::~QmlPreviewConnectionManager() = default;
 
 void QmlPreviewConnectionManager::setTarget(ProjectExplorer::Target *target)
 {
@@ -70,10 +68,77 @@ void QmlPreviewConnectionManager::setFpsHandler(QmlPreviewFpsHandler fpsHandler)
 
 void QmlPreviewConnectionManager::createClients()
 {
-    m_clientPlugin = new QmlPreviewClient(connection());
+    createPreviewClient();
+    createDebugTranslationClient();
+}
 
-    QObject::connect(
-                this, &QmlPreviewConnectionManager::loadFile, m_clientPlugin.data(),
+QUrl QmlPreviewConnectionManager::findValidI18nDirectoryAsUrl(const QString &locale)
+{
+    QTC_ASSERT(!m_lastLoadedUrl.isEmpty(), return {};);
+
+    const QString shortLocale = locale.left(locale.indexOf("_"));
+    QString path = m_lastLoadedUrl.path();
+
+    QString foundPath;
+    while (!path.isEmpty()) {
+        path = path.left(qMax(0, path.lastIndexOf("/")));
+        QUrl url = m_lastLoadedUrl;
+
+
+        auto tryPath = [&](const QString &postfix) {
+            url.setPath(path + "/i18n/qml_" + postfix);
+            bool success = false;
+            foundPath = m_projectFileFinder.findFile(url, &success).constFirst().toString();
+            foundPath = foundPath.left(qMax(0, foundPath.lastIndexOf("/i18n")));
+            return success;
+        };
+
+        if (tryPath(locale + ".qm"))
+            break;
+        if (tryPath(locale))
+            break;
+        if (tryPath(shortLocale + ".qm"))
+            break;
+        if (tryPath(shortLocale))
+            break;
+    }
+
+    QUrl url = m_lastLoadedUrl;
+    if (foundPath.isEmpty())
+        url.setPath(path);
+    else
+        url.setPath(foundPath);
+    return url;
+}
+
+void QmlPreviewConnectionManager::createDebugTranslationClient()
+{
+    m_qmlDebugTranslationClient = new QmlDebugTranslationClient(connection());
+    connect(this, &QmlPreviewConnectionManager::language,
+                     m_qmlDebugTranslationClient, [this](const QString &locale) {
+        m_lastUsedLanguage = locale;
+        // findValidI18nDirectoryAsUrl does not work if we didn't load any file
+        // service expects a context URL.
+        if (!m_lastLoadedUrl.isEmpty()) {
+            // Search the parent directories of the last loaded URL for i18n files.
+            m_qmlDebugTranslationClient->changeLanguage(findValidI18nDirectoryAsUrl(locale), locale);
+        }
+    });
+    connect(this, &QmlPreviewConnectionManager::changeElideWarning,
+            m_qmlDebugTranslationClient, &QmlDebugTranslationClient::changeElideWarning);
+
+    connect(m_qmlDebugTranslationClient.data(), &QmlDebugTranslationClient::debugServiceUnavailable,
+                     this, []() {
+        QMessageBox::warning(Core::ICore::dialogParent(), "Error connect to QML DebugTranslation service",
+                             "QML DebugTranslation feature is not available for this version of Qt.");
+    }, Qt::QueuedConnection); // Queue it, so that it interfere with the connection timer
+}
+
+void QmlPreviewConnectionManager::createPreviewClient()
+{
+    m_qmlPreviewClient = new QmlPreviewClient(connection());
+
+    connect(this, &QmlPreviewConnectionManager::loadFile, m_qmlPreviewClient.data(),
                 [this](const QString &filename, const QString &changedFile,
                        const QByteArray &contents) {
         if (!m_fileClassifier(changedFile)) {
@@ -84,57 +149,24 @@ void QmlPreviewConnectionManager::createClients()
         bool success = false;
         const QString remoteChangedFile = m_targetFileFinder.findPath(changedFile, &success);
         if (success)
-            m_clientPlugin->announceFile(remoteChangedFile, contents);
+            m_qmlPreviewClient->announceFile(remoteChangedFile, contents);
         else
-            m_clientPlugin->clearCache();
+            m_qmlPreviewClient->clearCache();
 
         m_lastLoadedUrl = m_targetFileFinder.findUrl(filename);
-        m_clientPlugin->loadUrl(m_lastLoadedUrl);
+        m_qmlPreviewClient->loadUrl(m_lastLoadedUrl);
+        // emit language after a file was loaded and do it every time,
+        // because this also triggers the check for missing translations
+        emit language(m_lastUsedLanguage);
     });
 
-    QObject::connect(this, &QmlPreviewConnectionManager::rerun,
-                     m_clientPlugin.data(), &QmlPreviewClient::rerun);
+    connect(this, &QmlPreviewConnectionManager::rerun,
+                     m_qmlPreviewClient.data(), &QmlPreviewClient::rerun);
 
-    QObject::connect(this, &QmlPreviewConnectionManager::zoom,
-                     m_clientPlugin.data(), &QmlPreviewClient::zoom);
+    connect(this, &QmlPreviewConnectionManager::zoom,
+                     m_qmlPreviewClient.data(), &QmlPreviewClient::zoom);
 
-    QObject::connect(this, &QmlPreviewConnectionManager::language,
-                     m_clientPlugin.data(), [this](const QString &locale) {
-
-        // The preview service expects a context URL.
-        // Search the parent directories of the last loaded URL for i18n files.
-
-        const QString shortLocale = locale.left(locale.indexOf("_"));
-        QString path = m_lastLoadedUrl.path();
-
-        while (!path.isEmpty()) {
-            path = path.left(qMax(0, path.lastIndexOf("/")));
-            QUrl url = m_lastLoadedUrl;
-
-            auto tryPath = [&](const QString &postfix) {
-                url.setPath(path + "/i18n/qml_" + postfix);
-                bool success = false;
-                m_projectFileFinder.findFile(url, &success);
-                return success;
-            };
-
-            if (tryPath(locale + ".qm"))
-                break;
-            if (tryPath(locale))
-                break;
-            if (tryPath(shortLocale + ".qm"))
-                break;
-            if (tryPath(shortLocale))
-                break;
-        }
-
-        QUrl url = m_lastLoadedUrl;
-        url.setPath(path);
-
-        m_clientPlugin->language(url, locale);
-    });
-
-    QObject::connect(m_clientPlugin.data(), &QmlPreviewClient::pathRequested,
+    connect(m_qmlPreviewClient.data(), &QmlPreviewClient::pathRequested,
                      this, [this](const QString &path) {
         const bool found = m_projectFileFinder.findFileOrDirectory(
                     path, [&](const QString &filename, int confidence) {
@@ -146,31 +178,31 @@ void QmlPreviewConnectionManager::createClients()
                         m_fileSystemWatcher.addFile(filename,
                             Utils::FileSystemWatcher::WatchModifiedDate);
                     }
-                    m_clientPlugin->announceFile(path, contents);
+                    m_qmlPreviewClient->announceFile(path, contents);
                 } else {
-                    m_clientPlugin->announceError(path);
+                    m_qmlPreviewClient->announceError(path);
                 }
             } else {
-                m_clientPlugin->announceError(path);
+                m_qmlPreviewClient->announceError(path);
             }
         }, [&](const QStringList &entries, int confidence) {
             if (confidence == path.length())
-                m_clientPlugin->announceDirectory(path, entries);
+                m_qmlPreviewClient->announceDirectory(path, entries);
             else
-                m_clientPlugin->announceError(path);
+                m_qmlPreviewClient->announceError(path);
         });
 
         if (!found)
-            m_clientPlugin->announceError(path);
+            m_qmlPreviewClient->announceError(path);
     });
 
-    QObject::connect(m_clientPlugin.data(), &QmlPreviewClient::errorReported,
+    connect(m_qmlPreviewClient.data(), &QmlPreviewClient::errorReported,
                      this, [](const QString &error) {
         Core::MessageManager::write("Error loading QML Live Preview:");
         Core::MessageManager::write(error);
     });
 
-    QObject::connect(m_clientPlugin.data(), &QmlPreviewClient::fpsReported,
+    connect(m_qmlPreviewClient.data(), &QmlPreviewClient::fpsReported,
                      this, [this](const QmlPreviewClient::FpsInfo &frames) {
         if (m_fpsHandler) {
             quint16 stats[] = {
@@ -181,14 +213,14 @@ void QmlPreviewConnectionManager::createClients()
         }
     });
 
-    QObject::connect(m_clientPlugin.data(), &QmlPreviewClient::debugServiceUnavailable,
+    connect(m_qmlPreviewClient.data(), &QmlPreviewClient::debugServiceUnavailable,
                      this, []() {
-        QMessageBox::warning(Core::ICore::mainWindow(), "Error loading QML Live Preview",
+        QMessageBox::warning(Core::ICore::dialogParent(), "Error loading QML Live Preview",
                              "QML Live Preview is not available for this version of Qt.");
     }, Qt::QueuedConnection); // Queue it, so that it interfere with the connection timer
 
-    QObject::connect(&m_fileSystemWatcher, &Utils::FileSystemWatcher::fileChanged,
-                     m_clientPlugin.data(), [this](const QString &changedFile) {
+    connect(&m_fileSystemWatcher, &Utils::FileSystemWatcher::fileChanged,
+                     m_qmlPreviewClient.data(), [this](const QString &changedFile) {
         if (!m_fileLoader || !m_lastLoadedUrl.isValid())
             return;
 
@@ -205,20 +237,28 @@ void QmlPreviewConnectionManager::createClients()
 
         const QString remoteChangedFile = m_targetFileFinder.findPath(changedFile, &success);
         if (success)
-            m_clientPlugin->announceFile(remoteChangedFile, contents);
+            m_qmlPreviewClient->announceFile(remoteChangedFile, contents);
         else
-            m_clientPlugin->clearCache();
+            m_qmlPreviewClient->clearCache();
 
-        m_clientPlugin->loadUrl(m_lastLoadedUrl);
+        m_qmlPreviewClient->loadUrl(m_lastLoadedUrl);
     });
 }
 
+void QmlPreviewConnectionManager::clearClient(QObject *client)
+{
+    if (client) {
+        disconnect(client, nullptr, this, nullptr);
+        disconnect(this, nullptr, client, nullptr);
+        client->deleteLater();
+    }
+};
+
+
 void QmlPreviewConnectionManager::destroyClients()
 {
-    disconnect(m_clientPlugin.data(), nullptr, this, nullptr);
-    disconnect(this, nullptr, m_clientPlugin.data(), nullptr);
-    m_clientPlugin->deleteLater();
-    m_clientPlugin.clear();
+    clearClient(m_qmlPreviewClient);
+    clearClient(m_qmlDebugTranslationClient);
     m_fileSystemWatcher.removeFiles(m_fileSystemWatcher.files());
     QTC_ASSERT(m_fileSystemWatcher.directories().isEmpty(),
                m_fileSystemWatcher.removeDirectories(m_fileSystemWatcher.directories()));

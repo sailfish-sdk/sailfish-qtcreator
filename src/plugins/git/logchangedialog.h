@@ -42,6 +42,8 @@ QT_END_NAMESPACE
 namespace Git {
 namespace Internal {
 
+class LogChangeModel;
+
 // A widget that lists SHA1 and subject of the changes
 // Used for reset and interactive rebase
 
@@ -65,6 +67,7 @@ public:
     int commitIndex() const;
     QString earliestCommit() const;
     void setItemDelegate(QAbstractItemDelegate *delegate);
+    void setExcludedRemote(const QString &remote) { m_excludedRemote = remote; }
 
 signals:
     void commitActivated(const QString &commit);
@@ -76,8 +79,9 @@ private:
     bool populateLog(const QString &repository, const QString &commit, LogFlags flags);
     const QStandardItem *currentItem(int column = 0) const;
 
-    QStandardItemModel *m_model;
+    LogChangeModel *m_model;
     bool m_hasCustomDelegate;
+    QString m_excludedRemote;
 };
 
 class LogChangeDialog : public QDialog

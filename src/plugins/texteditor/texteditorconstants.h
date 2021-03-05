@@ -39,6 +39,8 @@ enum TextStyle : quint8 {
     C_SELECTION,
     C_LINE_NUMBER,
     C_SEARCH_RESULT,
+    C_SEARCH_RESULT_ALT1,
+    C_SEARCH_RESULT_ALT2,
     C_SEARCH_SCOPE,
     C_PARENTHESES,
     C_PARENTHESES_MISMATCH,
@@ -97,6 +99,11 @@ enum TextStyle : quint8 {
     C_DIFF_DEST_CHAR,
 
     C_LOG_CHANGE_LINE,
+    C_LOG_AUTHOR_NAME,
+    C_LOG_COMMIT_DATE,
+    C_LOG_COMMIT_HASH,
+    C_LOG_COMMIT_SUBJECT,
+    C_LOG_DECORATION,
 
     C_WARNING,
     C_WARNING_CONTEXT,
@@ -119,6 +126,7 @@ const char G_COPYPASTE[]           = "TextEditor.CopyPasteGroup";
 const char G_SELECT[]              = "TextEditor.SelectGroup";
 const char G_BOM[]                 = "TextEditor.BomGroup";
 const char COMPLETE_THIS[]         = "TextEditor.CompleteThis";
+const char FUNCTION_HINT[]         = "TextEditor.FunctionHint";
 const char QUICKFIX_THIS[]         = "TextEditor.QuickFix";
 const char SHOWCONTEXTMENU[]       = "TextEditor.ShowContextMenu";
 const char CREATE_SCRATCH_BUFFER[] = "TextEditor.CreateScratchBuffer";
@@ -201,6 +209,8 @@ const char UNINDENT[]        = "TextEditor.Unindent";
 const char FOLLOW_SYMBOL_UNDER_CURSOR[] = "TextEditor.FollowSymbolUnderCursor";
 const char FOLLOW_SYMBOL_UNDER_CURSOR_IN_NEXT_SPLIT[] = "TextEditor.FollowSymbolUnderCursorInNextSplit";
 const char FIND_USAGES[] = "TextEditor.FindUsages";
+// moved from CppEditor to TextEditor avoid breaking the setting by using the old key
+const char RENAME_SYMBOL[] = "CppEditor.RenameSymbolUnderCursor";
 const char JUMP_TO_FILE_UNDER_CURSOR[] = "TextEditor.JumpToFileUnderCursor";
 const char JUMP_TO_FILE_UNDER_CURSOR_IN_NEXT_SPLIT[] = "TextEditor.JumpToFileUnderCursorInNextSplit";
 

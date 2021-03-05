@@ -27,6 +27,8 @@
 
 #include "android_global.h"
 #include "androidsdkpackage.h"
+#include "androidsdkmanager.h"
+
 #include <projectexplorer/toolchain.h>
 #include <qtsupport/qtversionmanager.h>
 
@@ -37,7 +39,6 @@
 #include <QVector>
 #include <QHash>
 #include <QMap>
-#include <QFutureInterface>
 #include <QVersionNumber>
 
 #include <utils/fileutils.h>
@@ -123,8 +124,6 @@ public:
     void setSdkManagerToolArgs(const QStringList &args);
 
     Utils::FilePath ndkLocation(const QtSupport::BaseQtVersion *qtVersion) const;
-    Utils::FilePath defaultNdkLocation() const;
-    Utils::FilePath gdbServer(const QString &androidAbi, const QtSupport::BaseQtVersion *qtVersion) const;
     QVersionNumber ndkVersion(const QtSupport::BaseQtVersion *qtVersion) const;
     QVersionNumber ndkVersion(const Utils::FilePath &ndkPath) const;
 
@@ -135,37 +134,35 @@ public:
     QStringList defaultEssentials() const;
     QStringList essentialsFromQtVersion(const QtSupport::BaseQtVersion &version) const;
     QStringList allEssentials() const;
+    bool allEssentialsInstalled(Internal::AndroidSdkManager *sdkManager);
+    bool sdkToolsOk() const;
 
     Utils::FilePath openJDKLocation() const;
     void setOpenJDKLocation(const Utils::FilePath &openJDKLocation);
 
     Utils::FilePath keystoreLocation() const;
-    void setKeystoreLocation(const Utils::FilePath &keystoreLocation);
 
     QString toolchainHost(const QtSupport::BaseQtVersion *qtVersion) const;
     QString toolchainHostFromNdk(const Utils::FilePath &ndkPath) const;
 
-    unsigned partitionSize() const;
-    void setPartitionSize(unsigned partitionSize);
+    QStringList emulatorArgs() const;
+    void setEmulatorArgs(const QStringList &args);
 
     bool automaticKitCreation() const;
     void setAutomaticKitCreation(bool b);
 
+    static Utils::FilePath defaultSdkPath();
     Utils::FilePath adbToolPath() const;
-    Utils::FilePath androidToolPath() const;
     Utils::FilePath emulatorToolPath() const;
     Utils::FilePath sdkManagerToolPath() const;
     Utils::FilePath avdManagerToolPath() const;
-    Utils::FilePath aaptToolPath() const;
 
     Utils::FilePath toolchainPath(const QtSupport::BaseQtVersion *qtVersion) const;
     Utils::FilePath toolchainPathFromNdk(const Utils::FilePath &ndkLocation) const;
-    Utils::FilePath clangPath(const QtSupport::BaseQtVersion *qtVersion) const;
     Utils::FilePath clangPathFromNdk(const Utils::FilePath &ndkLocation) const;
 
     Utils::FilePath gdbPath(const ProjectExplorer::Abi &abi, const QtSupport::BaseQtVersion *qtVersion) const;
     Utils::FilePath gdbPathFromNdk(const ProjectExplorer::Abi &abi, const Utils::FilePath &ndkLocation) const;
-    Utils::FilePath makePath(const QtSupport::BaseQtVersion *qtVersion) const;
     Utils::FilePath makePathFromNdk(const Utils::FilePath &ndkLocation) const;
 
     Utils::FilePath keytoolPath() const;
@@ -175,7 +172,6 @@ public:
 
     QString bestNdkPlatformMatch(int target, const QtSupport::BaseQtVersion *qtVersion) const;
 
-    static ProjectExplorer::Abi abiForToolChainPrefix(const QString &toolchainPrefix);
     static QLatin1String toolchainPrefix(const ProjectExplorer::Abi &abi);
     static QLatin1String toolsPrefix(const ProjectExplorer::Abi &abi);
     static QLatin1String displayName(const ProjectExplorer::Abi &abi);
@@ -185,7 +181,6 @@ public:
     OpenGl getOpenGLEnabled(const QString &emulator) const;
     bool isConnected(const QString &serialNumber) const;
 
-    bool useNativeUiTools() const;
     bool isCmdlineSdkToolsInstalled() const;
 
     bool sdkFullyConfigured() const { return m_sdkFullyConfigured; }
@@ -199,18 +194,15 @@ public:
     Utils::FilePath openSslLocation() const;
     void setOpenSslLocation(const Utils::FilePath &openSslLocation);
 
+    static Utils::FilePath getJdkPath();
 
 private:
     static QString getDeviceProperty(const Utils::FilePath &adbToolPath,
                                      const QString &device, const QString &property);
 
     Utils::FilePath openJDKBinPath() const;
-    int getSDKVersion(const QString &device) const;
     static int getSDKVersion(const Utils::FilePath &adbToolPath, const QString &device);
-    QStringList getAbis(const QString &device) const;
     static QStringList getAbis(const Utils::FilePath &adbToolPath, const QString &device);
-    static bool isBootToQt(const Utils::FilePath &adbToolPath, const QString &device);
-    bool isBootToQt(const QString &device) const;
     static QString getAvdName(const QString &serialnumber);
 
     void parseDependenciesJson();
@@ -222,7 +214,7 @@ private:
     Utils::FilePath m_openJDKLocation;
     Utils::FilePath m_keystoreLocation;
     Utils::FilePath m_openSslLocation;
-    unsigned m_partitionSize = 1024;
+    QStringList m_emulatorArgs;
     bool m_automaticKitCreation = true;
     QUrl m_sdkToolsUrl;
     QByteArray m_sdkToolsSha256;

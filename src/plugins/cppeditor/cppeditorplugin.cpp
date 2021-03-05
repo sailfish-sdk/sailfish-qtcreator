@@ -103,9 +103,10 @@ public:
         setParenthesesMatchingEnabled(true);
 
         setEditorActionHandlers(TextEditorActionHandler::Format
-                              | TextEditorActionHandler::UnCommentSelection
-                              | TextEditorActionHandler::UnCollapseAll
-                              | TextEditorActionHandler::FollowSymbolUnderCursor);
+                                | TextEditorActionHandler::UnCommentSelection
+                                | TextEditorActionHandler::UnCollapseAll
+                                | TextEditorActionHandler::FollowSymbolUnderCursor
+                                | TextEditorActionHandler::RenameSymbol);
     }
 };
 
@@ -114,11 +115,10 @@ public:
 class CppEditorPluginPrivate : public QObject
 {
 public:
-    void onTaskStarted(Core::Id type);
-    void onAllTasksFinished(Core::Id type);
+    void onTaskStarted(Utils::Id type);
+    void onAllTasksFinished(Utils::Id type);
     void inspectCppCodeModel();
 
-    QAction *m_renameSymbolUnderCursorAction = nullptr;
     QAction *m_reparseExternallyChangedFiles = nullptr;
     QAction *m_openTypeHierarchyAction = nullptr;
     QAction *m_openIncludeHierarchyAction = nullptr;
@@ -245,16 +245,7 @@ bool CppEditorPlugin::initialize(const QStringList & /*arguments*/, QString *err
     Command *sep = contextMenu->addSeparator();
     sep->action()->setObjectName(QLatin1String(Constants::M_REFACTORING_MENU_INSERTION_POINT));
     contextMenu->addSeparator();
-
-    d->m_renameSymbolUnderCursorAction = new QAction(tr("Rename Symbol Under Cursor"),
-                                                  this);
-    cmd = ActionManager::registerAction(d->m_renameSymbolUnderCursorAction,
-                             Constants::RENAME_SYMBOL_UNDER_CURSOR,
-                             context);
-    cmd->setDefaultKeySequence(QKeySequence(tr("CTRL+SHIFT+R")));
-    connect(d->m_renameSymbolUnderCursorAction, &QAction::triggered,
-            this, &CppEditorPlugin::renameSymbolUnderCursor);
-    cppToolsMenu->addAction(cmd);
+    cppToolsMenu->addAction(ActionManager::command(TextEditor::Constants::RENAME_SYMBOL));
 
     // Update context in global context
     cppToolsMenu->addSeparator(Core::Constants::G_DEFAULT_THREE);
@@ -342,8 +333,8 @@ void CppEditorPlugin::showPreProcessorDialog()
 void CppEditorPluginPrivate::onTaskStarted(Id type)
 {
     if (type == CppTools::Constants::TASK_INDEX) {
-        m_renameSymbolUnderCursorAction->setEnabled(false);
         ActionManager::command(TextEditor::Constants::FIND_USAGES)->action()->setEnabled(false);
+        ActionManager::command(TextEditor::Constants::RENAME_SYMBOL)->action()->setEnabled(false);
         m_reparseExternallyChangedFiles->setEnabled(false);
         m_openTypeHierarchyAction->setEnabled(false);
         m_openIncludeHierarchyAction->setEnabled(false);
@@ -353,8 +344,8 @@ void CppEditorPluginPrivate::onTaskStarted(Id type)
 void CppEditorPluginPrivate::onAllTasksFinished(Id type)
 {
     if (type == CppTools::Constants::TASK_INDEX) {
-        m_renameSymbolUnderCursorAction->setEnabled(true);
         ActionManager::command(TextEditor::Constants::FIND_USAGES)->action()->setEnabled(true);
+        ActionManager::command(TextEditor::Constants::RENAME_SYMBOL)->action()->setEnabled(true);
         m_reparseExternallyChangedFiles->setEnabled(true);
         m_openTypeHierarchyAction->setEnabled(true);
         m_openIncludeHierarchyAction->setEnabled(true);
@@ -366,7 +357,7 @@ void CppEditorPluginPrivate::inspectCppCodeModel()
     if (m_cppCodeModelInspectorDialog) {
         ICore::raiseWindow(m_cppCodeModelInspectorDialog);
     } else {
-        m_cppCodeModelInspectorDialog = new CppCodeModelInspectorDialog(ICore::mainWindow());
+        m_cppCodeModelInspectorDialog = new CppCodeModelInspectorDialog(ICore::dialogParent());
         m_cppCodeModelInspectorDialog->show();
     }
 }

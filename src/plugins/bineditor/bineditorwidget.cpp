@@ -61,6 +61,11 @@
 
 using namespace Core;
 
+namespace BinEditor {
+namespace Internal {
+
+const QChar MidpointChar(u'\u00B7');
+
 static QByteArray calculateHexPattern(const QByteArray &pattern)
 {
     QByteArray result;
@@ -77,9 +82,6 @@ static QByteArray calculateHexPattern(const QByteArray &pattern)
     }
     return result;
 }
-
-namespace BinEditor {
-namespace Internal {
 
 class BinEditorWidgetPrivate : public EditorService
 {
@@ -567,7 +569,7 @@ Utils::optional<qint64> BinEditorWidget::posAt(const QPoint &pos, bool includeEm
                 break;
             QChar qc(QLatin1Char(dataAt(dataPos)));
             if (!qc.isPrint())
-                qc = 0xB7;
+                qc = MidpointChar;
             x -= fontMetrics().horizontalAdvance(qc);
             if (x <= 0)
                 break;
@@ -613,7 +615,6 @@ int BinEditorWidget::dataIndexOf(const QByteArray &pattern, qint64 from, bool ca
 
     QByteArray buffer;
     buffer.resize(m_blockSize + trailing);
-    char *b = buffer.data();
     QByteArrayMatcher matcher(pattern);
 
     qint64 block = from / m_blockSize;
@@ -622,6 +623,7 @@ int BinEditorWidget::dataIndexOf(const QByteArray &pattern, qint64 from, bool ca
         if (!requestDataAt(block * m_blockSize))
             return -1;
         QByteArray data = blockData(block);
+        char *b = buffer.data();
         ::memcpy(b, b + m_blockSize, trailing);
         ::memcpy(b + trailing, data.constData(), m_blockSize);
 
@@ -645,7 +647,6 @@ int BinEditorWidget::dataLastIndexOf(const QByteArray &pattern, qint64 from, boo
 
     QByteArray buffer;
     buffer.resize(m_blockSize + trailing);
-    char *b = buffer.data();
 
     if (from == -1)
         from = m_size;
@@ -655,6 +656,7 @@ int BinEditorWidget::dataLastIndexOf(const QByteArray &pattern, qint64 from, boo
         if (!requestDataAt(qint64(block) * m_blockSize))
             return -1;
         QByteArray data = blockData(block);
+        char *b = buffer.data();
         ::memcpy(b + m_blockSize, b, trailing);
         ::memcpy(b, data.constData(), m_blockSize);
 
@@ -863,7 +865,7 @@ void BinEditorWidget::paintEvent(QPaintEvent *e)
                     break;
                 QChar qc(QLatin1Char(dataAt(pos, isOld)));
                 if (qc.unicode() >= 127 || !qc.isPrint())
-                    qc = 0xB7;
+                    qc = MidpointChar;
                 printable += qc;
             }
         } else {

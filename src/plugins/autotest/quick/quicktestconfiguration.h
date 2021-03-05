@@ -33,16 +33,11 @@ namespace Internal {
 class QuickTestConfiguration : public DebuggableTestConfiguration
 {
 public:
-    QuickTestConfiguration();
+    explicit QuickTestConfiguration(ITestFramework *framework);
     TestOutputReader *outputReader(const QFutureInterface<TestResultPtr> &fi,
                                    QProcess *app) const override;
     QStringList argumentsForTestRunner(QStringList *omitted = nullptr) const override;
     Utils::Environment filteredEnvironment(const Utils::Environment &original) const override;
-    void setUnnamedOnly(bool unnamedOnly);
-    bool unnamedOnly() const { return m_unnamedOnly; }
-
-private:
-    bool m_unnamedOnly = false;
 };
 
 } // namespace Internal

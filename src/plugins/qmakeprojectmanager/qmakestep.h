@@ -28,14 +28,13 @@
 #include "qmakeprojectmanager_global.h"
 
 #include <projectexplorer/abstractprocessstep.h>
-#include <projectexplorer/projectconfigurationaspects.h>
 
+#include <utils/aspects.h>
 #include <utils/fileutils.h>
 
 #include <memory>
 
 QT_BEGIN_NAMESPACE
-class QCheckBox;
 class QComboBox;
 class QLabel;
 class QLineEdit;
@@ -84,9 +83,9 @@ public:
     QString targetTriple;
     TargetArchConfig archConfig = NoArch;
     OsType osType = NoOsType;
-    ProjectExplorer::TriState separateDebugInfo;
-    ProjectExplorer::TriState linkQmlDebuggingQQ2;
-    ProjectExplorer::TriState useQtQuickCompiler;
+    Utils::TriState separateDebugInfo;
+    Utils::TriState linkQmlDebuggingQQ2;
+    Utils::TriState useQtQuickCompiler;
 };
 
 
@@ -104,9 +103,9 @@ inline bool operator !=(const QMakeStepConfig &a, const QMakeStepConfig &b) {
 inline QDebug operator<<(QDebug dbg, const QMakeStepConfig &c)
 {
    dbg << c.archConfig << c.osType
-       << (c.linkQmlDebuggingQQ2 == ProjectExplorer::TriState::Enabled)
-       << (c.useQtQuickCompiler == ProjectExplorer::TriState::Enabled)
-       << (c.separateDebugInfo == ProjectExplorer::TriState::Enabled);
+       << (c.linkQmlDebuggingQQ2 == Utils::TriState::Enabled)
+       << (c.useQtQuickCompiler == Utils::TriState::Enabled)
+       << (c.separateDebugInfo == Utils::TriState::Enabled);
    return dbg;
 }
 
@@ -116,13 +115,14 @@ class QMAKEPROJECTMANAGER_EXPORT QMakeStep : public ProjectExplorer::AbstractPro
     friend class Internal::QMakeStepFactory;
 
 public:
-    QMakeStep(ProjectExplorer::BuildStepList *parent, Core::Id id);
+    QMakeStep(ProjectExplorer::BuildStepList *parent, Utils::Id id);
 
     QmakeBuildConfiguration *qmakeBuildConfiguration() const;
     QmakeBuildSystem *qmakeBuildSystem() const;
     bool init() override;
+    void setupOutputFormatter(Utils::OutputFormatter *formatter) override;
     void doRun() override;
-    ProjectExplorer::BuildStepConfigWidget *createConfigWidget() override;
+    QWidget *createConfigWidget() override;
     void setForced(bool b);
     void setRecursive(bool b);
 
@@ -156,13 +156,6 @@ public:
 
     QVariantMap toMap() const override;
 
-    QStringList selectedAbis() const;
-    void setSelectedAbis(const QStringList &selectedAbis);
-
-signals:
-    void userArgumentsChanged();
-    void extraArgumentsChanged();
-
 protected:
     bool fromMap(const QVariantMap &map) override;
     void processStartupFailed() override;
@@ -174,6 +167,26 @@ private:
 
     void startOneCommand(const Utils::CommandLine &command);
     void runNextCommand();
+
+    // slots for handling buildconfiguration/step signals
+    void qtVersionChanged();
+    void qmakeBuildConfigChanged();
+    void userArgumentsChanged();
+    void linkQmlDebuggingLibraryChanged();
+    void useQtQuickCompilerChanged();
+    void separateDebugInfoChanged();
+    void abisChanged();
+
+    // slots for dealing with user changes in our UI
+    void qmakeArgumentsLineEdited();
+    void buildConfigurationSelected();
+    void askForRebuild(const QString &title);
+
+    void recompileMessageBoxFinished(int button);
+
+    void updateAbiWidgets();
+    void updateEffectiveQMakeCall();
+    bool isAndroidKit() const;
 
     Utils::CommandLine m_qmakeCommand;
     Utils::CommandLine m_makeCommand;
@@ -194,38 +207,8 @@ private:
     bool m_runMakeQmake = false;
     bool m_scriptTemplate = false;
     QStringList m_selectedAbis;
-};
+    Utils::OutputFormatter *m_outputFormatter = nullptr;
 
-
-class QMakeStepConfigWidget : public ProjectExplorer::BuildStepConfigWidget
-{
-    Q_OBJECT
-public:
-    QMakeStepConfigWidget(QMakeStep *step);
-    ~QMakeStepConfigWidget() override;
-
-private:
-    // slots for handling buildconfiguration/step signals
-    void qtVersionChanged();
-    void qmakeBuildConfigChanged();
-    void userArgumentsChanged();
-    void linkQmlDebuggingLibraryChanged();
-    void useQtQuickCompilerChanged();
-    void separateDebugInfoChanged();
-    void abisChanged();
-
-    // slots for dealing with user changes in our UI
-    void qmakeArgumentsLineEdited();
-    void buildConfigurationSelected();
-    void askForRebuild(const QString &title);
-
-    void recompileMessageBoxFinished(int button);
-
-    void updateSummaryLabel();
-    void updateEffectiveQMakeCall();
-    bool isAndroidKit() const;
-
-    QMakeStep *m_step = nullptr;
     bool m_ignoreChange = false;
 
     QLabel *abisLabel = nullptr;

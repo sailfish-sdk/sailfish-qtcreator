@@ -32,14 +32,22 @@
 
 namespace QmlPreview {
 
+struct QmlPreviewRunnerSetting {
+    ProjectExplorer::RunControl *runControl = nullptr;
+    QmlPreviewFileLoader fileLoader;
+    QmlPreviewFileClassifier fileClassifier;
+    QmlPreviewFpsHandler fpsHandler;
+    float zoom = 1.0;
+    QString language;
+    bool translationElideWarning = false;
+};
+
 class QmlPreviewRunner : public ProjectExplorer::RunWorker
 {
     Q_OBJECT
 
 public:
-    QmlPreviewRunner(ProjectExplorer::RunControl *runControl, QmlPreviewFileLoader fileLoader,
-                     QmlPreviewFileClassifier fileClassifier, QmlPreviewFpsHandler fpsHandler,
-                     float initialZoom, const QString &initialLocale);
+    QmlPreviewRunner(const QmlPreviewRunnerSetting &settings);
 
     void setServerUrl(const QUrl &serverUrl);
     QUrl serverUrl() const;
@@ -51,7 +59,7 @@ signals:
     void zoom(float zoomFactor);
     void rerun();
     void ready();
-
+    void changeElideWarning(bool elideWarning);
 private:
     void start() override;
     void stop() override;

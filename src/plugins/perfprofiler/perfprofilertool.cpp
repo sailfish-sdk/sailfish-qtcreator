@@ -281,7 +281,7 @@ void PerfProfilerTool::createViews()
     m_delayLabel->setIndent(10);
 
     connect(m_traceManager, &PerfProfilerTraceManager::error, this, [](const QString &message) {
-        QMessageBox *errorDialog = new QMessageBox(ICore::mainWindow());
+        QMessageBox *errorDialog = new QMessageBox(ICore::dialogParent());
         errorDialog->setIcon(QMessageBox::Warning);
         errorDialog->setWindowTitle(tr("Performance Analyzer"));
         errorDialog->setText(message);
@@ -416,12 +416,13 @@ void PerfProfilerTool::onReaderFinished()
 {
     m_readerRunning = false;
     if (m_traceManager->traceDuration() <= 0) {
-        QMessageBox::warning(Core::ICore::mainWindow(),
+        QMessageBox::warning(Core::ICore::dialogParent(),
                              tr("No Data Loaded"),
                              tr("The profiler did not produce any samples. "
                                 "Make sure that you are running a recent Linux kernel and that "
                                 "the \"perf\" utility is available and generates useful call "
-                                "graphs."));
+                                "graphs.\nYou might find further explanations in the Application "
+                                "Output view."));
         clear();
     } else {
         m_traceManager->finalize();
@@ -554,7 +555,7 @@ void PerfProfilerTool::gotoSourceLocation(QString filePath, int lineNumber, int 
 
     // The text editors count columns starting with 0, but the ASTs store the
     // location starting with 1, therefore the -1.
-    EditorManager::openEditorAt(fi.filePath(), lineNumber, columnNumber - 1, Core::Id(),
+    EditorManager::openEditorAt(fi.filePath(), lineNumber, columnNumber - 1, Utils::Id(),
                                 EditorManager::DoNotSwitchToDesignMode
                                 | EditorManager::DoNotSwitchToEditMode);
 
@@ -601,7 +602,7 @@ void PerfProfilerTool::showLoadPerfDialog()
 {
     m_perspective.select();
 
-    PerfLoadDialog dlg(Core::ICore::mainWindow());
+    PerfLoadDialog dlg(Core::ICore::dialogParent());
     if (dlg.exec() != PerfLoadDialog::Accepted)
         return;
 
@@ -619,7 +620,7 @@ void PerfProfilerTool::showLoadTraceDialog()
     m_perspective.select();
 
     QString filename = QFileDialog::getOpenFileName(
-                ICore::mainWindow(), tr("Load Trace File"),
+                ICore::dialogParent(), tr("Load Trace File"),
                 "", tr("Trace File (*.ptq)"));
     if (filename.isEmpty())
         return;
@@ -639,7 +640,7 @@ void PerfProfilerTool::showSaveTraceDialog()
     m_perspective.select();
 
     QString filename = QFileDialog::getSaveFileName(
-                ICore::mainWindow(), tr("Save Trace File"),
+                ICore::dialogParent(), tr("Save Trace File"),
                 "", tr("Trace File (*.ptq)"));
     if (filename.isEmpty())
         return;

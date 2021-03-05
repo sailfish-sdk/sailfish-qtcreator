@@ -28,13 +28,11 @@
 #include "curveeditorstyle.h"
 #include "selectableitem.h"
 
-namespace DesignTools {
+namespace QmlDesigner {
 
 class GraphicsView;
 class GraphicsScene;
 class Playhead;
-
-enum class SelectionTool { Undefined, Lasso, Rectangle };
 
 class Selector
 {
@@ -50,17 +48,15 @@ public:
     void mouseRelease(QMouseEvent *event, GraphicsScene *scene);
 
 private:
-    bool isOverSelectedKeyframe(const QPointF &pos, GraphicsScene *scene);
-
-    bool isOverMovableItem(const QPointF &pos, GraphicsScene *scene);
+    enum class SelectionTool { Undefined, Lasso, Rectangle };
 
     bool select(const SelectionTool &tool, const QPointF &pos, GraphicsScene *scene);
 
-    bool pressSelection(SelectionMode mode, const QPointF &pos, GraphicsScene *scene);
+    bool pressSelection(SelectableItem::SelectionMode mode, const QPointF &pos, GraphicsScene *scene);
 
-    bool rectangleSelection(SelectionMode mode, const QPointF &pos, GraphicsScene *scene);
+    bool rectangleSelection(SelectableItem::SelectionMode mode, const QPointF &pos, GraphicsScene *scene);
 
-    bool lassoSelection(SelectionMode mode, const QPointF &pos, GraphicsScene *scene);
+    bool lassoSelection(SelectableItem::SelectionMode mode, const QPointF &pos, GraphicsScene *scene);
 
     void clearSelection(GraphicsScene *scene);
 
@@ -81,4 +77,4 @@ private:
     QRectF m_rect;
 };
 
-} // End namespace DesignTools.
+} // End namespace QmlDesigner.

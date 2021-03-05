@@ -97,7 +97,7 @@ static const char designerDisplayName[] = QT_TRANSLATE_NOOP("OpenWith::Editors",
 static const char linguistDisplayName[] = QT_TRANSLATE_NOOP("OpenWith::Editors", "Qt Linguist");
 
 // -------------- ExternalQtEditor
-ExternalQtEditor::ExternalQtEditor(Core::Id id,
+ExternalQtEditor::ExternalQtEditor(Utils::Id id,
                                    const QString &displayName,
                                    const QString &mimetype,
                                    const CommandForQtVersion &commandForQtVersion) :
@@ -133,7 +133,7 @@ QStringList ExternalQtEditor::mimeTypes() const
     return m_mimeTypes;
 }
 
-Core::Id ExternalQtEditor::id() const
+Utils::Id ExternalQtEditor::id() const
 {
     return m_id;
 }
@@ -288,8 +288,12 @@ bool DesignerExternalEditor::startEditor(const QString &fileName, QString *error
         m_processCache.insert(binary, socket);
         auto mapSlot = [this, binary] { processTerminated(binary); };
         connect(socket, &QAbstractSocket::disconnected, this, mapSlot);
-        connect(socket, QOverload<QAbstractSocket::SocketError>::of(&QAbstractSocket::error),
-                this, mapSlot);
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
+        const auto errorOccurred = QOverload<QAbstractSocket::SocketError>::of(&QAbstractSocket::error);
+#else
+        const auto errorOccurred = &QAbstractSocket::errorOccurred;
+#endif
+        connect(socket, errorOccurred, this, mapSlot);
     }
     return true;
 }

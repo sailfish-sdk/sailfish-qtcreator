@@ -27,11 +27,13 @@
 
 #include <qmldesignercorelib_global.h>
 #include "actioninterface.h"
+#include "modelnode.h"
 
 #include <coreplugin/actionmanager/command.h>
 #include <utils/styledbar.h>
 
 #include <QToolBar>
+#include <QImage>
 
 QT_BEGIN_NAMESPACE
 class QGraphicsItem;
@@ -42,7 +44,8 @@ namespace QmlDesigner {
 
 class DesignerActionManagerView;
 
-using AddResourceOperation = std::function<bool (const QStringList&, const QString&)>;
+using AddResourceOperation = std::function<bool (const QStringList &, const QString &)>;
+using ModelNodePreviewImageOperation = std::function<QVariant (const ModelNode &)>;
 
 struct AddResourceHandler
 {
@@ -64,6 +67,26 @@ public:
     int piority;
 };
 
+struct ModelNodePreviewImageHandler
+{
+public:
+    ModelNodePreviewImageHandler(const TypeName &t,
+                                 ModelNodePreviewImageOperation op,
+                                 bool compOnly = false,
+                                 int prio = 0)
+        : type(t)
+        , operation(op)
+        , componentOnly(compOnly)
+        , priority(prio)
+    {
+    }
+
+    TypeName type;
+    ModelNodePreviewImageOperation operation = nullptr;
+    bool componentOnly = false;
+    int priority = 0;
+};
+
 class DesignerActionToolBar : public Utils::StyledBar
 {
 public:
@@ -83,10 +106,15 @@ public:
     void addDesignerAction(ActionInterface *newAction);
     void addCreatorCommand(Core::Command *command, const QByteArray &category, int priority,
                            const QIcon &overrideIcon = QIcon());
+
+    QList<QSharedPointer<ActionInterface>> actionsForTargetView(const ActionInterface::TargetView &target);
+
     QList<ActionInterface* > designerActions() const;
 
     void createDefaultDesignerActions();
     void createDefaultAddResourceHandler();
+    void createDefaultModelNodePreviewImageHandlers();
+
     DesignerActionManagerView *view();
 
     DesignerActionToolBar *createToolBar(QWidget *parent = nullptr) const;
@@ -102,12 +130,18 @@ public:
     QList<AddResourceHandler> addResourceHandler() const;
     void registerAddResourceHandler(const AddResourceHandler &handler);
 
+    void registerModelNodePreviewHandler(const ModelNodePreviewImageHandler &handler);
+    bool hasModelNodePreviewHandler(const ModelNode &node) const;
+    ModelNodePreviewImageOperation modelNodePreviewOperation(const ModelNode &node) const;
+
 private:
     void addTransitionEffectAction(const TypeName &typeName);
+    void addCustomTransitionEffectAction();
 
     QList<QSharedPointer<ActionInterface> > m_designerActions;
     DesignerActionManagerView *m_designerActionManagerView;
     QList<AddResourceHandler> m_addResourceHandler;
+    QList<ModelNodePreviewImageHandler> m_modelNodePreviewImageHandlers;
 };
 
 } //QmlDesigner

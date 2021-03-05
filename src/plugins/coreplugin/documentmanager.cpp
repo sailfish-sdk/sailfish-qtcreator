@@ -74,9 +74,10 @@ static Q_LOGGING_CATEGORY(log, "qtc.core.documentmanager", QtWarningMsg)
 
 /*!
   \class Core::DocumentManager
+  \inheaderfile coreplugin/documentmanager.h
   \ingroup mainclasses
   \inmodule QtCreator
-  \inheaderfile documentmanager.h
+
   \brief The DocumentManager class manages a set of documents.
 
   The DocumentManager service monitors a set of IDocument objects.
@@ -275,7 +276,7 @@ DocumentManager::DocumentManager(QObject *parent)
     m_instance = this;
 
     connect(Utils::GlobalFileChangeBlocker::instance(), &Utils::GlobalFileChangeBlocker::stateChanged,
-            this, [this](bool blocked) {
+            this, [](bool blocked) {
         d->m_postponeAutoReload = blocked;
         if (!blocked)
             QTimer::singleShot(500, m_instance, &DocumentManager::checkForReload);
@@ -668,7 +669,7 @@ static bool saveModifiedFilesHelper(const QList<IDocument *> &documents,
     QList<IDocument *> modifiedDocuments;
 
     foreach (IDocument *document, documents) {
-        if (document && document->isModified()) {
+        if (document && document->isModified() && !document->isTemporary()) {
             QString name = document->filePath().toString();
             if (name.isEmpty())
                 name = document->fallbackSaveAsFileName();
@@ -817,20 +818,21 @@ QString DocumentManager::getSaveFileName(const QString &title, const QString &pa
             // first one from the filter is appended.
             if (selectedFilter && *selectedFilter != Utils::allFilesFilterString()) {
                 // Mime database creates filter strings like this: Anything here (*.foo *.bar)
-                QRegExp regExp(QLatin1String(".*\\s+\\((.*)\\)$"));
-                const int index = regExp.lastIndexIn(*selectedFilter);
-                if (index != -1) {
+                const QRegularExpression regExp(QLatin1String(".*\\s+\\((.*)\\)$"));
+                QRegularExpressionMatchIterator matchIt = regExp.globalMatch(*selectedFilter);
+                if (matchIt.hasNext()) {
                     bool suffixOk = false;
-                    QString caption = regExp.cap(1);
+                    const QRegularExpressionMatch match = matchIt.next();
+                    QString caption = match.captured(1);
                     caption.remove(QLatin1Char('*'));
-                    const QVector<QStringRef> suffixes = caption.splitRef(QLatin1Char(' '));
-                    foreach (const QStringRef &suffix, suffixes)
+                    const QStringList suffixes = caption.split(QLatin1Char(' '));
+                    for (const QString &suffix : suffixes)
                         if (fileName.endsWith(suffix)) {
                             suffixOk = true;
                             break;
                         }
                     if (!suffixOk && !suffixes.isEmpty())
-                        fileName.append(suffixes.at(0).toString());
+                        fileName.append(suffixes.at(0));
                 }
             }
             if (QFile::exists(fileName)) {
@@ -1539,7 +1541,9 @@ void DocumentManager::registerSaveAllAction()
 
 /*!
     \class Core::FileChangeBlocker
+    \inheaderfile coreplugin/documentmanager.h
     \inmodule QtCreator
+
     \brief The FileChangeBlocker class blocks all change notifications to all
     IDocument objects that match the given filename.
 

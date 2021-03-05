@@ -44,6 +44,7 @@
 #include <rewritertransaction.h>
 #include <variantproperty.h>
 #include <viewmanager.h>
+#include <qmldesignerconstants.h>
 #include <qmldesignericons.h>
 #include <qmldesignerplugin.h>
 #include <qmlitemnode.h>
@@ -77,6 +78,10 @@ TimelineView::~TimelineView() = default;
 void TimelineView::modelAttached(Model *model)
 {
     AbstractView::modelAttached(model);
+
+    if (!isEnabled())
+        return;
+
     if (m_timelineWidget)
         m_timelineWidget->init();
 }
@@ -181,6 +186,7 @@ void TimelineView::instancePropertyChanged(const QList<QPair<ModelNode, Property
         } else if (pair.second == "currentFrame") {
             if (QmlTimeline::isValidQmlTimeline(pair.first)) {
                 m_timelineWidget->invalidateTimelinePosition(pair.first);
+                updateAnimationCurveEditor();
             }
         } else if (!updated && timeline.hasTimeline(pair.first, pair.second)) {
             m_timelineWidget->graphicsScene()->invalidateCurrentValues();
@@ -198,7 +204,7 @@ void TimelineView::variantPropertiesChanged(const QList<VariantProperty> &proper
                                             AbstractView::PropertyChangeFlags /*propertyChange*/)
 {
     for (const auto &property : propertyList) {
-        if (property.name() == "frame"
+        if ((property.name() == "frame" || property.name() == "value")
             && property.parentModelNode().type() == "QtQuick.Timeline.Keyframe"
             && property.parentModelNode().isValid()
             && property.parentModelNode().hasParentProperty()) {
@@ -229,6 +235,18 @@ void TimelineView::selectedNodesChanged(const QList<ModelNode> & /*selectedNodeL
 {
     if (m_timelineWidget)
         m_timelineWidget->graphicsScene()->update();
+}
+
+void TimelineView::auxiliaryDataChanged(const ModelNode &modelNode,
+                                        const PropertyName &name,
+                                        const QVariant &data)
+{
+    if (name == QmlDesigner::lockedProperty && data.toBool() && modelNode.isValid()) {
+        for (const auto &node : modelNode.allSubModelNodesAndThisNode()) {
+            if (node.hasAuxiliaryData("timeline_expanded"))
+                m_timelineWidget->graphicsScene()->invalidateHeightForTarget(node);
+        }
+    }
 }
 
 void TimelineView::propertiesAboutToBeRemoved(const QList<AbstractProperty> &propertyList)
@@ -286,6 +304,8 @@ const QmlTimeline TimelineView::addNewTimeline()
     const TypeName timelineType = "QtQuick.Timeline.Timeline";
 
     QTC_ASSERT(isAttached(), return QmlTimeline());
+
+    QmlDesignerPlugin::emitUsageStatistics(Constants::EVENT_TIMELINE_ADDED);
 
     try {
         ensureQtQuickTimelineImport();
@@ -386,9 +406,7 @@ void TimelineView::setTimelineRecording(bool value)
 {
     ModelNode node = widget()->graphicsScene()->currentTimeline();
 
-    QTC_ASSERT(node.isValid(), return );
-
-    if (value) {
+    if (value && node.isValid()) {
         activateTimelineRecording(node);
     } else {
         deactivateTimelineRecording();

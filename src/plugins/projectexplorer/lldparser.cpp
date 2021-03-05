@@ -35,12 +35,15 @@
 namespace ProjectExplorer {
 namespace Internal {
 
-void LldParser::stdError(const QString &line)
+Utils::OutputLineParser::Result LldParser::handleLine(const QString &line, Utils::OutputFormat type)
 {
+    if (type != Utils::StdErrFormat)
+        return Status::NotHandled;
+
     const QString trimmedLine = rightTrimmed(line);
     if (trimmedLine.contains("error:") && trimmedLine.contains("lld")) {
-        emit addTask(CompileTask(Task::Error, trimmedLine));
-        return;
+        scheduleTask(CompileTask(Task::Error, trimmedLine), 1);
+        return Status::Done;
     }
     static const QStringList prefixes{">>> referenced by ", ">>> defined at ", ">>> "};
     for (const QString &prefix : prefixes) {
@@ -62,12 +65,15 @@ void LldParser::stdError(const QString &line)
         else
             filePathOffset = prefix.length();
         const int filePathLen = locOffset == -1 ? -1 : locOffset - filePathOffset;
-        const auto file = Utils::FilePath::fromUserInput(
-                    trimmedLine.mid(filePathOffset, filePathLen).trimmed());
-        emit addTask(CompileTask(Task::Unknown, trimmedLine.mid(4).trimmed(), file, lineNo));
-        return;
+        const auto file = absoluteFilePath(Utils::FilePath::fromUserInput(
+                trimmedLine.mid(filePathOffset, filePathLen).trimmed()));
+        LinkSpecs linkSpecs;
+        addLinkSpecForAbsoluteFilePath(linkSpecs, file, lineNo, filePathOffset, filePathLen);
+        scheduleTask(CompileTask(Task::Unknown, trimmedLine.mid(4).trimmed(),
+                                 file, lineNo), 1);
+        return {Status::Done, linkSpecs};
     }
-    IOutputParser::stdError(line);
+    return Status::NotHandled;
 }
 
 } // namespace Internal

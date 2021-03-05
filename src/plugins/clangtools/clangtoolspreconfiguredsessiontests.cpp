@@ -121,7 +121,7 @@ void PreconfiguredSessionTests::testPreconfiguredSession()
 
     QVERIFY(switchToProjectAndTarget(project, target));
 
-    ClangTool::instance()->startTool(ClangTool::FileSelection::AllFiles);
+    ClangTool::instance()->startTool(ClangTool::FileSelectionType::AllFiles);
     QSignalSpy waitUntilAnalyzerFinished(ClangTool::instance(), SIGNAL(finished(bool)));
     QVERIFY(waitUntilAnalyzerFinished.wait(30000));
     const QList<QVariant> arguments = waitUntilAnalyzerFinished.takeFirst();
@@ -166,7 +166,7 @@ static QList<Target *> validTargets(Project *project)
             return false;
         }
 
-        const ToolChain * const toolchain = ToolChainKitAspect::toolChain(kit, ProjectExplorer::Constants::CXX_LANGUAGE_ID);
+        const ToolChain * const toolchain = ToolChainKitAspect::cxxToolChain(kit);
         QTC_ASSERT(toolchain, return false);
 
         if (Core::ICore::clangExecutable(CLANG_BINDIR).isEmpty()) {

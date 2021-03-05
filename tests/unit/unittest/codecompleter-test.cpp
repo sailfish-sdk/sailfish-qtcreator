@@ -530,7 +530,9 @@ TEST_F(CodeCompleterSlowTest, NoDotArrowCorrectionForColonColon)
     ASSERT_THAT(completions, Not(Contains(HasFixIts())));
 }
 
-TEST_F(CodeCompleterSlowTest, NoGlobalCompletionAfterForwardDeclaredClassPointer)
+// Our workaround is not applicable with LLVM/Clang 10 anymore, so disable this test for that version.
+// Luckily, the workaround is not needed anymore with LLVM/Clang 11.
+TEST_F(CodeCompleterSlowTest, DISABLED_FOR_CLANG_10(NoGlobalCompletionAfterForwardDeclaredClassPointer))
 {
     auto myCompleter = setupCompleter(globalCompletionAfterForwardDeclaredClassPointer);
     const ClangBackEnd::CodeCompletions completions = myCompleter.complete(5, 10);
@@ -543,7 +545,7 @@ TEST_F(CodeCompleterSlowTest, GlobalCompletionAfterForwardDeclaredClassPointer)
     auto myCompleter = setupCompleter(globalCompletionAfterForwardDeclaredClassPointer);
     const ClangBackEnd::CodeCompletions completions = myCompleter.complete(6, 4);
 
-    ASSERT_TRUE(!completions.isEmpty());
+    ASSERT_EQ(completions.isEmpty(), CINDEX_VERSION_MINOR != 59);
 }
 
 TEST_F(CodeCompleterSlowTest, ConstructorCompletionExists)
@@ -605,14 +607,11 @@ TEST_F(CodeCompleterSlowTest, FunctionOverloadsNoParametersOrder)
     auto myCompleter = setupCompleter(completionsOrder);
     const ClangBackEnd::CodeCompletions completions = myCompleter.complete(27, 7);
 
-    int firstIndex = Utils::indexOf(completions, [](const CodeCompletion &codeCompletion) {
+    const int fooCount = Utils::count(completions, [](const CodeCompletion &codeCompletion) {
         return codeCompletion.text == "foo";
     });
-    int secondIndex = Utils::indexOf(completions, [i = 0, firstIndex](const CodeCompletion &codeCompletion) mutable {
-        return (i++) > firstIndex && codeCompletion.text == "foo";
-    });
 
-    ASSERT_THAT(abs(firstIndex - secondIndex), 1);
+    ASSERT_THAT(fooCount, 1);
 }
 
 TEST_F(CodeCompleterSlowTest, FunctionOverloadsWithParametersOrder)
@@ -643,6 +642,26 @@ TEST_F(CodeCompleterSlowTest, FunctionOverloadsWithoutDotOrArrowOrder)
     });
 
     ASSERT_THAT(abs(firstIndex - secondIndex), 1);
+}
+
+TEST_F(CodeCompleterSlowTest, LexicographicalSorting)
+{
+    auto myCompleter = setupCompleter(completionsOrder);
+    const ClangBackEnd::CodeCompletions completions = myCompleter.complete(40, 18);
+
+    const int funcAIndex = Utils::indexOf(completions, [](const CodeCompletion &codeCompletion) {
+        return codeCompletion.text == "memberFuncAAA";
+    });
+    const int funcBIndex = Utils::indexOf(completions, [](const CodeCompletion &codeCompletion) {
+        return codeCompletion.text == "memberFuncBB";
+    });
+    const int funcCIndex = Utils::indexOf(completions, [](const CodeCompletion &codeCompletion) {
+        return codeCompletion.text == "memberFuncC";
+    });
+
+    ASSERT_NE(funcAIndex, -1);
+    ASSERT_EQ(funcBIndex, funcAIndex + 1);
+    ASSERT_EQ(funcCIndex, funcAIndex + 2);
 }
 
 ClangBackEnd::CodeCompleter CodeCompleter::setupCompleter(

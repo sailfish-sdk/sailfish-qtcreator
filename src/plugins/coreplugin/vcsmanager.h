@@ -27,12 +27,14 @@
 
 #include "core_global.h"
 
+#include <utils/fileutils.h>
+#include <utils/id.h>
+
 #include <QString>
 #include <QObject>
 
 namespace Core {
 
-class Id;
 class IVersionControl;
 
 namespace Internal { class MainWindow; }
@@ -59,7 +61,7 @@ public:
     static void extensionsInitialized();
 
     static const QList<IVersionControl *> versionControls();
-    static IVersionControl *versionControl(Id id);
+    static IVersionControl *versionControl(Utils::Id id);
 
     static void resetVersionControlForDirectory(const QString &inputDirectory);
     static IVersionControl *findVersionControlForDirectory(const QString &directory,
@@ -68,10 +70,12 @@ public:
 
     static QStringList repositories(const IVersionControl *);
 
-    // Shows a confirmation dialog, whether the file should also be deleted
-    // from revision control. Calls vcsDelete on the file. Returns false
-    // if a failure occurs
-    static bool promptToDelete(const QString &fileName);
+    // Shows a confirmation dialog, whether the files should also be deleted
+    // from revision control. Calls vcsDelete on the files. Returns the list
+    // of files that failed.
+    static Utils::FilePaths promptToDelete(const Utils::FilePaths &filePaths);
+    static Utils::FilePaths promptToDelete(IVersionControl *versionControl,
+                                           const Utils::FilePaths &filePaths);
     static bool promptToDelete(IVersionControl *versionControl, const QString &fileName);
 
     // Shows a confirmation dialog, whether the files in the list should be

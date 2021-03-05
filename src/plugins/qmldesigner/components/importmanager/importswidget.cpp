@@ -29,6 +29,7 @@
 
 #include <designdocument.h>
 #include <qmldesignerplugin.h>
+#include <designermcumanager.h>
 
 #include <utils/algorithm.h>
 
@@ -94,17 +95,21 @@ void ImportsWidget::setPossibleImports(QList<Import> possibleImports)
     Utils::sort(possibleImports, importLess);
     m_addImportComboBox->clear();
 
-    const DesignDocument *designDocument = QmlDesignerPlugin::instance()->currentDesignDocument();
-    const bool isQtForMCUs = designDocument && designDocument->isQtForMCUsProject();
+    const DesignerMcuManager &mcuManager = DesignerMcuManager::instance();
+    const bool isQtForMCUs = mcuManager.isMCUProject();
 
     QList<Import> filteredImports;
 
-    const QStringList mcuWhiteList = {"QtQuick", "QtQuick.Controls"};
+    const QStringList mcuAllowedList = mcuManager.allowedImports();
+    const QStringList mcuBannedList = mcuManager.bannedImports();
 
     if (isQtForMCUs) {
-        filteredImports = Utils::filtered(possibleImports, [mcuWhiteList](const Import &import) {
-            return mcuWhiteList.contains(import.url()) || !import.url().startsWith("Qt");
-        });
+        filteredImports = Utils::filtered(possibleImports,
+                                          [mcuAllowedList, mcuBannedList](const Import &import) {
+                                              return (mcuAllowedList.contains(import.url())
+                                                      || !import.url().startsWith("Qt"))
+                                                     && !mcuBannedList.contains(import.url());
+                                          });
     } else {
         filteredImports = possibleImports;
     }
@@ -122,8 +127,15 @@ void ImportsWidget::removePossibleImports()
 
 void ImportsWidget::setUsedImports(const QList<Import> &usedImports)
 {
+    const QStringList excludeList = {"SimulinkConnector"};
+
+    // exclude imports in the excludeList from being readonly (i.e. always enable their x button)
+    QList<Import> filteredImports = Utils::filtered(usedImports, [excludeList](const Import &import) {
+        return !excludeList.contains(import.url());
+    });
+
     foreach (ImportLabel *importLabel, m_importLabels)
-        importLabel->setReadOnly(usedImports.contains(importLabel->import()));
+        importLabel->setReadOnly(filteredImports.contains(importLabel->import()));
 }
 
 void ImportsWidget::removeUsedImports()

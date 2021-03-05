@@ -41,7 +41,7 @@
 namespace ADS {
 
 using TabLabelType = ElidingLabel;
-using tCloseButton = QPushButton;
+using CloseButtonType = QToolButton;
 
 /**
  * @brief Private data class of public interface CFloatingWidgetTitleBar
@@ -52,7 +52,7 @@ public:
     FloatingWidgetTitleBar *q; ///< public interface class
     QLabel *m_iconLabel = nullptr;
     TabLabelType *m_titleLabel = nullptr;
-    tCloseButton *m_closeButton = nullptr;
+    CloseButtonType *m_closeButton = nullptr;
     FloatingDockContainer *m_floatingWidget = nullptr;
     eDragState m_dragState = DraggingInactive;
 
@@ -74,22 +74,20 @@ void FloatingWidgetTitleBarPrivate::createLayout()
     m_titleLabel->setObjectName("floatingTitleLabel");
     m_titleLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 
-    m_closeButton = new tCloseButton();
+    m_closeButton = new CloseButtonType();
     m_closeButton->setObjectName("floatingTitleCloseButton");
-    m_closeButton->setFlat(true);
-
-    // The standard icons do does not look good on high DPI screens
-    QIcon closeIcon;
-    QPixmap normalPixmap = q->style()->standardPixmap(QStyle::SP_TitleBarCloseButton,
-                                                      nullptr,
-                                                      m_closeButton);
-    closeIcon.addPixmap(normalPixmap, QIcon::Normal);
-    closeIcon.addPixmap(internal::createTransparentPixmap(normalPixmap, 0.25), QIcon::Disabled);
-    m_closeButton->setIcon(q->style()->standardIcon(QStyle::SP_TitleBarCloseButton));
+    m_closeButton->setAutoRaise(true);
+    internal::setButtonIcon(m_closeButton,
+                            QStyle::SP_TitleBarCloseButton,
+                            ADS::FloatingWidgetCloseIcon);
     m_closeButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_closeButton->setIconSize(QSize(14, 14));
     m_closeButton->setVisible(true);
     m_closeButton->setFocusPolicy(Qt::NoFocus);
-    q->connect(m_closeButton, &QPushButton::clicked, q, &FloatingWidgetTitleBar::closeRequested);
+    QObject::connect(m_closeButton,
+                     &QPushButton::clicked,
+                     q,
+                     &FloatingWidgetTitleBar::closeRequested);
 
     QFontMetrics fontMetrics(m_titleLabel->font());
     int spacing = qRound(fontMetrics.height() / 4.0);
@@ -108,7 +106,7 @@ void FloatingWidgetTitleBarPrivate::createLayout()
 }
 
 FloatingWidgetTitleBar::FloatingWidgetTitleBar(FloatingDockContainer *parent)
-    : QWidget(parent)
+    : QFrame(parent)
     , d(new FloatingWidgetTitleBarPrivate(this))
 {
     d->m_floatingWidget = parent;
@@ -133,9 +131,9 @@ void FloatingWidgetTitleBar::mousePressEvent(QMouseEvent *event)
 void FloatingWidgetTitleBar::mouseReleaseEvent(QMouseEvent *event)
 {
     d->m_dragState = DraggingInactive;
-    if (d->m_floatingWidget) {
+    if (d->m_floatingWidget)
         d->m_floatingWidget->finishDragging();
-    }
+
     Super::mouseReleaseEvent(event);
 }
 
@@ -164,6 +162,11 @@ void FloatingWidgetTitleBar::enableCloseButton(bool enable)
 void FloatingWidgetTitleBar::setTitle(const QString &text)
 {
     d->m_titleLabel->setText(text);
+}
+
+void FloatingWidgetTitleBar::updateStyle()
+{
+    internal::repolishStyle(this, internal::RepolishDirectChildren);
 }
 
 } // namespace ADS

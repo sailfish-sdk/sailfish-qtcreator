@@ -47,6 +47,7 @@
 
 using namespace QmakeProjectManager;
 using namespace ProjectExplorer;
+using namespace Utils;
 
 namespace Ios {
 namespace Internal {
@@ -98,7 +99,7 @@ private:
 IosBuildSettingsWidget::IosBuildSettingsWidget(IosBuildConfiguration *bc)
     : NamedWidget(IosBuildConfiguration::tr("iOS Settings")),
       m_bc(bc),
-      m_isDevice(DeviceTypeKitAspect::deviceTypeId(bc->target()->kit())
+      m_isDevice(DeviceTypeKitAspect::deviceTypeId(bc->kit())
                  == Constants::IOS_DEVICE_TYPE)
 {
     auto detailsWidget = new Utils::DetailsWidget(this);
@@ -152,8 +153,9 @@ IosBuildSettingsWidget::IosBuildSettingsWidget(IosBuildConfiguration *bc)
                 this, &IosBuildSettingsWidget::onSigningEntityComboIndexChanged);
         connect(m_autoSignCheckbox, &QCheckBox::toggled,
                 this, &IosBuildSettingsWidget::configureSigningUi);
+        const QString signingIdentifier = bc->m_signingIdentifier->value();
         configureSigningUi(m_autoSignCheckbox->isChecked());
-        setDefaultSigningIdentfier(bc->m_signingIdentifier->value());
+        setDefaultSigningIdentfier(signingIdentifier);
     }
 
     m_signEntityCombo->setEnabled(m_isDevice);
@@ -275,7 +277,7 @@ void IosBuildSettingsWidget::populateProvisioningProfiles()
         m_signEntityCombo->clear();
         const ProvisioningProfiles profiles = IosConfigurations::provisioningProfiles();
         if (!profiles.isEmpty()) {
-            for (auto profile : profiles) {
+            for (const auto &profile : profiles) {
                 m_signEntityCombo->addItem(profile->displayName());
                 const int index = m_signEntityCombo->count() - 1;
                 m_signEntityCombo->setItemData(index, profile->identifier(), IdentifierRole);
@@ -363,7 +365,8 @@ void IosBuildSettingsWidget::updateWarningText()
             auto profile = IosConfigurations::provisioningProfile(identifier);
             if (profile && QDateTime::currentDateTimeUtc() > profile->expirationDate()) {
                warningText = IosBuildConfiguration::tr("Provisioning profile expired. Expiration date: %1")
-                       .arg(profile->expirationDate().toLocalTime().toString(Qt::SystemLocaleLongDate));
+                       .arg(QLocale::system().toString(profile->expirationDate().toLocalTime(),
+                                                       QLocale::LongFormat));
             }
         }
     }
@@ -375,13 +378,13 @@ void IosBuildSettingsWidget::updateWarningText()
 
 // IosBuildConfiguration
 
-IosBuildConfiguration::IosBuildConfiguration(Target *target, Core::Id id)
+IosBuildConfiguration::IosBuildConfiguration(Target *target, Utils::Id id)
     : QmakeBuildConfiguration(target, id)
 {
-    m_signingIdentifier = addAspect<BaseStringAspect>();
+    m_signingIdentifier = addAspect<StringAspect>();
     m_signingIdentifier->setSettingsKey(signingIdentifierKey);
 
-    m_autoManagedSigning = addAspect<BaseBoolAspect>();
+    m_autoManagedSigning = addAspect<BoolAspect>();
     m_autoManagedSigning->setDefaultValue(true);
     m_autoManagedSigning->setSettingsKey(autoManagedSigningKey);
 }
@@ -422,7 +425,7 @@ void IosBuildConfiguration::updateQmakeCommand()
         if (signingIdentifier.isEmpty() )
             extraArgs << forceOverrideArg;
 
-        Core::Id devType = DeviceTypeKitAspect::deviceTypeId(target()->kit());
+        Utils::Id devType = DeviceTypeKitAspect::deviceTypeId(kit());
         if (devType == Constants::IOS_DEVICE_TYPE && !signingIdentifier.isEmpty()) {
             if (m_autoManagedSigning->value()) {
                 extraArgs << qmakeIosTeamSettings + signingIdentifier;

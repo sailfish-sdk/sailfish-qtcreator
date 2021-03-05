@@ -40,6 +40,8 @@
   <style name="Preprocessor" foreground="#409090"/>
   <style name="RemovedLine" foreground="#ff0000"/>
   <style name="SearchResult" foreground="#000000" background="#ffef0b"/>
+  <style name="SearchResultAlt1" foreground="#000000" background="#6464ff"/>
+  <style name="SearchResultAlt2" foreground="#000000" background="#ff6464"/>
   <style name="SearchScope" foreground="#000000" background="#f8fafc"/>
   <style name="Selection" foreground="#ffffff" background="#4e4e8f"/>
   <style name="Static" foreground="#cb6ecb"/>
@@ -66,5 +68,10 @@
   <style name="DiffDestLine" background="#277027"/>
   <style name="DiffDestChar" background="#339d33"/>
   <style name="LogChangeLine" foreground="#dcdc00"/>
+  <style name="LogAuthorName" foreground="#ceffe5"/>
+  <style name="LogCommitDate" foreground="#00ff00"/>
+  <style name="LogCommitHash" foreground="#ff0000"/>
+  <style name="LogCommitSubject" foreground="#d6cf9a"/>
+  <style name="LogDecoration" foreground="#ff00ff"/>
 </style-scheme>
 

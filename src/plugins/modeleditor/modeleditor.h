@@ -63,14 +63,13 @@ class ModelEditor :
     class ModelEditorPrivate;
 
 public:
-    explicit ModelEditor(UiController *uiController, ActionHandler *actionHandler,
-                         QWidget *parent = nullptr);
+    ModelEditor(UiController *uiController, ActionHandler *actionHandler);
     ~ModelEditor();
 
     Core::IDocument *document() const override;
     QWidget *toolBar() override;
     QByteArray saveState() const override;
-    bool restoreState(const QByteArray &state) override;
+    void restoreState(const QByteArray &state) override;
 
     qmt::MDiagram *currentDiagram() const;
     void showDiagram(qmt::MDiagram *diagram);
@@ -96,7 +95,7 @@ public:
     qmt::MPackage *guessSelectedPackage() const;
 
 private:
-    void init(QWidget *parent);
+    void init();
     void initDocument();
 
     void updateSelectedArea(SelectedArea selectedArea);
@@ -104,7 +103,7 @@ private:
     void showProperties(qmt::MDiagram *diagram, const QList<qmt::DElement *> &diagramElements);
     void clearProperties();
     void expandModelTreeToDepth(int depth);
-    QToolButton *createToolbarCommandButton(const Core::Id &id,
+    QToolButton *createToolbarCommandButton(const Utils::Id &id,
                                             const std::function<void()> &slot,
                                             QWidget *parent);
     bool updateButtonIconByTheme(QAbstractButton *button, const QString &name);

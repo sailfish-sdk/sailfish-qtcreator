@@ -34,13 +34,15 @@
 
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/actionmanager/command.h>
+#include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/icontext.h>
 
 #include <utils/algorithm.h>
 #include <utils/fileinprojectfinder.h>
-#include <utils/qtcassert.h>
 #include <utils/itemviews.h>
+#include <utils/outputformatter.h>
+#include <utils/qtcassert.h>
 #include <utils/utilsicons.h>
 
 #include <QDir>
@@ -77,13 +79,23 @@ class TaskView : public Utils::ListView
 public:
     TaskView(QWidget *parent = nullptr);
     ~TaskView() override;
-    void resizeEvent(QResizeEvent *e) override;
-};
 
-class TaskWindowContext : public Core::IContext
-{
-public:
-    TaskWindowContext(QWidget *widget);
+private:
+    void resizeEvent(QResizeEvent *e) override;
+    void mousePressEvent(QMouseEvent *e) override;
+    void mouseReleaseEvent(QMouseEvent *e) override;
+    void mouseMoveEvent(QMouseEvent *e) override;
+
+    class Location {
+    public:
+        Utils::FilePath file;
+        int line;
+        int column;
+    };
+    Location locationForPos(const QPoint &pos);
+
+    bool m_linksActive = true;
+    Qt::MouseButton m_mouseButtonPressed = Qt::NoButton;
 };
 
 class TaskDelegate : public QStyledItemDelegate
@@ -103,11 +115,14 @@ public:
 
     void currentChanged(const QModelIndex &current, const QModelIndex &previous);
 
+    QString hrefForPos(const QPointF &pos);
+
 private:
     void generateGradientPixmap(int width, int height, QColor color, bool selected) const;
 
     mutable int m_cachedHeight = 0;
     mutable QFont m_cachedFont;
+    mutable QList<QPair<QRectF, QString>> m_hrefs;
 
     /*
       Collapsed:
@@ -186,6 +201,7 @@ TaskView::TaskView(QWidget *parent)
 {
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    setMouseTracking(true);
 
     QFontMetrics fm(font());
     int vStepSize = fm.height() + 3;
@@ -201,6 +217,57 @@ void TaskView::resizeEvent(QResizeEvent *e)
 {
     Q_UNUSED(e)
     static_cast<TaskDelegate *>(itemDelegate())->emitSizeHintChanged(selectionModel()->currentIndex());
+}
+
+void TaskView::mousePressEvent(QMouseEvent *e)
+{
+    m_mouseButtonPressed = e->button();
+    ListView::mousePressEvent(e);
+}
+
+void TaskView::mouseReleaseEvent(QMouseEvent *e)
+{
+    if (m_linksActive && m_mouseButtonPressed == Qt::LeftButton) {
+        const Location loc = locationForPos(e->pos());
+        if (!loc.file.isEmpty())
+            Core::EditorManager::openEditorAt(loc.file.toString(), loc.line, loc.column);
+    }
+
+    // Mouse was released, activate links again
+    m_linksActive = true;
+    m_mouseButtonPressed = Qt::NoButton;
+    ListView::mouseReleaseEvent(e);
+}
+
+void TaskView::mouseMoveEvent(QMouseEvent *e)
+{
+    // Cursor was dragged, deactivate links
+    if (m_mouseButtonPressed != Qt::NoButton)
+        m_linksActive = false;
+
+    viewport()->setCursor(m_linksActive && !locationForPos(e->pos()).file.isEmpty()
+                          ? Qt::PointingHandCursor : Qt::ArrowCursor);
+    ListView::mouseMoveEvent(e);
+}
+
+TaskView::Location TaskView::locationForPos(const QPoint &pos)
+{
+    const auto delegate = qobject_cast<TaskDelegate *>(itemDelegate(indexAt(pos)));
+    if (!delegate)
+        return {};
+    Utils::OutputFormatter formatter;
+    Location loc;
+    connect(&formatter, &Utils::OutputFormatter::openInEditorRequested, this,
+            [&loc](const Utils::FilePath &fp, int line, int column) {
+        loc.file = fp;
+        loc.line = line;
+        loc.column = column;
+    });
+
+    const QString href = delegate->hrefForPos(pos);
+    if (!href.isEmpty())
+        formatter.handleLink(href);
+    return loc;
 }
 
 /////
@@ -219,7 +286,7 @@ public:
     Internal::TaskModel *m_model;
     Internal::TaskFilterModel *m_filter;
     Internal::TaskView *m_listview;
-    Internal::TaskWindowContext *m_taskWindowContext;
+    Core::IContext *m_taskWindowContext;
     QMenu *m_contextMenu;
     QMap<const QAction *, ITaskHandler *> m_actionToHandlerMap;
     ITaskHandler *m_defaultHandler = nullptr;
@@ -259,8 +326,9 @@ TaskWindow::TaskWindow() : d(std::make_unique<TaskWindowPrivate>())
     d->m_listview->setContextMenuPolicy(Qt::ActionsContextMenu);
     d->m_listview->setAttribute(Qt::WA_MacShowFocusRect, false);
 
-    d->m_taskWindowContext = new Internal::TaskWindowContext(d->m_listview);
-
+    d->m_taskWindowContext = new Core::IContext(d->m_listview);
+    d->m_taskWindowContext->setWidget(d->m_listview);
+    d->m_taskWindowContext->setContext(Core::Context(Core::Constants::C_PROBLEM_PANE));
     Core::ICore::addContextObject(d->m_taskWindowContext);
 
     connect(d->m_listview->selectionModel(), &QItemSelectionModel::currentChanged,
@@ -327,7 +395,6 @@ TaskWindow::TaskWindow() : d(std::make_unique<TaskWindowPrivate>())
 
 TaskWindow::~TaskWindow()
 {
-    Core::ICore::removeContextObject(d->m_taskWindowContext);
     delete d->m_filterWarningsButton;
     delete d->m_listview;
     delete d->m_filter;
@@ -352,7 +419,7 @@ void TaskWindow::delayedInitialization()
         connect(action, &QAction::triggered, this, &TaskWindow::actionTriggered);
         d->m_actions << action;
 
-        Core::Id id = h->actionManagerId();
+        Utils::Id id = h->actionManagerId();
         if (id.isValid()) {
             Core::Command *cmd =
                 Core::ActionManager::registerAction(action, id, d->m_taskWindowContext->context(), true);
@@ -375,7 +442,7 @@ QWidget *TaskWindow::outputWidget(QWidget *)
     return d->m_listview;
 }
 
-void TaskWindow::clearTasks(Core::Id categoryId)
+void TaskWindow::clearTasks(Utils::Id categoryId)
 {
     d->m_model->clearTasks(categoryId);
 
@@ -383,12 +450,12 @@ void TaskWindow::clearTasks(Core::Id categoryId)
     navigateStateChanged();
 }
 
-void TaskWindow::setCategoryVisibility(Core::Id categoryId, bool visible)
+void TaskWindow::setCategoryVisibility(Utils::Id categoryId, bool visible)
 {
     if (!categoryId.isValid())
         return;
 
-    QList<Core::Id> categories = d->m_filter->filteredCategories();
+    QList<Utils::Id> categories = d->m_filter->filteredCategories();
 
     if (visible)
         categories.removeOne(categoryId);
@@ -409,7 +476,7 @@ void TaskWindow::currentChanged(const QModelIndex &index)
 
 void TaskWindow::saveSettings()
 {
-    QStringList categories = Utils::transform(d->m_filter->filteredCategories(), &Core::Id::toString);
+    QStringList categories = Utils::transform(d->m_filter->filteredCategories(), &Utils::Id::toString);
     SessionManager::setValue(QLatin1String(SESSION_FILTER_CATEGORIES), categories);
     SessionManager::setValue(QLatin1String(SESSION_FILTER_WARNINGS), d->m_filter->filterIncludesWarnings());
 }
@@ -418,8 +485,8 @@ void TaskWindow::loadSettings()
 {
     QVariant value = SessionManager::value(QLatin1String(SESSION_FILTER_CATEGORIES));
     if (value.isValid()) {
-        QList<Core::Id> categories
-                = Utils::transform(value.toStringList(), &Core::Id::fromString);
+        QList<Utils::Id> categories
+                = Utils::transform(value.toStringList(), &Utils::Id::fromString);
         d->m_filter->setFilteredCategories(categories);
     }
     value = SessionManager::value(QLatin1String(SESSION_FILTER_WARNINGS));
@@ -436,11 +503,11 @@ void TaskWindow::visibilityChanged(bool visible)
         delayedInitialization();
 }
 
-void TaskWindow::addCategory(Core::Id categoryId, const QString &displayName, bool visible)
+void TaskWindow::addCategory(Utils::Id categoryId, const QString &displayName, bool visible)
 {
     d->m_model->addCategory(categoryId, displayName);
     if (!visible) {
-        QList<Core::Id> filters = d->m_filter->filteredCategories();
+        QList<Utils::Id> filters = d->m_filter->filteredCategories();
         filters += categoryId;
         d->m_filter->setFilteredCategories(filters);
     }
@@ -548,20 +615,20 @@ void TaskWindow::setShowWarnings(bool show)
 
 void TaskWindow::updateCategoriesMenu()
 {
-    using NameToIdsConstIt = QMap<QString, Core::Id>::ConstIterator;
+    using NameToIdsConstIt = QMap<QString, Utils::Id>::ConstIterator;
 
     d->m_categoriesMenu->clear();
 
-    const QList<Core::Id> filteredCategories = d->m_filter->filteredCategories();
+    const QList<Utils::Id> filteredCategories = d->m_filter->filteredCategories();
 
-    QMap<QString, Core::Id> nameToIds;
-    foreach (Core::Id categoryId, d->m_model->categoryIds())
+    QMap<QString, Utils::Id> nameToIds;
+    foreach (Utils::Id categoryId, d->m_model->categoryIds())
         nameToIds.insert(d->m_model->categoryDisplayName(categoryId), categoryId);
 
     const NameToIdsConstIt cend = nameToIds.constEnd();
     for (NameToIdsConstIt it = nameToIds.constBegin(); it != cend; ++it) {
         const QString &displayName = it.key();
-        const Core::Id categoryId = it.value();
+        const Utils::Id categoryId = it.value();
         auto action = new QAction(d->m_categoriesMenu);
         action->setCheckable(true);
         action->setText(displayName);
@@ -573,17 +640,17 @@ void TaskWindow::updateCategoriesMenu()
     }
 }
 
-int TaskWindow::taskCount(Core::Id category) const
+int TaskWindow::taskCount(Utils::Id category) const
 {
     return d->m_model->taskCount(category);
 }
 
-int TaskWindow::errorTaskCount(Core::Id category) const
+int TaskWindow::errorTaskCount(Utils::Id category) const
 {
     return d->m_model->errorTaskCount(category);
 }
 
-int TaskWindow::warningTaskCount(Core::Id category) const
+int TaskWindow::warningTaskCount(Utils::Id category) const
 {
     return d->m_model->warningTaskCount(category);
 }
@@ -764,6 +831,15 @@ void TaskDelegate::currentChanged(const QModelIndex &current, const QModelIndex 
     emit sizeHintChanged(previous);
 }
 
+QString TaskDelegate::hrefForPos(const QPointF &pos)
+{
+    for (const auto &link : m_hrefs) {
+        if (link.first.contains(pos))
+            return link.second;
+    }
+    return {};
+}
+
 void TaskDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const
 {
     QStyleOptionViewItem opt = option;
@@ -825,7 +901,10 @@ void TaskDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option, 
         int height = 0;
         description.replace(QLatin1Char('\n'), QChar::LineSeparator);
         QTextLayout tl(description);
-        tl.setFormats(index.data(TaskModel::Task_t).value<Task>().formats);
+        QVector<QTextLayout::FormatRange> formats = index.data(TaskModel::Task_t).value<Task>().formats;
+        for (QTextLayout::FormatRange &format : formats)
+            format.format.setForeground(opt.palette.highlightedText());
+        tl.setFormats(formats);
         tl.beginLayout();
         while (true) {
             QTextLine line = tl.createLine();
@@ -837,7 +916,33 @@ void TaskDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option, 
             height += static_cast<int>(line.height());
         }
         tl.endLayout();
+        const QPoint indexPos = view->visualRect(index).topLeft();
         tl.draw(painter, QPoint(positions.textAreaLeft(), positions.top()));
+        m_hrefs.clear();
+        for (const auto &range : tl.formats()) {
+            if (!range.format.isAnchor())
+                continue;
+            const QTextLine &firstLinkLine = tl.lineForTextPosition(range.start);
+            const QTextLine &lastLinkLine = tl.lineForTextPosition(range.start + range.length - 1);
+            for (int i = firstLinkLine.lineNumber(); i <= lastLinkLine.lineNumber(); ++i) {
+                const QTextLine &linkLine = tl.lineAt(i);
+                if (!linkLine.isValid())
+                    break;
+                const QPointF linePos = linkLine.position();
+                const int linkStartPos = i == firstLinkLine.lineNumber()
+                        ? range.start : linkLine.textStart();
+                const qreal startOffset = linkLine.cursorToX(linkStartPos);
+                const int linkEndPos = i == lastLinkLine.lineNumber()
+                        ? range.start + range.length
+                        : linkLine.textStart() + linkLine.textLength();
+                const qreal endOffset = linkLine.cursorToX(linkEndPos);
+                const QPointF linkPos(indexPos.x() + positions.textAreaLeft() + linePos.x()
+                                      + startOffset, positions.top() + linePos.y());
+                const QSize linkSize(endOffset - startOffset, linkLine.height());
+                const QRectF linkRect(linkPos, linkSize);
+                m_hrefs << qMakePair(linkRect, range.format.anchorHref());
+            }
+        }
 
         QColor mix;
         mix.setRgb( static_cast<int>(0.7 * textColor.red()   + 0.3 * backgroundColor.red()),
@@ -909,13 +1014,6 @@ void TaskDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option, 
     const QRectF borderRect = QRectF(opt.rect).adjusted(0.5, 0.5, -0.5, -0.5);
     painter->drawLine(borderRect.bottomLeft(), borderRect.bottomRight());
     painter->restore();
-}
-
-TaskWindowContext::TaskWindowContext(QWidget *widget)
-  : Core::IContext(widget)
-{
-    setWidget(widget);
-    setContext(Core::Context(Core::Constants::C_PROBLEM_PANE));
 }
 
 } // namespace Internal

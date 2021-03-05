@@ -343,7 +343,10 @@ public:
         DScontrolBackgroundInteraction,
         DStranslationIndicatorBorder,
         DSsectionHeadBackground,
-        DSchangedStateText
+        DSchangedStateText,
+        DS3DAxisXColor,
+        DS3DAxisYColor,
+        DS3DAxisZColor
     };
 
     enum Gradient {

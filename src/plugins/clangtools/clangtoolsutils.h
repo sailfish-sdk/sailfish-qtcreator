@@ -25,8 +25,9 @@
 
 #pragma once
 
-#include <coreplugin/id.h>
 #include <cpptools/clangdiagnosticconfig.h>
+
+#include <utils/optional.h>
 
 #include <QtGlobal>
 
@@ -39,6 +40,22 @@ namespace Debugger { class DiagnosticLocation; }
 
 namespace ClangTools {
 namespace Internal {
+
+class Diagnostic;
+
+enum class FixitStatus {
+    NotAvailable,
+    NotScheduled,
+    Scheduled,
+    Applied,
+    FailedToApply,
+    Invalidated,
+};
+
+QString createDiagnosticToolTipString(
+    const Diagnostic &diagnostic,
+    Utils::optional<FixitStatus> status = Utils::nullopt,
+    bool showSteps = true);
 
 QString createFullLocationString(const Debugger::DiagnosticLocation &location);
 
@@ -62,6 +79,11 @@ QString documentationUrl(const QString &checkName);
 CppTools::ClangDiagnosticConfigsModel diagnosticConfigsModel();
 CppTools::ClangDiagnosticConfigsModel diagnosticConfigsModel(
     const CppTools::ClangDiagnosticConfigs &customConfigs);
+
+CppTools::ClangDiagnosticConfig diagnosticConfig(const Utils::Id &diagConfigId);
+
+QStringList extraClangToolsPrependOptions();
+QStringList extraClangToolsAppendOptions();
 
 } // namespace Internal
 } // namespace ClangTools

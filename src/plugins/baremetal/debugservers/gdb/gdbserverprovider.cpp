@@ -49,11 +49,11 @@ using namespace Utils;
 namespace BareMetal {
 namespace Internal {
 
-const char startupModeKeyC[] = "BareMetal.GdbServerProvider.Mode";
-const char peripheralDescriptionFileKeyC[] = "BareMetal.GdbServerProvider.PeripheralDescriptionFile";
-const char initCommandsKeyC[] = "BareMetal.GdbServerProvider.InitCommands";
-const char resetCommandsKeyC[] = "BareMetal.GdbServerProvider.ResetCommands";
-const char useExtendedRemoteKeyC[] = "BareMetal.GdbServerProvider.UseExtendedRemote";
+const char startupModeKeyC[] = "Mode";
+const char peripheralDescriptionFileKeyC[] = "PeripheralDescriptionFile";
+const char initCommandsKeyC[] = "InitCommands";
+const char resetCommandsKeyC[] = "ResetCommands";
+const char useExtendedRemoteKeyC[] = "UseExtendedRemote";
 
 // GdbServerProvider
 
@@ -311,12 +311,12 @@ void GdbServerProviderConfigWidget::populateStartupModes()
 
 Utils::FilePath GdbServerProviderConfigWidget::peripheralDescriptionFile() const
 {
-    return m_peripheralDescriptionFileChooser->fileName();
+    return m_peripheralDescriptionFileChooser->filePath();
 }
 
 void GdbServerProviderConfigWidget::setPeripheralDescriptionFile(const Utils::FilePath &file)
 {
-    m_peripheralDescriptionFileChooser->setFileName(file);
+    m_peripheralDescriptionFileChooser->setFilePath(file);
 }
 
 void GdbServerProviderConfigWidget::setFromProvider()

@@ -38,8 +38,10 @@
 
 namespace Autotest {
 
-TestTreeItem::TestTreeItem(const QString &name, const QString &filePath, Type type)
-    : m_name(name),
+TestTreeItem::TestTreeItem(ITestFramework *framework, const QString &name,
+                           const QString &filePath, Type type)
+    : m_framework(framework),
+      m_name(name),
       m_filePath(filePath),
       m_type(type)
 {
@@ -100,6 +102,8 @@ QVariant TestTreeItem::data(int /*column*/, int role) const
         return m_type;
     case EnabledRole:
         return true;
+    case FailedRole:
+        return m_failed;
     }
     return QVariant();
 }
@@ -110,6 +114,8 @@ bool TestTreeItem::setData(int /*column*/, const QVariant &data, int role)
         Qt::CheckState old = m_checked;
         m_checked = Qt::CheckState(data.toInt());
         return m_checked != old;
+    } else if (role == FailedRole) {
+        m_failed = data.toBool();
     }
     return false;
 }
@@ -260,6 +266,11 @@ QList<TestConfiguration *> TestTreeItem::getSelectedTestConfigurations() const
     return QList<TestConfiguration *>();
 }
 
+QList<TestConfiguration *> TestTreeItem::getFailedTestConfigurations() const
+{
+    return QList<TestConfiguration *>();
+}
+
 QList<TestConfiguration *> TestTreeItem::getTestConfigurationsForFile(const Utils::FilePath &) const
 {
     return QList<TestConfiguration *>();
@@ -331,6 +342,7 @@ void TestTreeItem::copyBasicDataFrom(const TestTreeItem *other)
     m_filePath = other->m_filePath;
     m_type = other->m_type;
     m_checked = other->m_checked;
+    m_failed = other->m_failed;
     m_line = other->m_line;
     m_column = other->m_column;
     m_proFile = other->m_proFile;
@@ -353,6 +365,11 @@ inline bool TestTreeItem::modifyName(const QString &name)
         return true;
     }
     return false;
+}
+
+ITestFramework *TestTreeItem::framework() const
+{
+    return m_framework;
 }
 
 /*

@@ -29,8 +29,10 @@
 #include <rewritingexception.h>
 
 #include <QDebug>
-#include <QRegExp>
+#include <QRegularExpression>
+#include <QMessageBox>
 #include <cmath>
+#include <memory>
 
 #include <nodemetainfo.h>
 
@@ -38,8 +40,12 @@
 #include <variantproperty.h>
 #include <nodelistproperty.h>
 
+#include <qmldesignerconstants.h>
+#include <qmldesignerplugin.h>
 #include <qmlitemnode.h>
 #include <qmlstate.h>
+#include <annotationeditor/annotationeditor.h>
+#include <utils/algorithm.h>
 
 
 namespace QmlDesigner {
@@ -51,7 +57,8 @@ namespace QmlDesigner {
 StatesEditorView::StatesEditorView(QObject *parent) :
         AbstractView(parent),
         m_statesEditorModel(new StatesEditorModel(this)),
-        m_lastIndex(-1)
+        m_lastIndex(-1),
+        m_editor(nullptr)
 {
     Q_ASSERT(m_statesEditorModel);
     // base state
@@ -59,6 +66,8 @@ StatesEditorView::StatesEditorView(QObject *parent) :
 
 StatesEditorView::~StatesEditorView()
 {
+    if (m_editor)
+        delete m_editor;
     delete m_statesEditorWidget.data();
 }
 
@@ -87,18 +96,52 @@ void StatesEditorView::removeState(int nodeId)
         if (nodeId > 0 && hasModelNodeForInternalId(nodeId)) {
             ModelNode stateNode(modelNodeForInternalId(nodeId));
             Q_ASSERT(stateNode.metaInfo().isSubclassOf("QtQuick.State"));
+
+            QmlModelState modelState(stateNode);
+            if (modelState.isValid()) {
+                QStringList lockedTargets;
+                const auto propertyChanges = modelState.propertyChanges();
+                for (const QmlPropertyChanges &change : propertyChanges) {
+                    const ModelNode target = change.target();
+                    if (target.locked())
+                        lockedTargets.push_back(target.id());
+                }
+
+                if (!lockedTargets.empty()) {
+                    Utils::sort(lockedTargets);
+                    QString detailedText = QString("<b>" + tr("Locked items:") + "</b><br>");
+
+                    for (const auto &id : qAsConst(lockedTargets))
+                        detailedText.append("- " + id + "<br>");
+
+                    detailedText.chop(QString("<br>").size());
+
+                    QMessageBox msgBox;
+                    msgBox.setTextFormat(Qt::RichText);
+                    msgBox.setIcon(QMessageBox::Question);
+                    msgBox.setWindowTitle(tr("Remove State"));
+                    msgBox.setText(QString(tr("Removing this state will modify locked items.") + "<br><br>%1")
+                                           .arg(detailedText));
+                    msgBox.setInformativeText(tr("Continue by removing the state?"));
+                    msgBox.setStandardButtons(QMessageBox::Ok | QMessageBox::Cancel);
+                    msgBox.setDefaultButton(QMessageBox::Ok);
+
+                    if (msgBox.exec() == QMessageBox::Cancel)
+                        return;
+                }
+            }
+
             NodeListProperty parentProperty = stateNode.parentProperty().toNodeListProperty();
 
             if (parentProperty.count() <= 1) {
                 setCurrentState(baseState());
-            } else if (parentProperty.isValid()){
+            } else if (parentProperty.isValid()) {
                 int index = parentProperty.indexOf(stateNode);
                 if (index == 0)
                     setCurrentState(parentProperty.at(1));
                 else
                     setCurrentState(parentProperty.at(index - 1));
             }
-
 
             stateNode.destroy();
         }
@@ -141,6 +184,8 @@ void StatesEditorView::addState()
     if (!QmlVisualNode::isValidQmlVisualNode(rootModelNode()))
         return;
 
+    QmlDesignerPlugin::emitUsageStatistics(Constants::EVENT_STATE_ADDED);
+
     QStringList modelStateNames = rootStateGroup().names();
 
     QString newStateName;
@@ -151,17 +196,12 @@ void StatesEditorView::addState()
             break;
     }
 
-    try {
+    executeInTransaction("addState", [this, newStateName]() {
         rootModelNode().validId();
-        if ((rootStateGroup().allStates().count() < 1) && //QtQuick import might be missing
-                (!model()->hasImport(Import::createLibraryImport("QtQuick", "1.0"), true, true))) {
-            model()->changeImports({Import::createLibraryImport("QtQuick", "1.0")}, {});
-        }
+
         ModelNode newState = rootStateGroup().addState(newStateName);
         setCurrentState(newState);
-    } catch (const RewritingException &e) {
-        e.showException();
-    }
+    });
 }
 
 void StatesEditorView::resetModel()
@@ -186,18 +226,21 @@ void StatesEditorView::duplicateCurrentState()
     QString newName = state.name();
 
     // Strip out numbers at the end of the string
-    QRegExp regEx(QLatin1String("[0-9]+$"));
-    int numberIndex = newName.indexOf(regEx);
-    if ((numberIndex != -1) && (numberIndex+regEx.matchedLength()==newName.length()))
-        newName = newName.left(numberIndex);
+    QRegularExpression regEx(QLatin1String("[0-9]+$"));
+    const QRegularExpressionMatch match = regEx.match(newName);
+    if (match.hasMatch() && (match.capturedStart() + match.capturedLength() == newName.length()))
+        newName = newName.left(match.capturedStart());
 
     int i = 1;
     QStringList stateNames = rootStateGroup().names();
     while (stateNames.contains(newName + QString::number(i)))
         i++;
+    const QString newStateName = newName + QString::number(i);
 
-    QmlModelState newState = state.duplicate(newName + QString::number(i));
-    setCurrentState(newState);
+    executeInTransaction("addState", [this, newStateName, state]() {
+        QmlModelState newState = state.duplicate(newStateName);
+        setCurrentState(newState);
+    });
 }
 
 void StatesEditorView::checkForStatesAvailability()
@@ -262,7 +305,7 @@ void StatesEditorView::renameState(int internalNodeId, const QString &newName)
 
                 setCurrentState(oldState);
             }
-        }  catch (const RewritingException &e) {
+        } catch (const RewritingException &e) {
             e.showException();
         }
     }
@@ -274,6 +317,8 @@ void StatesEditorView::setWhenCondition(int internalNodeId, const QString &condi
         return;
 
     m_block = true;
+    auto guard = [this](int* p) { m_block = false; delete p; };
+    std::unique_ptr<int, decltype(guard)> scopeGuard(new int, guard);
 
     if (hasModelNodeForInternalId(internalNodeId)) {
         QmlModelState state(modelNodeForInternalId(internalNodeId));
@@ -285,8 +330,6 @@ void StatesEditorView::setWhenCondition(int internalNodeId, const QString &condi
             e.showException();
         }
     }
-
-    m_block = false;
 }
 
 void StatesEditorView::resetWhenCondition(int internalNodeId)
@@ -295,6 +338,8 @@ void StatesEditorView::resetWhenCondition(int internalNodeId)
         return;
 
     m_block = true;
+    auto guard = [this](int* p) { m_block = false; delete p; };
+    std::unique_ptr<int, decltype(guard)> scopeGuard(new int, guard);
 
     if (hasModelNodeForInternalId(internalNodeId)) {
         QmlModelState state(modelNodeForInternalId(internalNodeId));
@@ -306,8 +351,6 @@ void StatesEditorView::resetWhenCondition(int internalNodeId)
             e.showException();
         }
     }
-
-    m_block = false;
 }
 
 void StatesEditorView::setStateAsDefault(int internalNodeId)
@@ -316,6 +359,8 @@ void StatesEditorView::setStateAsDefault(int internalNodeId)
         return;
 
     m_block = true;
+    auto guard = [this](int* p) { m_block = false; delete p; };
+    std::unique_ptr<int, decltype(guard)> scopeGuard(new int, guard);
 
     if (hasModelNodeForInternalId(internalNodeId)) {
         QmlModelState state(modelNodeForInternalId(internalNodeId));
@@ -327,8 +372,6 @@ void StatesEditorView::setStateAsDefault(int internalNodeId)
             e.showException();
         }
     }
-
-    m_block = false;
 }
 
 void StatesEditorView::resetDefaultState()
@@ -337,6 +380,8 @@ void StatesEditorView::resetDefaultState()
         return;
 
     m_block = true;
+    auto guard = [this](int* p) { m_block = false; delete p; };
+    std::unique_ptr<int, decltype(guard)> scopeGuard(new int, guard);
 
     try {
         if (rootModelNode().hasProperty("state"))
@@ -345,13 +390,75 @@ void StatesEditorView::resetDefaultState()
     } catch (const RewritingException &e) {
         e.showException();
     }
-
-    m_block = false;
 }
 
 bool StatesEditorView::hasDefaultState() const
 {
     return rootModelNode().hasProperty("state");
+}
+
+void StatesEditorView::setAnnotation(int internalNodeId)
+{
+    if (m_block)
+        return;
+
+    m_block = true;
+    auto guard = [this](int* p) { m_block = false; delete p; };
+    std::unique_ptr<int, decltype(guard)> scopeGuard(new int, guard);
+
+    if (hasModelNodeForInternalId(internalNodeId)) {
+        QmlModelState state(modelNodeForInternalId(internalNodeId));
+        try {
+            if (state.isValid()) {
+                ModelNode modelNode = state.modelNode();
+
+                if (modelNode.isValid()) {
+                    if (!m_editor)
+                        m_editor = new AnnotationEditor(this);
+
+                    m_editor->setModelNode(modelNode);
+                    m_editor->showWidget();
+                }
+            }
+
+        } catch (const RewritingException &e) {
+            e.showException();
+        }
+    }
+}
+
+void StatesEditorView::removeAnnotation(int internalNodeId)
+{
+    if (m_block)
+        return;
+
+    m_block = true;
+    auto guard = [this](int* p) { m_block = false; delete p; };
+    std::unique_ptr<int, decltype(guard)> scopeGuard(new int, guard);
+
+    if (hasModelNodeForInternalId(internalNodeId)) {
+        QmlModelState state(modelNodeForInternalId(internalNodeId));
+        try {
+            if (state.isValid()) {
+                state.removeAnnotation();
+            }
+
+        } catch (const RewritingException &e) {
+            e.showException();
+        }
+    }
+}
+
+bool StatesEditorView::hasAnnotation(int internalNodeId) const
+{
+    if (hasModelNodeForInternalId(internalNodeId)) {
+        QmlModelState state(modelNodeForInternalId(internalNodeId));
+        if (state.isValid()) {
+            return state.hasAnnotation();
+        }
+    }
+
+    return false;
 }
 
 void StatesEditorView::modelAttached(Model *model)
@@ -444,7 +551,12 @@ void StatesEditorView::bindingPropertiesChanged(const QList<BindingProperty> &pr
 void StatesEditorView::variantPropertiesChanged(const QList<VariantProperty> &propertyList,
                                                 AbstractView::PropertyChangeFlags /*propertyChange*/)
 {
+    if (m_block)
+        return;
+
     m_block = true;
+    auto guard = [this](int* p) { m_block = false; delete p; };
+    std::unique_ptr<int, decltype(guard)> scopeGuard(new int, guard);
 
     for (const VariantProperty &property : propertyList) {
         if (property.name() == "name" && QmlModelState::isValidQmlModelState(property.parentModelNode()))
@@ -452,8 +564,6 @@ void StatesEditorView::variantPropertiesChanged(const QList<VariantProperty> &pr
         else if (property.name() == "state" && property.parentModelNode().isRootNode())
             resetModel();
     }
-
-    m_block = false;
 }
 
 void StatesEditorView::currentStateChanged(const ModelNode &node)

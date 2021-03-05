@@ -42,63 +42,64 @@ static const char buildRe[] = "=== BUILD (AGGREGATE )?TARGET (.*) OF PROJECT (.*
 static const char signatureChangeEndsWithPattern[] = ": replacing existing signature";
 
 XcodebuildParser::XcodebuildParser()
+    : m_failureRe(QLatin1String(failureRe))
+    , m_successRe(QLatin1String(successRe))
+    , m_buildRe(QLatin1String(buildRe))
 {
     setObjectName(QLatin1String("XcodeParser"));
-    m_failureRe.setPattern(QLatin1String(failureRe));
     QTC_CHECK(m_failureRe.isValid());
-    m_successRe.setPattern(QLatin1String(successRe));
     QTC_CHECK(m_successRe.isValid());
-    m_buildRe.setPattern(QLatin1String(buildRe));
     QTC_CHECK(m_buildRe.isValid());
 }
 
-bool XcodebuildParser::hasFatalErrors() const
-{
-    return (m_fatalErrorCount > 0) || IOutputParser::hasFatalErrors();
-}
-
-void XcodebuildParser::stdOutput(const QString &line)
+OutputLineParser::Result XcodebuildParser::handleLine(const QString &line, OutputFormat type)
 {
     const QString lne = rightTrimmed(line);
-    if (m_buildRe.indexIn(lne) > -1) {
-        m_xcodeBuildParserState = InXcodebuild;
-        m_lastTarget = m_buildRe.cap(2);
-        m_lastProject = m_buildRe.cap(3);
-        return;
-    }
-    if (m_xcodeBuildParserState == InXcodebuild || m_xcodeBuildParserState == UnknownXcodebuildState) {
-        if (m_successRe.indexIn(lne) > -1) {
-            m_xcodeBuildParserState = OutsideXcodebuild;
-            return;
+    if (type == StdOutFormat) {
+        QRegularExpressionMatch match = m_buildRe.match(line);
+        if (match.hasMatch()) {
+            m_xcodeBuildParserState = InXcodebuild;
+            m_lastTarget = match.captured(2);
+            m_lastProject = match.captured(3);
+            return Status::Done;
         }
-        if (lne.endsWith(QLatin1String(signatureChangeEndsWithPattern))) {
-            CompileTask task(Task::Warning,
-                             tr("Replacing signature"),
-                             FilePath::fromString(
-                                 lne.left(lne.size() - QLatin1String(signatureChangeEndsWithPattern).size())));
-            taskAdded(task, 1);
-            return;
+        if (m_xcodeBuildParserState == InXcodebuild
+                || m_xcodeBuildParserState == UnknownXcodebuildState) {
+            match = m_successRe.match(lne);
+            if (match.hasMatch()) {
+                m_xcodeBuildParserState = OutsideXcodebuild;
+                return Status::Done;
+            }
+            if (lne.endsWith(QLatin1String(signatureChangeEndsWithPattern))) {
+                const int filePathEndPos = lne.size()
+                        - QLatin1String(signatureChangeEndsWithPattern).size();
+                CompileTask task(Task::Warning,
+                                 tr("Replacing signature"),
+                                 absoluteFilePath(FilePath::fromString(
+                                     lne.left(filePathEndPos))));
+                LinkSpecs linkSpecs;
+                addLinkSpecForAbsoluteFilePath(linkSpecs, task.file, task.line, 0, filePathEndPos);
+                scheduleTask(task, 1);
+                return {Status::Done, linkSpecs};
+            }
         }
-        IOutputParser::stdError(line);
-    } else {
-        IOutputParser::stdOutput(line);
+        return Status::NotHandled;
     }
-}
-
-void XcodebuildParser::stdError(const QString &line)
-{
-    const QString lne = rightTrimmed(line);
-    if (m_failureRe.indexIn(lne) > -1) {
+    const QRegularExpressionMatch match = m_failureRe.match(lne);
+    if (match.hasMatch()) {
         ++m_fatalErrorCount;
         m_xcodeBuildParserState = UnknownXcodebuildState;
         // unfortunately the m_lastTarget, m_lastProject might not be in sync
-        taskAdded(CompileTask(Task::Error, tr("Xcodebuild failed.")));
-        return;
+        scheduleTask(CompileTask(Task::Error, tr("Xcodebuild failed.")), 1);
     }
-    if (m_xcodeBuildParserState == OutsideXcodebuild) { // also forward if UnknownXcodebuildState ?
-        IOutputParser::stdError(line);
-        return;
-    }
+    if (m_xcodeBuildParserState == OutsideXcodebuild)
+        return Status::NotHandled;
+    return Status::Done;
+}
+
+bool XcodebuildParser::hasDetectedRedirection() const
+{
+    return m_xcodeBuildParserState != OutsideXcodebuild;
 }
 
 } // namespace ProjectExplorer
@@ -260,7 +261,7 @@ void ProjectExplorerPlugin::testXcodebuildParserParsing()
     connect(&testbench, &OutputParserTester::aboutToDeleteParser,
             tester, &XcodebuildParserTester::onAboutToDeleteParser);
 
-    testbench.appendOutputParser(childParser);
+    testbench.addLineParser(childParser);
     QFETCH(ProjectExplorer::XcodebuildParser::XcodebuildStatus, initialStatus);
     QFETCH(QString, input);
     QFETCH(OutputParserTester::Channel, inputChannel);

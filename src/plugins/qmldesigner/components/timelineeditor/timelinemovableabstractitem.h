@@ -32,7 +32,7 @@
 
 namespace QmlDesigner {
 
-class TimelineGraphicsScene;
+class AbstractScrollGraphicsScene;
 class TimelineKeyframeItem;
 class TimelineFrameHandle;
 
@@ -69,13 +69,15 @@ public:
     virtual TimelineKeyframeItem *asTimelineKeyframeItem();
     virtual TimelineFrameHandle *asTimelineFrameHandle();
 
+    virtual bool isLocked() const;
+
 protected:
     int scrollOffset() const;
     void mousePressEvent(QGraphicsSceneMouseEvent *event) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override;
 
     void setClampedXPosition(qreal x, qreal min, qreal max);
-    TimelineGraphicsScene *timelineScene() const;
+    AbstractScrollGraphicsScene *abstractScrollGraphicsScene() const;
 };
 
 } // namespace QmlDesigner

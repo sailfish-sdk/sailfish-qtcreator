@@ -47,6 +47,11 @@
 #include <QHelpEngine>
 #include <QHelpIndexModel>
 
+#ifdef HELP_NEW_FILTER_ENGINE
+#include <QHelpLink>
+#endif
+
+
 using namespace Help::Internal;
 
 IndexWindow::IndexWindow()
@@ -173,7 +178,7 @@ bool IndexWindow::eventFilter(QObject *obj, QEvent *e)
         if (idx.isValid()) {
             Qt::MouseButtons button = mouseEvent->button();
             if (((button == Qt::LeftButton) && (mouseEvent->modifiers() & Qt::ControlModifier))
-                || (button == Qt::MidButton)) {
+                || (button == Qt::MiddleButton)) {
                 open(idx);
             }
         }
@@ -195,8 +200,16 @@ void IndexWindow::disableSearchLineEdit()
 
 void IndexWindow::open(const QModelIndex &index, bool newPage)
 {
-    QString keyword = m_filteredIndexModel->data(index, Qt::DisplayRole).toString();
-    QMap<QString, QUrl> links = LocalHelpManager::helpEngine().indexModel()->linksForKeyword(keyword);
+    const QString keyword = m_filteredIndexModel->data(index, Qt::DisplayRole).toString();
+#ifndef HELP_NEW_FILTER_ENGINE
+    QMultiMap<QString, QUrl> links = LocalHelpManager::helpEngine().linksForKeyword(keyword);
+#else
+    QMultiMap<QString, QUrl> links;
+    const QList<QHelpLink> docs = LocalHelpManager::helpEngine().documentsForKeyword(keyword);
+    for (const auto &doc : docs)
+        links.insert(doc.title, doc.url);
+
+#endif
     emit linksActivated(links, keyword, newPage);
 }
 
@@ -297,10 +310,10 @@ QModelIndex IndexFilterModel::filter(const QString &filter, const QString &wildc
     int perfectMatch = -1;
 
     if (!wildcard.isEmpty()) {
-        QRegExp regExp(wildcard, Qt::CaseInsensitive);
-        regExp.setPatternSyntax(QRegExp::Wildcard);
+        const QRegularExpression regExp(QRegularExpression::wildcardToRegularExpression(wildcard),
+                                        QRegularExpression::CaseInsensitiveOption);
         int i = 0;
-        foreach (const QString &index, indices) {
+        for (const QString &index : indices) {
             if (index.contains(regExp)) {
                 m_toSource.append(i);
                 if (perfectMatch == -1 && index.startsWith(filter, Qt::CaseInsensitive)) {

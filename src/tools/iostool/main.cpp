@@ -31,6 +31,7 @@
 #include <QDebug>
 #include <QXmlStreamWriter>
 #include <QFile>
+#include <QRegularExpression>
 #include <QScopedArrayPointer>
 #include <QTcpServer>
 #include <QSocketNotifier>
@@ -185,7 +186,7 @@ private:
     void appOutput(const QString &output);
     void readStdin();
 
-    QMutex m_xmlMutex;
+    QRecursiveMutex m_xmlMutex;
     int maxProgress;
     int opLeft;
     bool debug;
@@ -225,9 +226,12 @@ void Relayer::setClientSocket(QTcpSocket *clientSocket)
     QTC_CHECK(!m_clientSocket);
     m_clientSocket = clientSocket;
     if (m_clientSocket) {
-        connect(m_clientSocket,
-                QOverload<QAbstractSocket::SocketError>::of(&QAbstractSocket::error),
-                this, &Relayer::handleClientHasError);
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
+        const auto errorOccurred = QOverload<QAbstractSocket::SocketError>::of(&QAbstractSocket::error);
+#else
+        const auto errorOccurred = &QAbstractSocket::errorOccurred;
+#endif
+        connect(m_clientSocket, errorOccurred, this, &Relayer::handleClientHasError);
         connect(m_clientSocket, &QAbstractSocket::disconnected,
                 this, [this](){server()->removeRelayConnection(this);});
     }
@@ -503,7 +507,6 @@ void GenericRelayServer::newRelayConnection()
 
 IosTool::IosTool(QObject *parent):
     QObject(parent),
-    m_xmlMutex(QMutex::Recursive),
     maxProgress(0),
     opLeft(0),
     debug(false),
@@ -517,7 +520,6 @@ IosTool::IosTool(QObject *parent):
 {
     outFile.open(stdout, QIODevice::WriteOnly, QFileDevice::DontCloseHandle);
     out.setAutoFormatting(true);
-    out.setCodec("UTF-8");
 }
 
 IosTool::~IosTool()
@@ -602,13 +604,14 @@ void IosTool::run(const QStringList &args)
     connect(manager,&Ios::IosDeviceManager::appOutput, this, &IosTool::appOutput);
     connect(manager,&Ios::IosDeviceManager::errorMsg, this, &IosTool::errorMsg);
     manager->watchDevices();
-    QRegExp qmlPortRe=QRegExp(QLatin1String("-qmljsdebugger=port:([0-9]+)"));
-    foreach (const QString &arg, extraArgs) {
-        if (qmlPortRe.indexIn(arg) == 0) {
+    const QRegularExpression qmlPortRe(QLatin1String("-qmljsdebugger=port:([0-9]+)"));
+    for (const QString &arg : extraArgs) {
+        const QRegularExpressionMatch match = qmlPortRe.match(arg);
+        if (match.hasMatch()) {
             bool ok;
-            int qmlPort = qmlPortRe.cap(1).toInt(&ok);
+            int qmlPort = match.captured(1).toInt(&ok);
             if (ok && qmlPort > 0 && qmlPort <= 0xFFFF)
-                m_qmlPort = qmlPortRe.cap(1);
+                m_qmlPort = match.captured(1);
             break;
         }
     }
@@ -829,11 +832,11 @@ void IosTool::deviceInfo(const QString &deviceId, const Ios::IosDeviceManager::D
 
 void IosTool::writeTextInElement(const QString &output)
 {
-    QRegExp controlCharRe(QLatin1String("[\x01-\x08]|\x0B|\x0C|[\x0E-\x1F]|\\0000"));
+    const QRegularExpression controlCharRe(QLatin1String("[\x01-\x08]|\x0B|\x0C|[\x0E-\x1F]|\\0000"));
     int pos = 0;
     int oldPos = 0;
 
-    while ((pos = controlCharRe.indexIn(output, pos)) != -1) {
+    while ((pos = output.indexOf(controlCharRe, pos)) != -1) {
         QMutexLocker l(&m_xmlMutex);
         out.writeCharacters(output.mid(oldPos, pos - oldPos));
         out.writeEmptyElement(QLatin1String("control_char"));

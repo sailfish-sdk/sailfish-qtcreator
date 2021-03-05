@@ -186,10 +186,10 @@ FormEditorItem *AbstractFormEditorTool::topMovableFormEditorItem(const QList<QGr
     return nullptr;
 }
 
-FormEditorItem* AbstractFormEditorTool::nearestFormEditorItem(const QPointF &point, const QList<QGraphicsItem*> & itemList)
+FormEditorItem* AbstractFormEditorTool::nearestFormEditorItem(const QPointF &point, const QList<QGraphicsItem*> &itemList)
 {
     FormEditorItem* nearestItem = nullptr;
-    foreach (QGraphicsItem *item, itemList) {
+    for (QGraphicsItem *item : itemList) {
         FormEditorItem *formEditorItem = FormEditorItem::fromQGraphicsItem(item);
 
         if (formEditorItem && formEditorItem->flowHitTest(point))
@@ -199,6 +199,9 @@ FormEditorItem* AbstractFormEditorTool::nearestFormEditorItem(const QPointF &poi
             continue;
 
         if (formEditorItem->parentItem() && !formEditorItem->parentItem()->isContentVisible())
+            continue;
+
+        if (formEditorItem && ModelNode::isThisOrAncestorLocked(formEditorItem->qmlItemNode().modelNode()))
             continue;
 
         if (!nearestItem)

@@ -54,7 +54,7 @@ namespace Internal {
 
 struct LanguageDisplayPair
 {
-    Core::Id id;
+    Utils::Id id;
     QString displayName;
 };
 
@@ -68,6 +68,7 @@ public:
     QList<ToolChain *> m_toolChains; // prioritized List
     QVector<LanguageDisplayPair> m_languages;
     ToolchainDetectionSettings m_detectionSettings;
+    bool m_loaded = false;
 };
 
 ToolChainManagerPrivate::~ToolChainManagerPrivate()
@@ -127,6 +128,7 @@ void ToolChainManager::restoreToolChains()
     for (ToolChain *tc : d->m_accessor->restoreToolChains(Core::ICore::dialogParent()))
         registerToolChain(tc);
 
+    d->m_loaded = true;
     emit m_instance->toolChainsLoaded();
 }
 
@@ -187,7 +189,7 @@ ToolChain *ToolChainManager::findToolChain(const QByteArray &id)
 
 bool ToolChainManager::isLoaded()
 {
-    return bool(d->m_accessor);
+    return d->m_loaded;
 }
 
 void ToolChainManager::notifyAboutUpdate(ToolChain *tc)
@@ -225,12 +227,12 @@ void ToolChainManager::deregisterToolChain(ToolChain *tc)
     delete tc;
 }
 
-QSet<Core::Id> ToolChainManager::allLanguages()
+QList<Id> ToolChainManager::allLanguages()
 {
-    return Utils::transform<QSet>(d->m_languages, &LanguageDisplayPair::id);
+    return Utils::transform<QList>(d->m_languages, &LanguageDisplayPair::id);
 }
 
-bool ToolChainManager::registerLanguage(const Core::Id &language, const QString &displayName)
+bool ToolChainManager::registerLanguage(const Utils::Id &language, const QString &displayName)
 {
     QTC_ASSERT(language.isValid(), return false);
     QTC_ASSERT(!isLanguageSupported(language), return false);
@@ -239,7 +241,7 @@ bool ToolChainManager::registerLanguage(const Core::Id &language, const QString 
     return true;
 }
 
-QString ToolChainManager::displayNameOfLanguageId(const Core::Id &id)
+QString ToolChainManager::displayNameOfLanguageId(const Utils::Id &id)
 {
     QTC_ASSERT(id.isValid(), return tr("None"));
     auto entry = Utils::findOrDefault(d->m_languages, Utils::equal(&LanguageDisplayPair::id, id));
@@ -247,7 +249,7 @@ QString ToolChainManager::displayNameOfLanguageId(const Core::Id &id)
     return entry.displayName;
 }
 
-bool ToolChainManager::isLanguageSupported(const Core::Id &id)
+bool ToolChainManager::isLanguageSupported(const Utils::Id &id)
 {
     return Utils::contains(d->m_languages, Utils::equal(&LanguageDisplayPair::id, id));
 }

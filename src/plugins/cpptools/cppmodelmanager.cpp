@@ -56,6 +56,8 @@
 #include <coreplugin/icore.h>
 #include <coreplugin/progressmanager/progressmanager.h>
 #include <coreplugin/vcsmanager.h>
+#include <cplusplus/ASTPath.h>
+#include <cplusplus/TypeOfExpression.h>
 #include <extensionsystem/pluginmanager.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorer.h>
@@ -111,7 +113,7 @@ protected:
         pp(ast);
         QString code = QString::fromStdString(s.str());
         code.replace('\n', ' ');
-        code.replace(QRegExp("\\s+"), " ");
+        code.replace(QRegularExpression("\\s+"), " ");
 
         const char *name = abi::__cxa_demangle(typeid(*ast).name(), 0, 0, 0) + 11;
 
@@ -341,6 +343,114 @@ void CppModelManager::globalFollowSymbol(
     QTC_ASSERT(engine, return;);
     engine->globalFollowSymbol(data, std::move(processLinkCallback), snapshot, documentFromSemanticInfo,
                                symbolFinder, inNextSplit);
+}
+
+bool CppModelManager::positionRequiresSignal(const QString &filePath, const QByteArray &content,
+                                             int position) const
+{
+    if (content.isEmpty())
+        return false;
+
+    // Insert a dummy prefix if we don't have a real one. Otherwise the AST path will not contain
+    // anything after the CallAST.
+    QByteArray fixedContent = content;
+    if (position > 2 && content.mid(position - 2, 2) == "::")
+        fixedContent.insert(position, 'x');
+
+    const Snapshot snapshot = this->snapshot();
+    const Document::Ptr document = snapshot.preprocessedDocument(fixedContent, filePath);
+    document->check();
+    QTextDocument textDocument(QString::fromUtf8(fixedContent));
+    QTextCursor cursor(&textDocument);
+    cursor.setPosition(position);
+
+    // Are we at the second argument of a function call?
+    const QList<AST *> path = ASTPath(document)(cursor);
+    if (path.isEmpty() || !path.last()->asSimpleName())
+        return false;
+    const CallAST *callAst = nullptr;
+    for (auto it = path.crbegin(); it != path.crend(); ++it) {
+        if ((callAst = (*it)->asCall()))
+            break;
+    }
+    if (!callAst)
+        return false;
+    if (!callAst->expression_list || !callAst->expression_list->next)
+        return false;
+    const ExpressionAST * const secondArg = callAst->expression_list->next->value;
+    if (secondArg->firstToken() > path.last()->firstToken()
+            || secondArg->lastToken() < path.last()->lastToken()) {
+        return false;
+    }
+
+    // Is the function called "connect" or "disconnect"?
+    if (!callAst->base_expression)
+        return false;
+    Scope *scope = document->globalNamespace();
+    for (auto it = path.crbegin(); it != path.crend(); ++it) {
+        if (const CompoundStatementAST * const stmtAst = (*it)->asCompoundStatement()) {
+            scope = stmtAst->symbol;
+            break;
+        }
+    }
+    const NameAST *nameAst = nullptr;
+    const LookupContext context(document, snapshot);
+    if (const IdExpressionAST * const idAst = callAst->base_expression->asIdExpression()) {
+        nameAst = idAst->name;
+    } else if (const MemberAccessAST * const ast = callAst->base_expression->asMemberAccess()) {
+        nameAst = ast->member_name;
+        TypeOfExpression exprType;
+        exprType.setExpandTemplates(true);
+        exprType.init(document, snapshot);
+        const QList<LookupItem> typeMatches = exprType(ast->base_expression, document, scope);
+        if (typeMatches.isEmpty())
+            return false;
+        const std::function<const NamedType *(const FullySpecifiedType &)> getNamedType
+                = [&getNamedType](const FullySpecifiedType &type ) -> const NamedType * {
+            Type * const t = type.type();
+            if (const auto namedType = t->asNamedType())
+                return namedType;
+            if (const auto pointerType = t->asPointerType())
+                return getNamedType(pointerType->elementType());
+            if (const auto refType = t->asReferenceType())
+                return getNamedType(refType->elementType());
+            return nullptr;
+        };
+        const NamedType *namedType = getNamedType(typeMatches.first().type());
+        if (!namedType && typeMatches.first().declaration())
+            namedType = getNamedType(typeMatches.first().declaration()->type());
+        if (!namedType)
+            return false;
+        const ClassOrNamespace * const result = context.lookupType(namedType->name(), scope);
+        if (!result)
+            return false;
+        scope = result->rootClass();
+        if (!scope)
+            return false;
+    }
+    if (!nameAst || !nameAst->name)
+        return false;
+    const Identifier * const id = nameAst->name->identifier();
+    if (!id)
+        return false;
+    const QString funcName = QString::fromUtf8(id->chars(), id->size());
+    if (funcName != "connect" && funcName != "disconnect")
+        return false;
+
+    // Is the function a member function of QObject?
+    const QList<LookupItem> matches = context.lookup(nameAst->name, scope);
+    for (const LookupItem &match : matches) {
+        if (!match.scope())
+            continue;
+        const Class *klass = match.scope()->asClass();
+        if (!klass || !klass->name())
+            continue;
+        const Identifier * const classId = klass->name()->identifier();
+        if (classId && QString::fromUtf8(classId->chars(), classId->size()) == "QObject")
+            return true;
+    }
+
+    return false;
 }
 
 void CppModelManager::addRefactoringEngine(RefactoringEngineType type,
@@ -820,22 +930,14 @@ static QSet<QString> tooBigFilesRemoved(const QSet<QString> &files, int fileSize
 QFuture<void> CppModelManager::updateSourceFiles(const QSet<QString> &sourceFiles,
                                                  ProgressNotificationMode mode)
 {
-    const QFutureInterface<void> dummy;
-    return updateSourceFiles(dummy, sourceFiles, mode);
-}
-
-QFuture<void> CppModelManager::updateSourceFiles(const QFutureInterface<void> &superFuture,
-                                                 const QSet<QString> &sourceFiles,
-                                                 ProgressNotificationMode mode)
-{
     if (sourceFiles.isEmpty() || !d->m_indexerEnabled)
         return QFuture<void>();
 
     const QSet<QString> filteredFiles = tooBigFilesRemoved(sourceFiles, indexerFileSizeLimitInMb());
 
     if (d->m_indexingSupporter)
-        d->m_indexingSupporter->refreshSourceFiles(superFuture, filteredFiles, mode);
-    return d->m_internalIndexingSupport->refreshSourceFiles(superFuture, filteredFiles, mode);
+        d->m_indexingSupporter->refreshSourceFiles(filteredFiles, mode);
+    return d->m_internalIndexingSupport->refreshSourceFiles(filteredFiles, mode);
 }
 
 QList<ProjectInfo> CppModelManager::projectInfos() const
@@ -968,25 +1070,23 @@ void CppModelManager::recalculateProjectPartMappings()
     d->m_symbolFinder.clearCache();
 }
 
-void CppModelManager::watchForCanceledProjectIndexer(const QVector<QFuture<void>> &futures,
+void CppModelManager::watchForCanceledProjectIndexer(const QFuture<void> &future,
                                                      ProjectExplorer::Project *project)
 {
-    for (const QFuture<void> &future : futures) {
-        if (future.isCanceled() || future.isFinished())
-            continue;
+    if (future.isCanceled() || future.isFinished())
+        return;
 
-        auto watcher = new QFutureWatcher<void>();
-        connect(watcher, &QFutureWatcher<void>::canceled, this, [this, project, watcher]() {
-            if (d->m_projectToIndexerCanceled.contains(project)) // Project not yet removed
-                d->m_projectToIndexerCanceled.insert(project, true);
-            watcher->deleteLater();
-        });
-        connect(watcher, &QFutureWatcher<void>::finished, this, [this, project, watcher]() {
-            d->m_projectToIndexerCanceled.remove(project);
-            watcher->deleteLater();
-        });
-        watcher->setFuture(future);
-    }
+    auto watcher = new QFutureWatcher<void>(this);
+    connect(watcher, &QFutureWatcher<void>::canceled, this, [this, project, watcher]() {
+        if (d->m_projectToIndexerCanceled.contains(project)) // Project not yet removed
+            d->m_projectToIndexerCanceled.insert(project, true);
+        watcher->deleteLater();
+    });
+    connect(watcher, &QFutureWatcher<void>::finished, this, [this, project, watcher]() {
+        d->m_projectToIndexerCanceled.remove(project);
+        watcher->deleteLater();
+    });
+    watcher->setFuture(future);
 }
 
 void CppModelManager::updateCppEditorDocuments(bool projectsUpdated) const
@@ -1018,8 +1118,7 @@ void CppModelManager::updateCppEditorDocuments(bool projectsUpdated) const
     }
 }
 
-QFuture<void> CppModelManager::updateProjectInfo(QFutureInterface<void> &futureInterface,
-                                                 const ProjectInfo &newProjectInfo)
+QFuture<void> CppModelManager::updateProjectInfo(const ProjectInfo &newProjectInfo)
 {
     if (!newProjectInfo.isValid())
         return QFuture<void>();
@@ -1111,12 +1210,12 @@ QFuture<void> CppModelManager::updateProjectInfo(QFutureInterface<void> &futureI
     updateCppEditorDocuments(/*projectsUpdated = */ true);
 
     // Trigger reindexing
-    const QFuture<void> indexingFuture = updateSourceFiles(futureInterface, filesToReindex,
+    const QFuture<void> indexingFuture = updateSourceFiles(filesToReindex,
                                                            ForcedProgressNotification);
     if (!filesToReindex.isEmpty()) {
         d->m_projectToIndexerCanceled.insert(project, false);
     }
-    watchForCanceledProjectIndexer({futureInterface.future(), indexingFuture}, project);
+    watchForCanceledProjectIndexer(indexingFuture, project);
     return indexingFuture;
 }
 
@@ -1440,6 +1539,11 @@ void CppModelManager::activateClangCodeModel(
 CppCompletionAssistProvider *CppModelManager::completionAssistProvider() const
 {
     return d->m_activeModelManagerSupport->completionAssistProvider();
+}
+
+CppCompletionAssistProvider *CppModelManager::functionHintAssistProvider() const
+{
+    return d->m_activeModelManagerSupport->functionHintAssistProvider();
 }
 
 TextEditor::BaseHoverHandler *CppModelManager::createHoverHandler() const

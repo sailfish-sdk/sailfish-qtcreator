@@ -49,7 +49,6 @@ AnnotationEditorDialog::AnnotationEditorDialog(QWidget *parent, const QString &t
     ui->setupUi(this);
 
     setWindowFlag(Qt::Tool, true);
-    setWindowTitle(titleString);
     setModal(true);
 
     connect(this, &QDialog::accepted, this, &AnnotationEditorDialog::acceptedClicked);
@@ -99,6 +98,7 @@ AnnotationEditorDialog::AnnotationEditorDialog(QWidget *parent, const QString &t
     ui->targetIdEdit->setText(targetId);
 
     fillFields();
+    setWindowTitle(annotationEditorTitle);
 }
 
 AnnotationEditorDialog::~AnnotationEditorDialog()
@@ -149,7 +149,7 @@ void AnnotationEditorDialog::acceptedClicked()
 
     m_annotation = annotation;
 
-    emit AnnotationEditorDialog::accepted();
+    emit AnnotationEditorDialog::acceptedDialog();
 }
 
 void AnnotationEditorDialog::commentTitleChanged(const QString &text, QWidget *tab)

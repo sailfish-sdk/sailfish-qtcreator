@@ -34,7 +34,6 @@
 
 namespace Beautifier {
 namespace Internal {
-namespace ClangFormat {
 
 class ClangFormatOptionsPageWidget : public Core::IOptionsPageWidget
 {
@@ -71,7 +70,7 @@ ClangFormatOptionsPageWidget::ClangFormatOptionsPageWidget(ClangFormatSettings *
     });
     ui.configurations->setSettings(m_settings);
 
-    ui.command->setFileName(m_settings->command());
+    ui.command->setFilePath(m_settings->command());
     ui.mime->setText(m_settings->supportedMimeTypesAsString());
     const int predefinedStyleIndex = ui.predefinedStyle->findText(m_settings->predefinedStyle());
     if (predefinedStyleIndex != -1)
@@ -90,7 +89,7 @@ ClangFormatOptionsPageWidget::ClangFormatOptionsPageWidget(ClangFormatSettings *
 
 void ClangFormatOptionsPageWidget::apply()
 {
-    m_settings->setCommand(ui.command->path());
+    m_settings->setCommand(ui.command->filePath().toString());
     m_settings->setSupportedMimeTypes(ui.mime->text());
     m_settings->setUsePredefinedStyle(ui.usePredefinedStyle->isChecked());
     m_settings->setPredefinedStyle(ui.predefinedStyle->currentText());
@@ -104,12 +103,11 @@ void ClangFormatOptionsPageWidget::apply()
 
 ClangFormatOptionsPage::ClangFormatOptionsPage(ClangFormatSettings *settings)
 {
-    setId(Constants::ClangFormat::OPTION_ID);
+    setId("ClangFormat");
     setDisplayName(ClangFormatOptionsPageWidget::tr("Clang Format"));
     setCategory(Constants::OPTION_CATEGORY);
     setWidgetCreator([settings] { return new ClangFormatOptionsPageWidget(settings); });
 }
 
-} // namespace ClangFormat
 } // namespace Internal
 } // namespace Beautifier

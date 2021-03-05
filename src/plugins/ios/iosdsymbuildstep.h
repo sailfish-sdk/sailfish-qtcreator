@@ -31,20 +31,15 @@
 
 namespace Ios {
 namespace Internal {
-namespace Ui { class IosPresetBuildStep; }
-
-class IosDsymBuildStepConfigWidget;
 
 class IosDsymBuildStep : public ProjectExplorer::AbstractProcessStep
 {
     Q_OBJECT
 
-    friend class IosDsymBuildStepConfigWidget;
-
 public:
-    IosDsymBuildStep(ProjectExplorer::BuildStepList *parent, Core::Id id);
+    IosDsymBuildStep(ProjectExplorer::BuildStepList *parent, Utils::Id id);
 
-    ProjectExplorer::BuildStepConfigWidget *createConfigWidget() override;
+    QWidget *createConfigWidget() override;
     void setArguments(const QStringList &args);
     QStringList arguments() const;
     QStringList defaultArguments() const;
@@ -54,8 +49,7 @@ public:
     bool isDefault() const;
 
 private:
-    bool init() override;
-    void doRun() override;
+    void setupOutputFormatter(Utils::OutputFormatter *formatter) override;
     QVariantMap toMap() const override;
     bool fromMap(const QVariantMap &map) override;
 
@@ -65,24 +59,6 @@ private:
     QStringList m_arguments;
     Utils::FilePath m_command;
     bool m_clean;
-};
-
-class IosDsymBuildStepConfigWidget : public ProjectExplorer::BuildStepConfigWidget
-{
-    Q_OBJECT
-
-public:
-    IosDsymBuildStepConfigWidget(IosDsymBuildStep *buildStep);
-    ~IosDsymBuildStepConfigWidget() override;
-
-private:
-    void commandChanged();
-    void argumentsChanged();
-    void resetDefaults();
-    void updateDetails();
-
-    Ui::IosPresetBuildStep *m_ui;
-    IosDsymBuildStep *m_buildStep;
 };
 
 class IosDsymBuildStepFactory : public ProjectExplorer::BuildStepFactory

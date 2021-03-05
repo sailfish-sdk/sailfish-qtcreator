@@ -84,7 +84,9 @@ QmlPreviewPlugin::QmlPreviewPlugin()
     if (s_previewPlugin) {
         auto fpsAction = new FpsAction;
         designerActionManager.addDesignerAction(fpsAction);
-        s_previewPlugin->setProperty("fpsHandler", QVariant::fromValue<QmlPreview::QmlPreviewFpsHandler>(FpsLabelAction::fpsHandler));
+        bool hasFpsHandler =
+            s_previewPlugin->setProperty("fpsHandler", QVariant::fromValue<QmlPreview::QmlPreviewFpsHandler>(FpsLabelAction::fpsHandler));
+        QTC_CHECK(hasFpsHandler);
         auto switchLanguageAction = new SwitchLanguageAction;
         designerActionManager.addDesignerAction(switchLanguageAction);
     }
@@ -132,7 +134,9 @@ void QmlPreviewPlugin::setQmlFile()
     if (s_previewPlugin) {
         const Utils::FilePath qmlFileName =
                 QmlDesignerPlugin::instance()->currentDesignDocument()->fileName();
-        s_previewPlugin->setProperty("previewedFile", qmlFileName.toString());
+        bool hasPreviewedFile =
+            s_previewPlugin->setProperty("previewedFile", qmlFileName.toString());
+        QTC_CHECK(hasPreviewedFile);
     }
 }
 
@@ -146,25 +150,29 @@ float QmlPreviewPlugin::zoomFactor()
 
 void QmlPreviewPlugin::setZoomFactor(float zoomFactor)
 {
-    if (s_previewPlugin)
-        s_previewPlugin->setProperty("zoomFactor", zoomFactor);
+    if (auto s_previewPlugin = getPreviewPlugin()) {
+        bool hasZoomFactor = s_previewPlugin->setProperty("zoomFactor", zoomFactor);
+        QTC_CHECK(hasZoomFactor);
+    }
 }
 
 void QmlPreviewPlugin::setLanguageLocale(const QString &locale)
 {
-    if (s_previewPlugin)
-        s_previewPlugin->setProperty("locale", locale);
+    if (auto s_previewPlugin = getPreviewPlugin()) {
+        bool hasLocaleIsoCode = s_previewPlugin->setProperty("localeIsoCode", locale);
+        QTC_CHECK(hasLocaleIsoCode);
+    }
 }
 
 QObject *QmlPreviewPlugin::getPreviewPlugin()
 {
-    auto pluginIt = std::find_if(ExtensionSystem::PluginManager::plugins().begin(),
-                                 ExtensionSystem::PluginManager::plugins().end(),
+    const QVector<ExtensionSystem::PluginSpec *> &specs = ExtensionSystem::PluginManager::plugins();
+    const auto pluginIt = std::find_if(specs.cbegin(), specs.cend(),
                                  [](const ExtensionSystem::PluginSpec *p) {
         return p->name() == "QmlPreview";
     });
 
-    if (pluginIt != ExtensionSystem::PluginManager::plugins().constEnd())
+    if (pluginIt != specs.cend())
         return (*pluginIt)->plugin();
 
     return nullptr;

@@ -30,7 +30,8 @@
 #include "remotelinux_export.h"
 
 #include <projectexplorer/deployablefile.h>
-#include <projectexplorer/projectconfigurationaspects.h>
+
+#include <utils/aspects.h>
 
 QT_BEGIN_NAMESPACE
 class QFile;
@@ -43,9 +44,9 @@ class REMOTELINUX_EXPORT TarPackageCreationStep : public AbstractPackagingStep
 {
     Q_OBJECT
 public:
-    TarPackageCreationStep(ProjectExplorer::BuildStepList *bsl, Core::Id id);
+    TarPackageCreationStep(ProjectExplorer::BuildStepList *bsl, Utils::Id id);
 
-    static Core::Id stepId();
+    static Utils::Id stepId();
     static QString displayName();
 
     void setIgnoreMissingFiles(bool ignoreMissingFiles);
@@ -77,8 +78,8 @@ private:
 
     DeploymentTimeInfo m_deployTimes;
 
-    ProjectExplorer::BaseBoolAspect *m_incrementalDeploymentAspect = nullptr;
-    ProjectExplorer::BaseBoolAspect *m_ignoreMissingFilesAspect = nullptr;
+    Utils::BoolAspect *m_incrementalDeploymentAspect = nullptr;
+    Utils::BoolAspect *m_ignoreMissingFilesAspect = nullptr;
     bool m_packagingNeeded = false;
     QList<ProjectExplorer::DeployableFile> m_files;
 };

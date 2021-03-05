@@ -3,13 +3,16 @@
     "supportedProjectTypes": [ ],
     "id": "C.Header",
     "category": "O.C++",
-    "trDescription": "Creates a C++ header file that you can add to a C++ project.",
-    "trDisplayName": "C++ Header File",
-    "trDisplayCategory": "C++",
+    "trDescription": "Creates a header file that you can add to a C/C++ project.",
+    "trDisplayName": "C/C++ Header File",
+    "trDisplayCategory": "C/C++",
     "iconText": "h",
     "enabled": "%{JS: value('Plugins').indexOf('CppEditor') >= 0}",
 
-    "options": { "key": "FileName", "value": "%{JS: Util.fileName(value('TargetPath'), Util.preferredSuffix('text/x-c++hdr'))}" },
+    "options": [
+        { "key": "DefaultSuffix", "value": "%{JS: Util.preferredSuffix('text/x-c++hdr')}" },
+        { "key": "FileName", "value": "%{JS: Util.fileName(value('TargetPath'), value('DefaultSuffix'))}" }
+    ],
 
     "pages" :
     [

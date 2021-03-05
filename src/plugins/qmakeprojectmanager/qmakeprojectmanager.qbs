@@ -46,7 +46,6 @@ Project {
                 "qmakenodes.cpp", "qmakenodes.h",
                 "qmakenodetreebuilder.cpp", "qmakenodetreebuilder.h",
                 "qmakeproject.cpp", "qmakeproject.h",
-                "qmakeprojectmanager.cpp", "qmakeprojectmanager.h",
                 "qmakeprojectmanager.qrc",
                 "qmakeprojectmanager_global.h",
                 "qmakeprojectmanagerconstants.h",
@@ -85,12 +84,7 @@ Project {
         Group {
             name: "Wizard Images"
             prefix: "wizards/images/"
-            files: [
-                "console.png",
-                "gui.png",
-                "lib.png",
-                "qtquickapp.png",
-            ]
+            files: ["*.png"]
         }
 
         Export {

@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of Qt Creator.
@@ -39,10 +39,12 @@ const char KIT_MCUTARGET_SDKVERSION_KEY[] = "McuSupport.McuTargetSdkVersion";
 const char KIT_MCUTARGET_KITVERSION_KEY[] = "McuSupport.McuTargetKitVersion";
 const char KIT_MCUTARGET_COLORDEPTH_KEY[] = "McuSupport.McuTargetColorDepth";
 const char KIT_MCUTARGET_OS_KEY[] = "McuSupport.McuTargetOs";
+const char KIT_MCUTARGET_TOOCHAIN_KEY[] = "McuSupport.McuTargetToolchain";
 
 const char SETTINGS_GROUP[] = "McuSupport";
 const char SETTINGS_KEY_PACKAGE_PREFIX[] = "Package_";
 const char SETTINGS_KEY_PACKAGE_QT_FOR_MCUS_SDK[] = "QtForMCUsSdk"; // Key known by SDK installer
+const char SETTINGS_KEY_AUTOMATIC_KIT_CREATION[] = "AutomaticKitCreation";
 
 } // namespace McuSupport
 } // namespace Constants

@@ -33,7 +33,6 @@
 #include "qmakesettings.h"
 #include "qmakestep.h"
 
-#include <coreplugin/variablechooser.h>
 #include <projectexplorer/target.h>
 #include <projectexplorer/toolchain.h>
 #include <projectexplorer/buildsteplist.h>
@@ -43,7 +42,9 @@
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/kitinformation.h>
 #include <projectexplorer/xcodebuildparser.h>
+
 #include <utils/qtcprocess.h>
+#include <utils/variablechooser.h>
 
 #include <QDir>
 #include <QFileInfo>
@@ -52,11 +53,11 @@ using namespace ProjectExplorer;
 using namespace QmakeProjectManager;
 using namespace QmakeProjectManager::Internal;
 
-QmakeMakeStep::QmakeMakeStep(BuildStepList *bsl, Core::Id id)
+QmakeMakeStep::QmakeMakeStep(BuildStepList *bsl, Utils::Id id)
     : MakeStep(bsl, id)
 {
     if (bsl->id() == ProjectExplorer::Constants::BUILDSTEPS_CLEAN) {
-        setClean(true);
+        setIgnoreReturnValue(true);
         setUserArguments("clean");
     }
     supportDisablingForSubdirs();
@@ -64,9 +65,11 @@ QmakeMakeStep::QmakeMakeStep(BuildStepList *bsl, Core::Id id)
 
 bool QmakeMakeStep::init()
 {
+    // Note: This skips the Makestep::init() level.
+    if (!AbstractProcessStep::init())
+        return false;
+
     const auto bc = static_cast<QmakeBuildConfiguration *>(buildConfiguration());
-    if (!bc)
-        emit addTask(Task::buildConfigurationMissingTask());
 
     const Utils::CommandLine unmodifiedMake = effectiveMakeCommand(Execution);
     const Utils::FilePath makeExecutable = unmodifiedMake.executable();
@@ -86,15 +89,10 @@ bool QmakeMakeStep::init()
 
     Utils::FilePath workingDirectory;
     if (bc->subNodeBuild())
-        workingDirectory = bc->subNodeBuild()->buildDir(bc);
+        workingDirectory = bc->qmakeBuildSystem()->buildDir(bc->subNodeBuild()->filePath());
     else
         workingDirectory = bc->buildDirectory();
     pp->setWorkingDirectory(workingDirectory);
-
-    // If we are cleaning, then make can fail with a error code, but that doesn't mean
-    // we should stop the clean queue
-    // That is mostly so that rebuild works on a already clean project
-    setIgnoreReturnValue(isClean());
 
     Utils::CommandLine makeCmd(makeExecutable);
 
@@ -107,7 +105,7 @@ bool QmakeMakeStep::init()
         // for file builds, since the rules for that are
         // only in those files.
         if (subProFile->isDebugAndRelease() && bc->fileNodeBuild()) {
-            if (bc->buildType() == QmakeBuildConfiguration::Debug)
+            if (buildType() == QmakeBuildConfiguration::Debug)
                 makefile += ".Debug";
             else
                 makefile += ".Release";
@@ -132,7 +130,7 @@ bool QmakeMakeStep::init()
     if (bc->fileNodeBuild() && subProFile) {
         QString objectsDir = subProFile->objectsDirectory();
         if (objectsDir.isEmpty()) {
-            objectsDir = subProFile->buildDir(bc).toString();
+            objectsDir = bc->qmakeBuildSystem()->buildDir(subProFile->filePath()).toString();
             if (subProFile->isDebugAndRelease()) {
                 if (bc->buildType() == QmakeBuildConfiguration::Debug)
                     objectsDir += "/debug";
@@ -162,23 +160,10 @@ bool QmakeMakeStep::init()
         makeCmd.addArg(objectFile);
     }
 
-    pp->setEnvironment(environment(bc));
+    pp->setEnvironment(makeEnvironment());
     pp->setCommandLine(makeCmd);
-    pp->resolveAll();
 
-    setOutputParser(new ProjectExplorer::GnuMakeParser());
-    ToolChain *tc = ToolChainKitAspect::toolChain(target()->kit(),
-                                                       ProjectExplorer::Constants::CXX_LANGUAGE_ID);
-    if (tc && tc->targetAbi().os() == Abi::DarwinOS)
-        appendOutputParser(new XcodebuildParser);
-    IOutputParser *parser = target()->kit()->createOutputParser();
-    if (parser)
-        appendOutputParser(parser);
-    outputParser()->setWorkingDirectory(pp->effectiveWorkingDirectory());
-    appendOutputParser(new QMakeParser); // make may cause qmake to be run, add last to make sure
-                                         // it has a low priority.
-
-    auto rootNode = dynamic_cast<QmakeProFileNode *>(bc->project()->rootProjectNode());
+    auto rootNode = dynamic_cast<QmakeProFileNode *>(project()->rootProjectNode());
     QTC_ASSERT(rootNode, return false);
     m_scriptTarget = rootNode->projectType() == ProjectType::ScriptTemplate;
     m_unalignedBuildDir = !bc->isBuildDirAtSafeLocation();
@@ -191,7 +176,31 @@ bool QmakeMakeStep::init()
             qmakeStep->setForced(true);
     }
 
-    return AbstractProcessStep::init();
+    return true;
+}
+
+void QmakeMakeStep::setupOutputFormatter(Utils::OutputFormatter *formatter)
+{
+    formatter->addLineParser(new ProjectExplorer::GnuMakeParser());
+    ToolChain *tc = ToolChainKitAspect::cxxToolChain(kit());
+    OutputTaskParser *xcodeBuildParser = nullptr;
+    if (tc && tc->targetAbi().os() == Abi::DarwinOS) {
+        xcodeBuildParser = new XcodebuildParser;
+        formatter->addLineParser(xcodeBuildParser);
+    }
+    QList<Utils::OutputLineParser *> additionalParsers = kit()->createOutputParsers();
+
+    // make may cause qmake to be run, add last to make sure it has a low priority.
+    additionalParsers << new QMakeParser;
+
+    if (xcodeBuildParser) {
+        for (Utils::OutputLineParser * const p : qAsConst(additionalParsers))
+            p->setRedirectionDetector(xcodeBuildParser);
+    }
+    formatter->addLineParsers(additionalParsers);
+    formatter->addSearchDir(processParameters()->effectiveWorkingDirectory());
+
+    AbstractProcessStep::setupOutputFormatter(formatter);
 }
 
 void QmakeMakeStep::doRun()

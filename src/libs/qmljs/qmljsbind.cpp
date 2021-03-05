@@ -29,6 +29,9 @@
 #include "qmljsdocument.h"
 #include "qmljsmodelmanagerinterface.h"
 
+#include <QtCore/QVersionNumber>
+#include <QtCore/QLibraryInfo>
+
 #include <utils/algorithm.h>
 
 using namespace LanguageUtils;
@@ -203,7 +206,12 @@ bool Bind::visit(UiImport *ast)
         version = ComponentVersion(ast->version->majorVersion, ast->version->minorVersion);
 
     if (ast->importUri) {
-        if (!version.isValid()) {
+        QVersionNumber qtVersion = QLibraryInfo::version();
+        if (ModelManagerInterface *model = ModelManagerInterface::instance()) {
+            ModelManagerInterface::ProjectInfo pInfo = model->projectInfoForPath(_doc->fileName());
+            qtVersion = QVersionNumber::fromString(pInfo.qtVersionString);
+        }
+        if (!version.isValid() && qtVersion.majorVersion() < 6) {
             _diagnosticMessages->append(
                         errorMessage(ast, tr("package import requires a version number")));
         }
@@ -220,7 +228,12 @@ bool Bind::visit(UiImport *ast)
                     _doc->setLanguage(Dialect::QmlQtQuick2);
             }
         }
-        _imports += import;
+
+        // Make sure QtQuick import is in the list before imports that might depend on it
+        if (import.name() == QLatin1String("QtQuick"))
+            _imports.prepend(import);
+        else
+            _imports += import;
     } else if (!ast->fileName.isEmpty()) {
         _imports += ImportInfo::pathImport(_doc->path(), ast->fileName.toString(),
                                            version, ast->importId.toString(), ast);

@@ -34,19 +34,19 @@
 #include "designercontext.h"
 #include <widgethost.h>
 
-#include <coreplugin/editortoolbar.h>
-#include <coreplugin/designmode.h>
-#include <coreplugin/coreconstants.h>
-#include <coreplugin/dialogs/ioptionspage.h>
-#include <coreplugin/icore.h>
-#include <coreplugin/infobar.h>
-#include <coreplugin/helpmanager.h>
-#include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/actionmanager/actioncontainer.h>
+#include <coreplugin/actionmanager/actionmanager.h>
+#include <coreplugin/coreconstants.h>
+#include <coreplugin/designmode.h>
+#include <coreplugin/dialogs/ioptionspage.h>
 #include <coreplugin/editormanager/editormanager.h>
-#include <coreplugin/modemanager.h>
+#include <coreplugin/editortoolbar.h>
+#include <coreplugin/helpmanager.h>
+#include <coreplugin/icore.h>
 #include <coreplugin/minisplitter.h>
+#include <coreplugin/modemanager.h>
 #include <coreplugin/outputpane.h>
+#include <utils/infobar.h>
 #include <utils/qtcassert.h>
 
 #include <QDesignerFormEditorPluginInterface>
@@ -101,6 +101,7 @@ static inline QIcon designerIcon(const QString &iconName)
 
 using namespace Core;
 using namespace Designer::Constants;
+using namespace Utils;
 
 namespace Designer {
 namespace Internal {
@@ -211,7 +212,6 @@ public:
     QMenu *m_previewInStyleMenu = nullptr;
     QAction *m_actionAboutPlugins = nullptr;
 
-    DesignerContext *m_context = nullptr;
     Context m_contexts;
 
     QList<Id> m_toolActionIds;
@@ -275,8 +275,6 @@ FormEditorData::FormEditorData() :
 
 FormEditorData::~FormEditorData()
 {
-    if (m_context)
-        ICore::removeContextObject(m_context);
     if (m_initStage == FormEditorW::FullyInitialized) {
         QSettings *s = ICore::settings();
         s->beginGroup(settingsGroupC);
@@ -313,7 +311,7 @@ void FormEditorData::addDockViewAction(ActionContainer *viewMenu,
 void FormEditorData::setupViewActions()
 {
     // Populate "View" menu of form editor menu
-    ActionContainer *viewMenu = ActionManager::actionContainer(Core::Constants::M_WINDOW_VIEWS);
+    ActionContainer *viewMenu = ActionManager::actionContainer(Core::Constants::M_VIEW_VIEWS);
     QTC_ASSERT(viewMenu, return);
 
     addDockViewAction(viewMenu, WidgetBoxSubWindow, m_contexts,
@@ -423,8 +421,7 @@ void FormEditorData::fullInit()
 
     Context designerContexts = m_contexts;
     designerContexts.add(Core::Constants::C_EDITORMANAGER);
-    m_context = new DesignerContext(designerContexts, m_modeWidget, m_instance);
-    ICore::addContextObject(m_context);
+    ICore::addContextObject(new DesignerContext(designerContexts, m_modeWidget, m_instance));
 
     DesignMode::registerDesignWidget(m_modeWidget, QStringList(FORM_MIMETYPE), m_contexts);
 
@@ -456,7 +453,7 @@ void FormEditorData::initDesignerSubWindows()
     m_designerSubWindows[PropertyEditorSubWindow] = pe;
 
     QWidget *se = QDesignerComponents::createSignalSlotEditor(m_formeditor, nullptr);
-    se->setWindowTitle(tr("Signals && Slots Editor"));
+    se->setWindowTitle(tr("Signals and Slots Editor"));
     se->setObjectName("SignalsAndSlotsEditor");
     m_designerSubWindows[SignalSlotEditorSubWindow] = se;
 
@@ -710,7 +707,7 @@ void FormEditorData::saveSettings(QSettings *s)
 
 void FormEditorData::critical(const QString &errorMessage)
 {
-    QMessageBox::critical(ICore::mainWindow(), tr("Designer"),  errorMessage);
+    QMessageBox::critical(ICore::dialogParent(), tr("Designer"), errorMessage);
 }
 
 // Apply the command shortcut to the action and connects to the command's keySequenceChanged signal
@@ -769,6 +766,7 @@ IEditor *FormEditorData::createEditor()
     m_fwm->closeAllPreviews();
     QDesignerFormWindowInterface *form = m_fwm->createFormWindow(nullptr);
     QTC_ASSERT(form, return nullptr);
+    form->setPalette(Theme::initialPalette());
     QObject::connect(form, &QDesignerFormWindowInterface::toolChanged, [this] (int i) { toolChanged(i); });
 
     auto widgetHost = new SharedTools::WidgetHost( /* parent */ nullptr, form);
@@ -778,8 +776,8 @@ IEditor *FormEditorData::createEditor()
     m_toolBar->addEditor(formWindowEditor);
 
     if (formWindowEditor) {
-        InfoBarEntry info(Id(Constants::INFO_READ_ONLY),
-                                tr("This file can only be edited in <b>Design</b> mode."));
+        Utils::InfoBarEntry info(Id(Constants::INFO_READ_ONLY),
+                                 tr("This file can only be edited in <b>Design</b> mode."));
         info.setCustomButtonInfo(tr("Switch Mode"), []() { ModeManager::activateMode(Core::Constants::MODE_DESIGN); });
         formWindowEditor->document()->infoBar()->addInfo(info);
     }
@@ -853,7 +851,7 @@ void FormEditorData::print()
 
     QPrinter *printer = ICore::printer();
     const bool oldFullPage =  printer->fullPage();
-    const QPrinter::Orientation oldOrientation =  printer->orientation ();
+    const QPageLayout::Orientation oldOrientation = printer->pageLayout().orientation();
     printer->setFullPage(false);
     do {
         // Grab the image to be able to a suggest suitable orientation
@@ -865,7 +863,8 @@ void FormEditorData::print()
         }
 
         const QSizeF pixmapSize = pixmap.size();
-        printer->setOrientation( pixmapSize.width() > pixmapSize.height() ?  QPrinter::Landscape :  QPrinter::Portrait);
+        printer->setPageOrientation(pixmapSize.width() > pixmapSize.height() ? QPageLayout::Landscape
+                                                                             : QPageLayout::Portrait);
 
         // Printer parameters
         QPrintDialog dialog(printer, fw);
@@ -897,7 +896,7 @@ void FormEditorData::print()
 
     } while (false);
     printer->setFullPage(oldFullPage);
-    printer->setOrientation(oldOrientation);
+    printer->setPageOrientation(oldOrientation);
 }
 
 } // namespace Internal

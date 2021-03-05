@@ -5,19 +5,58 @@ if (APPLE)
   string(APPEND DESTDIR "/qmldesigner")
 endif()
 
-add_qtc_executable(qml2puppet
+add_qtc_library(qml2puppet_static
+  STATIC
   DEPENDS
-    Qt5::CorePrivate Qt5::Widgets Qt5::QmlPrivate
-    Qt5::QuickPrivate Qt5::Network Qt5::GuiPrivate
+  Qt5::CorePrivate Qt5::Widgets
+  PUBLIC_INCLUDES "${SRCDIR}/interfaces"
+  SOURCES_PREFIX "${SRCDIR}/interfaces"
   SOURCES
-    "${SRCDIR}/qml2puppet/qml2puppetmain.cpp"
-    "${SRCDIR}/qmlpuppet.qrc"
-  DESTINATION ${DESTDIR}
+    commondefines.h
+    nodeinstanceclientinterface.h
+    nodeinstanceglobal.h
+    nodeinstanceserverinterface.cpp nodeinstanceserverinterface.h
 )
 
-extend_qtc_executable(qml2puppet
+extend_qtc_library(qml2puppet_static
+  PUBLIC_INCLUDES "${SRCDIR}/types"
+  SOURCES "${SRCDIR}/types/enumeration.h"
+)
+
+extend_qtc_library(qml2puppet_static
+  PUBLIC_INCLUDES "${SRCDIR}/container"
+  SOURCES_PREFIX "${SRCDIR}/container"
+  SOURCES
+    addimportcontainer.cpp addimportcontainer.h
+    idcontainer.cpp idcontainer.h
+    imagecontainer.cpp imagecontainer.h
+    informationcontainer.cpp informationcontainer.h
+    instancecontainer.cpp instancecontainer.h
+    mockuptypecontainer.cpp mockuptypecontainer.h
+    propertyabstractcontainer.cpp propertyabstractcontainer.h
+    propertybindingcontainer.cpp propertybindingcontainer.h
+    propertyvaluecontainer.cpp propertyvaluecontainer.h
+    reparentcontainer.cpp reparentcontainer.h
+    sharedmemory.h
+)
+
+extend_qtc_library(qml2puppet_static
+  CONDITION UNIX
+  SOURCES_PREFIX "${SRCDIR}/container"
+  SOURCES
+    sharedmemory_unix.cpp
+)
+
+extend_qtc_library(qml2puppet_static
+  CONDITION NOT UNIX
+  SOURCES_PREFIX "${SRCDIR}/container"
+  SOURCES
+    sharedmemory_qt.cpp
+)
+
+extend_qtc_library(qml2puppet_static
+  PUBLIC_INCLUDES "${SRCDIR}/commands"
   SOURCES_PREFIX "${SRCDIR}/commands"
-  INCLUDES "${PROJECT_SOURCE_DIR}/src/libs"
   SOURCES
     changeauxiliarycommand.cpp changeauxiliarycommand.h
     changebindingscommand.cpp changebindingscommand.h
@@ -32,6 +71,8 @@ extend_qtc_executable(qml2puppet
     componentcompletedcommand.cpp componentcompletedcommand.h
     createinstancescommand.cpp createinstancescommand.h
     createscenecommand.cpp createscenecommand.h
+    changepreviewimagesizecommand.cpp changepreviewimagesizecommand.h
+    changelanguagecommand.cpp changelanguagecommand.h
     debugoutputcommand.cpp debugoutputcommand.h
     endpuppetcommand.cpp endpuppetcommand.h
     informationchangedcommand.cpp informationchangedcommand.h
@@ -49,40 +90,26 @@ extend_qtc_executable(qml2puppet
     puppettocreatorcommand.cpp puppettocreatorcommand.h
     inputeventcommand.cpp inputeventcommand.h
     view3dactioncommand.cpp view3dactioncommand.h
+    requestmodelnodepreviewimagecommand.cpp requestmodelnodepreviewimagecommand.h
     valueschangedcommand.cpp
+    captureddatacommand.h
+    scenecreatedcommand.h
 )
 
-extend_qtc_executable(qml2puppet
-  SOURCES_PREFIX "${SRCDIR}/container"
+add_qtc_executable(qml2puppet
+  DEPENDS
+    Qt5::CorePrivate Qt5::Widgets Qt5::QmlPrivate
+    Qt5::QuickPrivate Qt5::Network Qt5::GuiPrivate
+    qml2puppet_static
   SOURCES
-    addimportcontainer.cpp addimportcontainer.h
-    idcontainer.cpp idcontainer.h
-    imagecontainer.cpp imagecontainer.h
-    informationcontainer.cpp informationcontainer.h
-    instancecontainer.cpp instancecontainer.h
-    mockuptypecontainer.cpp mockuptypecontainer.h
-    propertyabstractcontainer.cpp propertyabstractcontainer.h
-    propertybindingcontainer.cpp propertybindingcontainer.h
-    propertyvaluecontainer.cpp propertyvaluecontainer.h
-    reparentcontainer.cpp reparentcontainer.h
-    sharedmemory.h
+    "${SRCDIR}/qml2puppet/qml2puppetmain.cpp"
+    "${SRCDIR}/qmlpuppet.qrc"
+  DESTINATION ${DESTDIR}
 )
 
-extend_qtc_executable(qml2puppet
-  CONDITION UNIX
-  SOURCES_PREFIX "${SRCDIR}/container"
-  SOURCES
-    sharedmemory_unix.cpp
-)
 extend_qtc_executable(qml2puppet
   CONDITION UNIX AND (NOT APPLE)
   DEPENDS rt
-)
-extend_qtc_executable(qml2puppet
-  CONDITION NOT UNIX
-  SOURCES_PREFIX "${SRCDIR}/container"
-  SOURCES
-    sharedmemory_qt.cpp
 )
 
 extend_qtc_executable(qml2puppet
@@ -94,21 +121,10 @@ extend_qtc_executable(qml2puppet
 find_package(Qt5 5.15.0 COMPONENTS Quick3D QUIET)
 extend_qtc_executable(qml2puppet
   CONDITION TARGET Qt5::Quick3D
-  FEATURE_INFO "Qt Quick 3D"
+  FEATURE_INFO "Qt Quick 3D support"
   DEPENDS Qt5::Quick3D Qt5::Quick3DPrivate
   DEFINES QUICK3D_MODULE
-)
 
-extend_qtc_executable(qml2puppet
-  SOURCES_PREFIX "${SRCDIR}/interfaces"
-  SOURCES
-    commondefines.h
-    nodeinstanceclientinterface.h
-    nodeinstanceglobal.h
-    nodeinstanceserverinterface.cpp nodeinstanceserverinterface.h
-)
-
-extend_qtc_executable(qml2puppet
   SOURCES_PREFIX "${SRCDIR}/qml2puppet/editor3d"
   SOURCES
     generalhelper.cpp generalhelper.h
@@ -119,6 +135,14 @@ extend_qtc_executable(qml2puppet
     selectionboxgeometry.cpp selectionboxgeometry.h
     linegeometry.cpp linegeometry.h
     icongizmoimageprovider.cpp icongizmoimageprovider.h
+)
+
+extend_qtc_executable(qml2puppet
+  CONDITION Qt5_VERSION VERSION_GREATER_EQUAL 6.0.0
+
+  SOURCES_PREFIX "${SRCDIR}/qml2puppet/editor3d/qt5compat"
+  SOURCES
+    qquick3darealight.cpp qquick3darealight_p.h
 )
 
 extend_qtc_executable(qml2puppet
@@ -152,8 +176,13 @@ extend_qtc_executable(qml2puppet
     qt5rendernodeinstanceserver.cpp qt5rendernodeinstanceserver.h
     qt5testnodeinstanceserver.cpp qt5testnodeinstanceserver.h
     quick3dnodeinstance.cpp quick3dnodeinstance.h
+    quick3dtexturenodeinstance.cpp quick3dtexturenodeinstance.h
     quickitemnodeinstance.cpp quickitemnodeinstance.h
     servernodeinstance.cpp servernodeinstance.h
+    qt5capturepreviewnodeinstanceserver.cpp qt5capturepreviewnodeinstanceserver.h
+    nodeinstanceserverdispatcher.cpp nodeinstanceserverdispatcher.h
+    capturenodeinstanceserverdispatcher.cpp capturenodeinstanceserverdispatcher.h
+    qt5captureimagenodeinstanceserver.cpp qt5captureimagenodeinstanceserver.h
 )
 
 extend_qtc_executable(qml2puppet
@@ -167,4 +196,14 @@ extend_qtc_executable(qml2puppet
   SOURCES
     designersupportdelegate.h
     qmlprivategate_56.cpp qmlprivategate.h
+)
+
+if(DEFINED MULTILANGUAGE_SUPPORT_SUBDIRECTORY)
+  add_subdirectory(${MULTILANGUAGE_SUPPORT_SUBDIRECTORY} multilanguagesupport_static_build)
+endif()
+
+extend_qtc_executable(qml2puppet
+    CONDITION TARGET QtCreator::multilanguage-support
+    DEPENDS QtCreator::multilanguage-support
+    FEATURE_INFO "multilanguage-support in qml2puppet"
 )

@@ -53,19 +53,6 @@ namespace Internal {
 
 Q_LOGGING_CATEGORY(iosLog, "qtc.ios.common", QtWarningMsg)
 
-class IosDeployStepFactory : public BuildStepFactory
-{
-public:
-    IosDeployStepFactory()
-    {
-        registerStep<IosDeployStep>(IosDeployStep::stepId());
-        setDisplayName(IosDeployStep::tr("Deploy to iOS device or emulator"));
-        setSupportedStepList(ProjectExplorer::Constants::BUILDSTEPS_DEPLOY);
-        setSupportedDeviceTypes({Constants::IOS_DEVICE_TYPE, Constants::IOS_SIMULATOR_TYPE});
-        setRepeatable(false);
-    }
-};
-
 class IosDeployConfigurationFactory : public DeployConfigurationFactory
 {
 public:
@@ -76,7 +63,7 @@ public:
         addSupportedTargetDeviceType(Constants::IOS_DEVICE_TYPE);
         addSupportedTargetDeviceType(Constants::IOS_SIMULATOR_TYPE);
         setDefaultDisplayName(QCoreApplication::translate("Ios::Internal", "Deploy on iOS"));
-        addInitialStep(IosDeployStep::stepId());
+        addInitialStep(Constants::IOS_DEPLOY_STEP_ID);
     }
 };
 
@@ -98,17 +85,17 @@ public:
     RunWorkerFactory runWorkerFactory{
         RunWorkerFactory::make<IosRunSupport>(),
         {ProjectExplorer::Constants::NORMAL_RUN_MODE},
-        {runConfigurationFactory.id()}
+        {runConfigurationFactory.runConfigurationId()}
     };
     RunWorkerFactory debugWorkerFactory{
         RunWorkerFactory::make<IosDebugSupport>(),
         {ProjectExplorer::Constants::DEBUG_RUN_MODE},
-        {runConfigurationFactory.id()}
+        {runConfigurationFactory.runConfigurationId()}
     };
     RunWorkerFactory qmlProfilerWorkerFactory{
         RunWorkerFactory::make<IosQmlProfilerSupport>(),
         {ProjectExplorer::Constants::QML_PROFILER_RUN_MODE},
-        {runConfigurationFactory.id()}
+        {runConfigurationFactory.runConfigurationId()}
     };
 };
 

@@ -23,9 +23,8 @@
 **
 ****************************************************************************/
 
-import QtQuick 2.1
-import QtQuick.Controls 1.1
-import QtQuick.Controls.Styles 1.0
+import QtQuick 2.15
+import QtQuick.Controls 2.15
 import QtQuickDesignerTheme 1.0
 import HelperWidgets 2.0
 
@@ -70,11 +69,10 @@ Item {
             renderType: Text.NativeRendering
         }
 
-        ToolTipArea {
+        ImagePreviewTooltipArea {
             id: mouseRegion
-            anchors.fill: parent
-            tooltip: itemName
 
+            anchors.fill: parent
 
             onPressed: {
                 rootView.startDragAndDrop(mouseRegion, itemLibraryEntry)

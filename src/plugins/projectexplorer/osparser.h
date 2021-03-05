@@ -29,23 +29,19 @@
 
 #include <projectexplorer/task.h>
 
-#include <QRegExp>
-
 namespace ProjectExplorer {
 
-class PROJECTEXPLORER_EXPORT OsParser : public ProjectExplorer::IOutputParser
+class PROJECTEXPLORER_EXPORT OsParser : public ProjectExplorer::OutputTaskParser
 {
     Q_OBJECT
 
 public:
     OsParser();
 
-    void stdError(const QString &line) override;
-    void stdOutput(const QString &line) override;
-
-    bool hasFatalErrors() const override;
-
 private:
+    Result handleLine(const QString &line, Utils::OutputFormat type) override;
+    bool hasFatalErrors() const override { return m_hasFatalError; }
+
     bool m_hasFatalError = false;
 };
 

@@ -69,7 +69,8 @@ static CppTools::CppModelManager *cppModelManager()
 }
 
 ClangModelManagerSupport::ClangModelManagerSupport()
-    : m_completionAssistProvider(m_communicator)
+    : m_completionAssistProvider(m_communicator, CompletionType::Other)
+    , m_functionHintAssistProvider(m_communicator, CompletionType::FunctionHint)
     , m_followSymbol(new ClangFollowSymbol)
     , m_refactoringEngine(new RefactoringEngine)
 {
@@ -119,6 +120,11 @@ CppTools::CppCompletionAssistProvider *ClangModelManagerSupport::completionAssis
     return &m_completionAssistProvider;
 }
 
+CppTools::CppCompletionAssistProvider *ClangModelManagerSupport::functionHintAssistProvider()
+{
+    return &m_functionHintAssistProvider;
+}
+
 TextEditor::BaseHoverHandler *ClangModelManagerSupport::createHoverHandler()
 {
     return new Internal::ClangHoverHandler;
@@ -155,8 +161,10 @@ void ClangModelManagerSupport::onCurrentEditorChanged(Core::IEditor *editor)
         return;
 
     const ::Utils::FilePath filePath = editor->document()->filePath();
-    if (auto processor = ClangEditorDocumentProcessor::get(filePath.toString()))
+    if (auto processor = ClangEditorDocumentProcessor::get(filePath.toString())) {
+        processor->semanticRehighlight();
         processor->generateTaskHubIssues();
+    }
 }
 
 void ClangModelManagerSupport::connectTextDocumentToTranslationUnit(TextEditor::TextDocument *textDocument)
@@ -311,7 +319,7 @@ void ClangModelManagerSupport::onAbstractEditorSupportRemoved(const QString &fil
 
     if (!cppModelManager()->cppEditorDocument(filePath)) {
         const QString mappedPath = m_uiHeaderOnDiskManager.remove(filePath);
-        const QString projectPartId = Utils::projectPartIdForFile(filePath);
+        const QString projectPartId = projectPartIdForFile(filePath);
         m_communicator.unsavedFilesRemoved({{mappedPath, projectPartId}});
     }
 }
@@ -338,7 +346,7 @@ static TextEditor::AssistInterface createAssistInterface(TextEditor::TextEditorW
 {
     return TextEditor::AssistInterface(widget->document(),
                                        lineToPosition(widget->document(), lineNumber),
-                                       widget->textDocument()->filePath().toString(),
+                                       widget->textDocument()->filePath(),
                                        TextEditor::IdleEditor);
 }
 
@@ -425,14 +433,14 @@ void ClangModelManagerSupport::onProjectPartsRemoved(const QStringList &projectP
 }
 
 static ClangEditorDocumentProcessors clangProcessorsWithDiagnosticConfig(
-    const QVector<Core::Id> &configIds)
+    const QVector<::Utils::Id> &configIds)
 {
     return ::Utils::filtered(clangProcessors(), [configIds](ClangEditorDocumentProcessor *p) {
         return configIds.contains(p->diagnosticConfigId());
     });
 }
 
-void ClangModelManagerSupport::onDiagnosticConfigsInvalidated(const QVector<Core::Id> &configIds)
+void ClangModelManagerSupport::onDiagnosticConfigsInvalidated(const QVector<::Utils::Id> &configIds)
 {
     updateProcessors(clangProcessorsWithDiagnosticConfig(configIds));
 }

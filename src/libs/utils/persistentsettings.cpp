@@ -33,13 +33,14 @@
 #include <QXmlStreamWriter>
 #include <QDateTime>
 #include <QTextStream>
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QRect>
 
 #ifdef QT_GUI_LIB
 #include <QMessageBox>
 #endif
 
+#include <utils/porting.h>
 #include <utils/qtcassert.h>
 
 // Read and write rectangle in X11 resource syntax "12x12+4+3"
@@ -59,11 +60,12 @@ static QString rectangleToString(const QRect &r)
 
 static QRect stringToRectangle(const QString &v)
 {
-    static QRegExp pattern(QLatin1String("(\\d+)x(\\d+)([-+]\\d+)([-+]\\d+)"));
+    static QRegularExpression pattern("^(\\d+)x(\\d+)([-+]\\d+)([-+]\\d+)$");
     Q_ASSERT(pattern.isValid());
-    return pattern.exactMatch(v) ?
-        QRect(QPoint(pattern.cap(3).toInt(), pattern.cap(4).toInt()),
-              QSize(pattern.cap(1).toInt(), pattern.cap(2).toInt())) :
+    const QRegularExpressionMatch match = pattern.match(v);
+    return match.hasMatch() ?
+        QRect(QPoint(match.captured(3).toInt(), match.captured(4).toInt()),
+              QSize(match.captured(1).toInt(), match.captured(2).toInt())) :
         QRect();
 }
 
@@ -187,13 +189,13 @@ private:
     enum Element { QtCreatorElement, DataElement, VariableElement,
                    SimpleValueElement, ListValueElement, MapValueElement, UnknownElement };
 
-    Element element(const QStringRef &r) const;
+    Element element(const StringView &r) const;
     static inline bool isValueElement(Element e)
         { return e == SimpleValueElement || e == ListValueElement || e == MapValueElement; }
     QVariant readSimpleValue(QXmlStreamReader &r, const QXmlStreamAttributes &attributes) const;
 
     bool handleStartElement(QXmlStreamReader &r);
-    bool handleEndElement(const QStringRef &name);
+    bool handleEndElement(const StringView &name);
 
     static QString formatWarning(const QXmlStreamReader &r, const QString &message);
 
@@ -232,7 +234,7 @@ QVariantMap ParseContext::parse(QFile &file)
 
 bool ParseContext::handleStartElement(QXmlStreamReader &r)
 {
-    const QStringRef name = r.name();
+    const StringView name = r.name();
     const Element e = element(name);
     if (e == VariableElement) {
         m_currentVariableName = r.readElementText();
@@ -267,7 +269,7 @@ bool ParseContext::handleStartElement(QXmlStreamReader &r)
     return false;
 }
 
-bool ParseContext::handleEndElement(const QStringRef &name)
+bool ParseContext::handleEndElement(const StringView &name)
 {
     const Element e = element(name);
     if (ParseContext::isValueElement(e)) {
@@ -296,7 +298,7 @@ QString ParseContext::formatWarning(const QXmlStreamReader &r, const QString &me
     return result;
 }
 
-ParseContext::Element ParseContext::element(const QStringRef &r) const
+ParseContext::Element ParseContext::element(const StringView &r) const
 {
     if (r == valueElement)
         return SimpleValueElement;
@@ -316,7 +318,7 @@ ParseContext::Element ParseContext::element(const QStringRef &r) const
 QVariant ParseContext::readSimpleValue(QXmlStreamReader &r, const QXmlStreamAttributes &attributes) const
 {
     // Simple value
-    const QStringRef type = attributes.value(typeAttribute);
+    const StringView type = attributes.value(typeAttribute);
     const QString text = r.readElementText();
     if (type == QLatin1String("QChar")) { // Workaround: QTBUG-12345
         QTC_ASSERT(text.size() == 1, return QVariant());
@@ -353,6 +355,9 @@ bool PersistentSettingsReader::load(const FilePath &fileName)
     m_valueMap.clear();
 
     QFile file(fileName.toString());
+    if (file.size() == 0) // skip empty files
+        return false;
+
     if (!file.open(QIODevice::ReadOnly|QIODevice::Text))
         return false;
     ParseContext ctx;
@@ -374,15 +379,17 @@ static void writeVariantValue(QXmlStreamWriter &w, const Context &ctx,
 {
     switch (static_cast<int>(variant.type())) {
     case static_cast<int>(QVariant::StringList):
-    case static_cast<int>(QVariant::List):
+    case static_cast<int>(QVariant::List): {
         w.writeStartElement(ctx.valueListElement);
         w.writeAttribute(ctx.typeAttribute, QLatin1String(QVariant::typeToName(QVariant::List)));
         if (!key.isEmpty())
             w.writeAttribute(ctx.keyAttribute, key);
-        foreach (const QVariant &var, variant.toList())
+        const QList<QVariant> list = variant.toList();
+        for (const QVariant &var : list)
             writeVariantValue(w, ctx, var);
         w.writeEndElement();
         break;
+    }
     case static_cast<int>(QVariant::Map): {
         w.writeStartElement(ctx.valueMapElement);
         w.writeAttribute(ctx.typeAttribute, QLatin1String(QVariant::typeToName(QVariant::Map)));

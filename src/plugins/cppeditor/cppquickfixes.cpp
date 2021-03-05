@@ -55,26 +55,42 @@
 
 #include <extensionsystem/pluginmanager.h>
 
+#include <projectexplorer/projectnodes.h>
+#include <projectexplorer/projecttree.h>
+#include <projectexplorer/session.h>
+
+#include <utils/algorithm.h>
+#include <utils/basetreeview.h>
 #include <utils/fancylineedit.h>
+#include <utils/fileutils.h>
 #include <utils/qtcassert.h>
+#include <utils/treemodel.h>
 
 #include <QApplication>
+#include <QCheckBox>
 #include <QComboBox>
+#include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFileInfo>
 #include <QFormLayout>
+#include <QGridLayout>
+#include <QHash>
 #include <QInputDialog>
+#include <QPair>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSharedPointer>
 #include <QStack>
 #include <QTextCursor>
 #include <QTextCodec>
+#include <QVBoxLayout>
 
 #include <bitset>
 #include <cctype>
+#include <functional>
 #include <limits>
+#include <vector>
 
 using namespace CPlusPlus;
 using namespace CppTools;
@@ -102,9 +118,258 @@ const QList<CppQuickFixFactory *> &CppQuickFixFactory::cppQuickFixFactories()
 
 namespace Internal {
 
+QString inlinePrefix(const QString &targetFile, const std::function<bool()> &extraCondition = {})
+{
+    if (ProjectFile::isHeader(ProjectFile::classify(targetFile))
+            && (!extraCondition || extraCondition())) {
+        return "inline ";
+    }
+    return {};
+}
+
 // In the following anonymous namespace all functions are collected, which could be of interest for
 // different quick fixes.
 namespace {
+
+class NSVisitor : public ASTVisitor
+{
+public:
+    NSVisitor(const CppRefactoringFile *file, const QStringList &namespaces, int symbolPos)
+        : ASTVisitor(file->cppDocument()->translationUnit()),
+          m_file(file),
+          m_remainingNamespaces(namespaces),
+          m_symbolPos(symbolPos)
+    {}
+
+    const QStringList remainingNamespaces() const { return m_remainingNamespaces; }
+    const NamespaceAST *firstNamespace() const { return m_firstNamespace; }
+    const AST *firstToken() const { return m_firstToken; }
+    const NamespaceAST *enclosingNamespace() const { return m_enclosingNamespace; }
+
+private:
+    bool preVisit(AST *ast) override
+    {
+        if (!m_firstToken)
+            m_firstToken = ast;
+        if (m_file->startOf(ast) >= m_symbolPos)
+            m_done = true;
+        return !m_done;
+    }
+
+    bool visit(NamespaceAST *ns) override
+    {
+        if (!m_firstNamespace)
+            m_firstNamespace = ns;
+        if (m_remainingNamespaces.isEmpty()) {
+            m_done = true;
+            return false;
+        }
+
+        QString name;
+        const Identifier * const id = translationUnit()->identifier(ns->identifier_token);
+        if (id)
+            name = QString::fromUtf8(id->chars(), id->size());
+        if (name != m_remainingNamespaces.first())
+            return name.isEmpty();
+
+        if (!ns->linkage_body) {
+            m_done = true;
+            return false;
+        }
+
+        m_enclosingNamespace = ns;
+        m_remainingNamespaces.removeFirst();
+        return !m_remainingNamespaces.isEmpty();
+    }
+
+    void postVisit(AST *ast) override
+    {
+        if (ast == m_enclosingNamespace)
+            m_done = true;
+    }
+
+    const CppRefactoringFile * const m_file;
+    const NamespaceAST *m_enclosingNamespace = nullptr;
+    const NamespaceAST *m_firstNamespace = nullptr;
+    const AST *m_firstToken = nullptr;
+    QStringList m_remainingNamespaces;
+    const int m_symbolPos;
+    bool m_done = false;
+};
+
+/**
+ * @brief The NSCheckerVisitor class checks which namespaces are missing for a given list
+ * of enclosing namespaces at a given position
+ */
+class NSCheckerVisitor : public ASTVisitor
+{
+public:
+    NSCheckerVisitor(const CppRefactoringFile *file, const QStringList &namespaces, int symbolPos)
+        : ASTVisitor(file->cppDocument()->translationUnit())
+        , m_file(file)
+        , m_remainingNamespaces(namespaces)
+        , m_symbolPos(symbolPos)
+    {}
+    /**
+     * @brief returns the names of the namespaces that are additionally needed at the symbolPos
+     * @return A list of namespace names, the outermost namespace at index 0 and the innermost
+     * at the last index
+     */
+    const QStringList remainingNamespaces() const { return m_remainingNamespaces; }
+
+private:
+    bool preVisit(AST *ast) override
+    {
+        if (m_file->startOf(ast) >= m_symbolPos)
+            m_done = true;
+        return !m_done;
+    }
+
+    void postVisit(AST *ast) override
+    {
+        if (!m_done && m_file->endOf(ast) > m_symbolPos)
+            m_done = true;
+    }
+
+    bool visit(NamespaceAST *ns) override
+    {
+        if (m_remainingNamespaces.isEmpty())
+            return false;
+
+        QString name = getName(ns);
+        if (name != m_remainingNamespaces.first())
+            return false;
+
+        m_enteredNamespaces.push_back(ns);
+        m_remainingNamespaces.removeFirst();
+        // if we reached the searched namespace we don't have to search deeper
+        return !m_remainingNamespaces.isEmpty();
+    }
+
+    bool visit(UsingDirectiveAST *usingNS) override
+    {
+        // example: we search foo::bar and get 'using namespace foo;using namespace foo::bar;'
+        const QString fullName = Overview{}.prettyName(usingNS->name->name);
+        const QStringList namespaces = fullName.split("::");
+        if (namespaces.length() > m_remainingNamespaces.length())
+            return false;
+
+        // from other using namespace statements
+        const auto curList = m_usingsPerNamespace.find(currentNamespace());
+        const bool isCurListValid = curList != m_usingsPerNamespace.end();
+
+        const bool startEqual = std::equal(namespaces.cbegin(),
+                                           namespaces.cend(),
+                                           m_remainingNamespaces.cbegin());
+        if (startEqual) {
+            if (isCurListValid) {
+                if (namespaces.length() > curList->second.length()) {
+                    // eg. we already have 'using namespace foo;' and
+                    // now get 'using namespace foo::bar;'
+                    curList->second = namespaces;
+                }
+                // the other case: first 'using namespace foo::bar;' and now 'using namespace foo;'
+            } else
+                m_usingsPerNamespace.emplace(currentNamespace(), namespaces);
+        } else if (isCurListValid) {
+            // ex: we have already 'using namespace foo;' and get 'using namespace bar;' now
+            QStringList newlist = curList->second;
+            newlist.append(namespaces);
+            if (newlist.length() <= m_remainingNamespaces.length()) {
+                const bool startEqual = std::equal(newlist.cbegin(),
+                                                   newlist.cend(),
+                                                   m_remainingNamespaces.cbegin());
+                if (startEqual)
+                    curList->second.append(namespaces);
+            }
+        }
+        return false;
+    }
+
+    void endVisit(NamespaceAST *ns) override
+    {
+        // if the symbolPos was in the namespace and the
+        // namespace has no children, m_done should be true
+        postVisit(ns);
+        if (!m_done && currentNamespace() == ns) {
+            // we were not succesfull in this namespace, so undo all changes
+            m_remainingNamespaces.push_front(getName(currentNamespace()));
+            m_usingsPerNamespace.erase(currentNamespace());
+            m_enteredNamespaces.pop_back();
+        }
+    }
+
+    void endVisit(TranslationUnitAST *) override
+    {
+        // the last node, create the final result
+        // we must handle like the following: We search for foo::bar and have:
+        // using namespace foo::bar;
+        // namespace foo {
+        //    // cursor/symbolPos here
+        // }
+        if (m_remainingNamespaces.empty()) {
+            // we are already finished
+            return;
+        }
+        // find the longest combination of normal namespaces + using statements
+        int longestNamespaceList = 0;
+        int enteredNamespaceCount = 0;
+        // check 'using namespace ...;' statements in the global scope
+        const auto namespaces = m_usingsPerNamespace.find(nullptr);
+        if (namespaces != m_usingsPerNamespace.end())
+            longestNamespaceList = namespaces->second.length();
+
+        for (auto ns : m_enteredNamespaces) {
+            ++enteredNamespaceCount;
+            const auto namespaces = m_usingsPerNamespace.find(ns);
+            int newListLength = enteredNamespaceCount;
+            if (namespaces != m_usingsPerNamespace.end())
+                newListLength += namespaces->second.length();
+            longestNamespaceList = std::max(newListLength, longestNamespaceList);
+        }
+        m_remainingNamespaces.erase(m_remainingNamespaces.begin(),
+                                    m_remainingNamespaces.begin() + longestNamespaceList
+                                        - m_enteredNamespaces.size());
+    }
+
+    QString getName(NamespaceAST *ns)
+    {
+        const Identifier *const id = translationUnit()->identifier(ns->identifier_token);
+        if (id)
+            return QString::fromUtf8(id->chars(), id->size());
+        return {};
+    }
+
+    NamespaceAST *currentNamespace()
+    {
+        return m_enteredNamespaces.empty() ? nullptr : m_enteredNamespaces.back();
+    }
+
+    const CppRefactoringFile *const m_file;
+    QStringList m_remainingNamespaces;
+    const int m_symbolPos;
+    std::vector<NamespaceAST *> m_enteredNamespaces;
+    // track 'using namespace ...' statements
+    std::unordered_map<NamespaceAST *, QStringList> m_usingsPerNamespace;
+    bool m_done = false;
+};
+
+/**
+ * @brief getListOfMissingNamespacesForLocation checks which namespaces are present at a given
+ * location and returns a list of namespace names that are needed to get the wanted namespace
+ * @param file The file of the location
+ * @param wantedNamespaces the namespace as list that should exists at the insert location
+ * @param loc The location that should be checked (the namespaces should be available there)
+ * @return A list of namespaces that are missing to reach the wanted namespaces.
+ */
+QStringList getListOfMissingNamespacesForLocation(const CppRefactoringFile *file,
+                                                  const QStringList &wantedNamespaces,
+                                                  InsertionLocation loc)
+{
+    NSCheckerVisitor visitor(file, wantedNamespaces, file->position(loc.line(), loc.column()));
+    visitor.accept(file->cppDocument()->translationUnit()->ast());
+    return visitor.remainingNamespaces();
+}
 
 enum DefPos {
     DefPosInsideClass,
@@ -112,25 +377,84 @@ enum DefPos {
     DefPosImplementationFile
 };
 
+/**
+ * @brief getNamespaceNames Returns a list of namespaces for an enclosing namespaces of a
+ * namespace (contains the namespace itself)
+ * @param firstNamespace the starting namespace (included in the list)
+ * @return the enclosing namespaces, the outermost namespace is at the first index, the innermost
+ * at the last index
+ */
+QStringList getNamespaceNames(const Namespace *firstNamespace)
+{
+    QStringList namespaces;
+    for (const Namespace *scope = firstNamespace; scope; scope = scope->enclosingNamespace()) {
+        if (scope->name() && scope->name()->identifier()) {
+            namespaces.prepend(QString::fromUtf8(scope->name()->identifier()->chars(),
+                                                 scope->name()->identifier()->size()));
+        }
+    }
+    return namespaces;
+}
+
+/**
+ * @brief getNamespaceNames Returns a list of enclosing namespaces for a symbol
+ * @param symbol a symbol from which we want the enclosing namespaces
+ * @return the enclosing namespaces, the outermost namespace is at the first index, the innermost
+ * at the last index
+ */
+QStringList getNamespaceNames(const Symbol *symbol)
+{
+    return getNamespaceNames(symbol->enclosingNamespace());
+}
+
+// TODO: We should use the "CreateMissing" approach everywhere.
+enum class NamespaceHandling { CreateMissing, Ignore };
 InsertionLocation insertLocationForMethodDefinition(Symbol *symbol, const bool useSymbolFinder,
+                                                    NamespaceHandling namespaceHandling,
                                                     CppRefactoringChanges& refactoring,
                                                     const QString& fileName)
 {
     QTC_ASSERT(symbol, return InsertionLocation());
 
+    CppRefactoringFilePtr file = refactoring.file(fileName);
+    QStringList requiredNamespaces;
+    if (namespaceHandling == NamespaceHandling::CreateMissing) {
+        requiredNamespaces = getNamespaceNames(symbol);
+    }
+
     // Try to find optimal location
+    // FIXME: The locator should not return a valid location if the namespaces don't match
+    //        (or provide enough context).
     const InsertionPointLocator locator(refactoring);
     const QList<InsertionLocation> list
             = locator.methodDefinition(symbol, useSymbolFinder, fileName);
-    for (int i = 0; i < list.count(); ++i) {
+    const bool isHeader = ProjectFile::isHeader(ProjectFile::classify(fileName));
+    const bool hasIncludeGuard = isHeader
+            && !file->cppDocument()->includeGuardMacroName().isEmpty();
+    int lastLine;
+    if (hasIncludeGuard) {
+        const TranslationUnit * const tu = file->cppDocument()->translationUnit();
+        tu->getTokenStartPosition(tu->ast()->lastToken(), &lastLine);
+    }
+    int i = 0;
+    for ( ; i < list.count(); ++i) {
         InsertionLocation location = list.at(i);
-        if (location.isValid() && location.fileName() == fileName)
-            return location;
+        if (!location.isValid() || location.fileName() != fileName)
+            continue;
+        if (hasIncludeGuard && location.line() == lastLine)
+            continue;
+        if (!requiredNamespaces.isEmpty()) {
+            QStringList missing = getListOfMissingNamespacesForLocation(file.get(),
+                                                                        requiredNamespaces,
+                                                                        location);
+            if (!missing.isEmpty())
+                continue;
+        }
+        return location;
     }
 
     // ...failed,
     // if class member try to get position right after class
-    CppRefactoringFilePtr file = refactoring.file(fileName);
     int line = 0, column = 0;
     if (Class *clazz = symbol->enclosingClass()) {
         if (symbol->fileName() == fileName.toUtf8()) {
@@ -143,15 +467,24 @@ InsertionLocation insertLocationForMethodDefinition(Symbol *symbol, const bool u
         }
     }
 
-    // fall through: position at end of file
+    // fall through: position at end of file, unless we find a matching namespace
     const QTextDocument *doc = file->document();
     int pos = qMax(0, doc->characterCount() - 1);
+    QString prefix = "\n\n";
+    QString suffix = "\n\n";
+    NSVisitor visitor(file.data(), requiredNamespaces, pos);
+    visitor.accept(file->cppDocument()->translationUnit()->ast());
+    if (visitor.enclosingNamespace())
+        pos = file->startOf(visitor.enclosingNamespace()->linkage_body) + 1;
+    for (const QString &ns : visitor.remainingNamespaces()) {
+        prefix += "namespace " + ns + " {\n";
+        suffix += "}\n";
+    }
 
-    //TODO watch for matching namespace
     //TODO watch for moc-includes
 
     file->lineAndColumn(pos, &line, &column);
-    return InsertionLocation(fileName, QLatin1String("\n\n"), QLatin1String("\n"), line, column);
+    return InsertionLocation(fileName, prefix, suffix, line, column);
 }
 
 inline bool isQtStringLiteral(const QByteArray &id)
@@ -339,7 +672,7 @@ public:
     void perform() override
     {
         CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr currentFile = refactoring.file(fileName());
+        CppRefactoringFilePtr currentFile = refactoring.file(filePath().toString());
 
         ChangeSet changes;
         if (negation) {
@@ -431,7 +764,7 @@ public:
     void perform() override
     {
         CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr currentFile = refactoring.file(fileName());
+        CppRefactoringFilePtr currentFile = refactoring.file(filePath().toString());
 
         ChangeSet changes;
         changes.flip(currentFile->range(binary->left_expression),
@@ -518,7 +851,7 @@ public:
     void perform() override
     {
         CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr currentFile = refactoring.file(fileName());
+        CppRefactoringFilePtr currentFile = refactoring.file(filePath().toString());
 
         ChangeSet changes;
         changes.replace(currentFile->range(pattern->binary_op_token), QLatin1String("||"));
@@ -605,7 +938,7 @@ public:
     void perform() override
     {
         CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr currentFile = refactoring.file(fileName());
+        CppRefactoringFilePtr currentFile = refactoring.file(filePath().toString());
 
         ChangeSet changes;
 
@@ -685,7 +1018,8 @@ namespace {
 class AddBracesToIfOp: public CppQuickFixOperation
 {
 public:
-    AddBracesToIfOp(const CppQuickFixInterface &interface, int priority, StatementAST *statement)
+    AddBracesToIfOp(const CppQuickFixInterface &interface, int priority,
+                    const IfStatementAST *statement)
         : CppQuickFixOperation(interface, priority)
         , _statement(statement)
     {
@@ -695,14 +1029,14 @@ public:
     void perform() override
     {
         CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr currentFile = refactoring.file(fileName());
+        CppRefactoringFilePtr currentFile = refactoring.file(filePath().toString());
 
         ChangeSet changes;
 
-        const int start = currentFile->endOf(_statement->firstToken() - 1);
+        const int start = currentFile->endOf(_statement->rparen_token);
         changes.insert(start, QLatin1String(" {"));
 
-        const int end = currentFile->endOf(_statement->lastToken() - 1);
+        const int end = currentFile->endOf(_statement->statement->lastToken() - 1);
         changes.insert(end, QLatin1String("\n}"));
 
         currentFile->setChangeSet(changes);
@@ -711,7 +1045,7 @@ public:
     }
 
 private:
-    StatementAST *_statement;
+    const IfStatementAST * const _statement;
 };
 
 } // anonymous namespace
@@ -725,7 +1059,7 @@ void AddBracesToIf::match(const CppQuickFixInterface &interface, QuickFixOperati
     IfStatementAST *ifStatement = path.at(index)->asIfStatement();
     if (ifStatement && interface.isCursorOn(ifStatement->if_token) && ifStatement->statement
         && !ifStatement->statement->asCompoundStatement()) {
-        result << new AddBracesToIfOp(interface, index, ifStatement->statement);
+        result << new AddBracesToIfOp(interface, index, ifStatement);
         return;
     }
 
@@ -736,7 +1070,7 @@ void AddBracesToIf::match(const CppQuickFixInterface &interface, QuickFixOperati
         if (ifStatement && ifStatement->statement
             && interface.isCursorOn(ifStatement->statement)
             && !ifStatement->statement->asCompoundStatement()) {
-            result << new AddBracesToIfOp(interface, index, ifStatement->statement);
+            result << new AddBracesToIfOp(interface, index, ifStatement);
             return;
         }
     }
@@ -768,7 +1102,7 @@ public:
     void perform() override
     {
         CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr currentFile = refactoring.file(fileName());
+        CppRefactoringFilePtr currentFile = refactoring.file(filePath().toString());
 
         ChangeSet changes;
 
@@ -842,7 +1176,7 @@ public:
     void perform() override
     {
         CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr currentFile = refactoring.file(fileName());
+        CppRefactoringFilePtr currentFile = refactoring.file(filePath().toString());
 
         ChangeSet changes;
 
@@ -921,7 +1255,7 @@ public:
     void perform() override
     {
         CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr currentFile = refactoring.file(fileName());
+        CppRefactoringFilePtr currentFile = refactoring.file(filePath().toString());
 
         const Token binaryToken = currentFile->tokenAt(condition->binary_op_token);
 
@@ -1160,7 +1494,7 @@ public:
     void perform() override
     {
         CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr currentFile = refactoring.file(fileName());
+        CppRefactoringFilePtr currentFile = refactoring.file(filePath().toString());
 
         ChangeSet changes;
 
@@ -1364,7 +1698,7 @@ public:
     void perform() override
     {
         CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr currentFile = refactoring.file(fileName());
+        CppRefactoringFilePtr currentFile = refactoring.file(filePath().toString());
 
         ChangeSet changes;
 
@@ -1426,7 +1760,7 @@ public:
     void perform() override
     {
         CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr currentFile = refactoring.file(fileName());
+        CppRefactoringFilePtr currentFile = refactoring.file(filePath().toString());
 
         ChangeSet changes;
         changes.replace(start, end, replacement);
@@ -1474,7 +1808,7 @@ void ConvertNumericLiteral::match(const CppQuickFixInterface &interface, QuickFi
     ulong value = 0;
     const QString x = QString::fromUtf8(spell).left(numberLength);
     if (x.startsWith("0b", Qt::CaseInsensitive))
-        value = x.midRef(2).toULong(&valid, 2);
+        value = x.mid(2).toULong(&valid, 2);
     else
         value = x.toULong(&valid, 0);
 
@@ -1585,7 +1919,7 @@ public:
     void perform() override
     {
         CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr currentFile = refactoring.file(fileName());
+        CppRefactoringFilePtr currentFile = refactoring.file(filePath().toString());
 
         TypeOfExpression typeOfExpression;
         typeOfExpression.init(semanticInfo().doc, snapshot(), context().bindings());
@@ -1669,9 +2003,13 @@ namespace {
 class ConvertToCamelCaseOp: public CppQuickFixOperation
 {
 public:
-    ConvertToCamelCaseOp(const CppQuickFixInterface &interface, const QString &newName)
+    ConvertToCamelCaseOp(const CppQuickFixInterface &interface, const QString &name,
+                         const AST *nameAst, bool test)
         : CppQuickFixOperation(interface, -1)
-        , m_name(newName)
+        , m_name(name)
+        , m_nameAst(nameAst)
+        , m_isAllUpper(name.isUpper())
+        , m_test(test)
     {
         setDescription(QApplication::translate("CppTools::QuickFix", "Convert to Camel Case"));
     }
@@ -1679,19 +2017,26 @@ public:
     void perform() override
     {
         CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr currentFile = refactoring.file(fileName());
+        CppRefactoringFilePtr currentFile = refactoring.file(filePath().toString());
 
-        for (int i = 1; i < m_name.length(); ++i) {
-            QCharRef c = m_name[i];
-            if (c.isUpper()) {
-                c = c.toLower();
-            } else if (i < m_name.length() - 1
-                       && isConvertibleUnderscore(m_name, i)) {
-                m_name.remove(i, 1);
-                m_name[i] = m_name.at(i).toUpper();
+        QString newName = m_isAllUpper ? m_name.toLower() : m_name;
+        for (int i = 1; i < newName.length(); ++i) {
+            const QChar c = newName.at(i);
+            if (c.isUpper() && m_isAllUpper) {
+                newName[i] = c.toLower();
+            } else if (i < newName.length() - 1 && isConvertibleUnderscore(newName, i)) {
+                newName.remove(i, 1);
+                newName[i] = newName.at(i).toUpper();
             }
         }
-        editor()->renameUsages(m_name);
+        if (m_test) {
+            ChangeSet changeSet;
+            changeSet.replace(currentFile->range(m_nameAst), newName);
+            currentFile->setChangeSet(changeSet);
+            currentFile->apply();
+        } else {
+            editor()->renameUsages(newName);
+        }
     }
 
     static bool isConvertibleUnderscore(const QString &name, int pos)
@@ -1701,7 +2046,10 @@ public:
     }
 
 private:
-    QString m_name;
+    const QString m_name;
+    const AST * const m_nameAst;
+    const bool m_isAllUpper;
+    const bool m_test;
 };
 
 } // anonymous namespace
@@ -1715,22 +2063,26 @@ void ConvertToCamelCase::match(const CppQuickFixInterface &interface, QuickFixOp
 
     AST * const ast = path.last();
     const Name *name = nullptr;
+    const AST *astForName = nullptr;
     if (const NameAST * const nameAst = ast->asName()) {
-        if (nameAst->name && nameAst->name->asNameId())
+        if (nameAst->name && nameAst->name->asNameId()) {
+            astForName = nameAst;
             name = nameAst->name;
+        }
     } else if (const NamespaceAST * const namespaceAst = ast->asNamespace()) {
+        astForName = namespaceAst;
         name = namespaceAst->symbol->name();
     }
 
     if (!name)
         return;
 
-    QString newName = QString::fromUtf8(name->identifier()->chars());
-    if (newName.length() < 3)
+    QString nameString = QString::fromUtf8(name->identifier()->chars());
+    if (nameString.length() < 3)
         return;
-    for (int i = 1; i < newName.length() - 1; ++i) {
-        if (ConvertToCamelCaseOp::isConvertibleUnderscore(newName, i)) {
-            result << new ConvertToCamelCaseOp(interface, newName);
+    for (int i = 1; i < nameString.length() - 1; ++i) {
+        if (ConvertToCamelCaseOp::isConvertibleUnderscore(nameString, i)) {
+            result << new ConvertToCamelCaseOp(interface, nameString, astForName, m_test);
             return;
         }
     }
@@ -1747,9 +2099,75 @@ AddIncludeForUndefinedIdentifierOp::AddIncludeForUndefinedIdentifierOp(
 void AddIncludeForUndefinedIdentifierOp::perform()
 {
     CppRefactoringChanges refactoring(snapshot());
-    CppRefactoringFilePtr file = refactoring.file(fileName());
+    CppRefactoringFilePtr file = refactoring.file(filePath().toString());
 
     insertNewIncludeDirective(m_include, file, semanticInfo().doc);
+}
+
+AddForwardDeclForUndefinedIdentifierOp::AddForwardDeclForUndefinedIdentifierOp(
+        const CppQuickFixInterface &interface,
+        int priority,
+        const QString &fqClassName,
+        int symbolPos)
+    : CppQuickFixOperation(interface, priority), m_className(fqClassName), m_symbolPos(symbolPos)
+{
+    setDescription(QApplication::translate("CppTools::QuickFix",
+                                           "Add forward declaration for %1").arg(m_className));
+}
+
+void AddForwardDeclForUndefinedIdentifierOp::perform()
+{
+    const QStringList parts = m_className.split("::");
+    QTC_ASSERT(!parts.isEmpty(), return);
+    const QStringList namespaces = parts.mid(0, parts.length() - 1);
+
+    CppRefactoringChanges refactoring(snapshot());
+    CppRefactoringFilePtr file = refactoring.file(filePath().toString());
+
+    NSVisitor visitor(file.data(), namespaces, m_symbolPos);
+    visitor.accept(file->cppDocument()->translationUnit()->ast());
+    const auto stringToInsert = [&visitor, symbol = parts.last()] {
+        QString s = "\n";
+        for (const QString &ns : visitor.remainingNamespaces())
+            s += "namespace " + ns + " { ";
+        s += "class " + symbol + ';';
+        for (int i = 0; i < visitor.remainingNamespaces().size(); ++i)
+            s += " }";
+        return s;
+    };
+
+    int insertPos = 0;
+
+    // Find the position to insert:
+    //   If we have a matching namespace, we do the insertion there.
+    //   If we don't have a matching namespace, but there is another namespace in the file,
+    //   we assume that to be a good position for our insertion.
+    //   Otherwise, do the insertion after the last include that comes before the use of the symbol.
+    //   If there is no such include, do the insertion before the first token.
+    if (visitor.enclosingNamespace()) {
+        insertPos = file->startOf(visitor.enclosingNamespace()->linkage_body) + 1;
+    } else if (visitor.firstNamespace()) {
+        insertPos = file->startOf(visitor.firstNamespace());
+    } else {
+        const QTextCursor tc = file->document()->find(
+                    QRegularExpression("^\\s*#include .*$"),
+                    m_symbolPos,
+                    QTextDocument::FindBackward | QTextDocument::FindCaseSensitively);
+        if (!tc.isNull())
+            insertPos = tc.position() + 1;
+        else if (visitor.firstToken())
+            insertPos = file->startOf(visitor.firstToken());
+    }
+
+    QString insertion = stringToInsert();
+    if (file->charAt(insertPos - 1) != QChar::ParagraphSeparator)
+        insertion.prepend('\n');
+    if (file->charAt(insertPos) != QChar::ParagraphSeparator)
+        insertion.append('\n');
+    ChangeSet s;
+    s.insert(insertPos, insertion);
+    file->setChangeSet(s);
+    file->apply();
 }
 
 namespace {
@@ -1779,25 +2197,20 @@ QString findShortestInclude(const QString currentDocumentFilePath,
     return result;
 }
 
-QString findQtIncludeWithSameName(const QString &className,
-                                  const ProjectExplorer::HeaderPaths &headerPaths)
+QString findMatchingInclude(const QString &className,
+                            const ProjectExplorer::HeaderPaths &headerPaths)
 {
-    QString result;
-
-    // Check for a header file with the same name in the Qt include paths
-    foreach (const ProjectExplorer::HeaderPath &headerPath, headerPaths) {
-        if (!headerPath.path.contains(QLatin1String("/Qt"))) // "QtCore", "QtGui" etc...
-            continue;
-
-        const QString headerPathCandidate = headerPath.path + QLatin1Char('/') + className;
-        const QFileInfo fileInfo(headerPathCandidate);
-        if (fileInfo.exists() && fileInfo.isFile()) {
-            result = QLatin1Char('<') + className + QLatin1Char('>');
-            break;
+    const QStringList candidateFileNames{className, className + ".h", className + ".hpp",
+                className.toLower(), className.toLower() + ".h", className.toLower() + ".hpp"};
+    for (const QString &fileName : candidateFileNames) {
+        for (const ProjectExplorer::HeaderPath &headerPath : headerPaths) {
+            const QString headerPathCandidate = headerPath.path + QLatin1Char('/') + fileName;
+            const QFileInfo fileInfo(headerPathCandidate);
+            if (fileInfo.exists() && fileInfo.isFile())
+                return '<' + fileName + '>';
         }
     }
-
-    return result;
+    return {};
 }
 
 ProjectExplorer::HeaderPaths relevantHeaderPaths(const QString &filePath)
@@ -1839,17 +2252,18 @@ NameAST *nameUnderCursor(const QList<AST *> &path)
     return nameAst;
 }
 
-bool canLookupDefinition(const CppQuickFixInterface &interface, const NameAST *nameAst)
+enum class LookupResult { Definition, Declaration, None };
+LookupResult lookUpDefinition(const CppQuickFixInterface &interface, const NameAST *nameAst)
 {
-    QTC_ASSERT(nameAst && nameAst->name, return false);
+    QTC_ASSERT(nameAst && nameAst->name, return LookupResult::None);
 
     // Find the enclosing scope
     int line, column;
-    const Document::Ptr &doc = interface.semanticInfo().doc;
+    const Document::Ptr doc = interface.semanticInfo().doc;
     doc->translationUnit()->getTokenStartPosition(nameAst->firstToken(), &line, &column);
     Scope *scope = doc->scopeAt(line, column);
     if (!scope)
-        return false;
+        return LookupResult::None;
 
     // Try to find the class/template definition
     const Name *name = nameAst->name;
@@ -1857,16 +2271,21 @@ bool canLookupDefinition(const CppQuickFixInterface &interface, const NameAST *n
     foreach (const LookupItem &item, results) {
         if (Symbol *declaration = item.declaration()) {
             if (declaration->isClass())
-                return true;
+                return LookupResult::Definition;
+            if (declaration->isForwardClassDeclaration())
+                return LookupResult::Declaration;
             if (Template *templ = declaration->asTemplate()) {
-                Symbol *declaration = templ->declaration();
-                if (declaration && declaration->isClass())
-                    return true;
+                if (Symbol *declaration = templ->declaration()) {
+                    if (declaration->isClass())
+                        return LookupResult::Definition;
+                    if (declaration->isForwardClassDeclaration())
+                        return LookupResult::Declaration;
+                }
             }
         }
     }
 
-    return false;
+    return LookupResult::None;
 }
 
 QString templateNameAsString(const TemplateNameId *templateName)
@@ -1887,17 +2306,11 @@ Snapshot forwardingHeaders(const CppQuickFixInterface &interface)
     return result;
 }
 
-bool looksLikeAQtClass(const QString &identifier)
-{
-    return identifier.size() > 2
-        && identifier.at(0) == QLatin1Char('Q')
-        && identifier.at(1).isUpper();
-}
-
 bool matchName(const Name *name, QList<Core::LocatorFilterEntry> *matches, QString *className) {
     if (!name)
         return false;
 
+    QString simpleName;
     if (Core::ILocatorFilter *classesFilter
             = CppTools::CppModelManager::instance()->classesFilter()) {
         QFutureInterface<Core::LocatorFilterEntry> dummy;
@@ -1908,7 +2321,8 @@ bool matchName(const Name *name, QList<Core::LocatorFilterEntry> *matches, QStri
             if (const TemplateNameId *templateName = name->asTemplateNameId()) {
                 *className = templateNameAsString(templateName);
             } else {
-                *className = oo.prettyName(name);
+                simpleName = oo.prettyName(name);
+                *className = simpleName;
                 *matches = classesFilter->matchesFor(dummy, *className);
                 if (matches->empty()) {
                     if (const Name *name = qualifiedName->base()) {
@@ -1927,6 +2341,8 @@ bool matchName(const Name *name, QList<Core::LocatorFilterEntry> *matches, QStri
 
         if (matches->empty())
             *matches = classesFilter->matchesFor(dummy, *className);
+        if (matches->empty() && !simpleName.isEmpty())
+            *className = simpleName;
     }
 
     return !matches->empty();
@@ -1941,22 +2357,25 @@ void AddIncludeForUndefinedIdentifier::match(const CppQuickFixInterface &interfa
     if (!nameAst || !nameAst->name)
         return;
 
-    if (canLookupDefinition(interface, nameAst))
+    const LookupResult lookupResult = lookUpDefinition(interface, nameAst);
+    if (lookupResult == LookupResult::Definition)
         return;
 
     QString className;
     QList<Core::LocatorFilterEntry> matches;
     const QString currentDocumentFilePath = interface.semanticInfo().doc->fileName();
     const ProjectExplorer::HeaderPaths headerPaths = relevantHeaderPaths(currentDocumentFilePath);
-    bool qtHeaderFileIncludeOffered = false;
+    QList<Utils::FilePath> headers;
 
     // Find an include file through the locator
     if (matchName(nameAst->name, &matches, &className)) {
+        QList<IndexItem::Ptr> indexItems;
         const Snapshot forwardHeaders = forwardingHeaders(interface);
         foreach (const Core::LocatorFilterEntry &entry, matches) {
             IndexItem::Ptr info = entry.internalData.value<IndexItem::Ptr>();
             if (info->symbolName() != className)
                 continue;
+            indexItems << info;
 
             Snapshot localForwardHeaders = forwardHeaders;
             localForwardHeaders.insert(interface.snapshot().document(info->fileName()));
@@ -1978,11 +2397,30 @@ void AddIncludeForUndefinedIdentifier::match(const CppQuickFixInterface &interfa
                     else if (headerFileName.at(1).isUpper())
                         priority = 1;
 
-                    if (looksLikeAQtClass(include.mid(1, include.size() - 2)))
-                        qtHeaderFileIncludeOffered = true;
-
                     result << new AddIncludeForUndefinedIdentifierOp(interface, priority,
                                                                      include);
+                    headers << header;
+                }
+            }
+        }
+
+        if (lookupResult == LookupResult::None && indexItems.size() == 1) {
+            QString qualifiedName = Overview().prettyName(nameAst->name);
+            if (qualifiedName.startsWith("::"))
+                qualifiedName.remove(0, 2);
+            if (indexItems.first()->scopedSymbolName().endsWith(qualifiedName)) {
+                const ProjectExplorer::Node * const node = ProjectExplorer::ProjectTree
+                        ::nodeForFile(interface.filePath());
+                ProjectExplorer::FileType fileType = node && node->asFileNode()
+                        ? node->asFileNode()->fileType() : ProjectExplorer::FileType::Unknown;
+                if (fileType == ProjectExplorer::FileType::Unknown
+                        && ProjectFile::isHeader(ProjectFile::classify(interface.filePath().toString()))) {
+                    fileType = ProjectExplorer::FileType::Header;
+                }
+                if (fileType == ProjectExplorer::FileType::Header) {
+                    result << new AddForwardDeclForUndefinedIdentifierOp(
+                                  interface, 0, indexItems.first()->scopedSymbolName(),
+                                  interface.currentFile()->startOf(nameAst));
                 }
             }
         }
@@ -1991,12 +2429,16 @@ void AddIncludeForUndefinedIdentifier::match(const CppQuickFixInterface &interfa
     if (className.isEmpty())
         return;
 
-    // The header file we are looking for might not be (yet) included in any file we have parsed.
-    // As such, it will not be findable via locator. At least for Qt classes, check also for
-    // headers with the same name.
-    if (!qtHeaderFileIncludeOffered && looksLikeAQtClass(className)) {
-        const QString include = findQtIncludeWithSameName(className, headerPaths);
-        if (!include.isEmpty())
+    // Fallback: Check the include paths for files that look like candidates
+    //           for the given name.
+    if (!Utils::contains(headers,
+            [&className](const Utils::FilePath &fp) { return fp.fileName() == className; })) {
+        const QString include = findMatchingInclude(className, headerPaths);
+        const auto matcher = [&include](const QuickFixOperation::Ptr &o) {
+            const auto includeOp = o.dynamicCast<AddIncludeForUndefinedIdentifierOp>();
+            return includeOp && includeOp->include() == include;
+        };
+        if (!include.isEmpty() && !Utils::contains(result, matcher))
             result << new AddIncludeForUndefinedIdentifierOp(interface, 1, include);
     }
 }
@@ -2027,7 +2469,7 @@ public:
     void perform() override
     {
         CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr currentFile = refactoring.file(fileName());
+        CppRefactoringFilePtr currentFile = refactoring.file(filePath().toString());
 
         int targetEndPos = currentFile->endOf(m_targetParam);
         ChangeSet changes;
@@ -2107,7 +2549,7 @@ public:
     void perform() override
     {
         CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr currentFile = refactoring.file(fileName());
+        CppRefactoringFilePtr currentFile = refactoring.file(filePath().toString());
         currentFile->setChangeSet(m_change);
         currentFile->apply();
     }
@@ -2269,7 +2711,7 @@ public:
     void perform() override
     {
         CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr currentFile = refactoring.file(fileName());
+        CppRefactoringFilePtr currentFile = refactoring.file(filePath().toString());
 
         ChangeSet changes;
         int start = currentFile->endOf(compoundStatement->lbrace_token);
@@ -2277,7 +2719,7 @@ public:
                        + values.join(QLatin1String(":\nbreak;\ncase "))
                        + QLatin1String(":\nbreak;"));
         currentFile->setChangeSet(changes);
-        currentFile->appendIndentRange(currentFile->range(compoundStatement));
+        currentFile->appendIndentRange(ChangeSet::Range(start, start + 1));
         currentFile->apply();
     }
 
@@ -2299,7 +2741,12 @@ static Enum *findEnum(const QList<LookupItem> &results, const LookupContext &ctx
             return e;
         if (const NamedType *namedType = type->asNamedType()) {
             if (ClassOrNamespace *con = ctxt.lookupType(namedType->name(), result.scope())) {
-                const QList<Enum *> enums = con->unscopedEnums();
+                QList<Enum *> enums = con->unscopedEnums();
+                const QList<Symbol *> symbols = con->symbols();
+                for (Symbol * const s : symbols) {
+                    if (const auto e = s->asEnum())
+                        enums << e;
+                }
                 const Name *referenceName = namedType->name();
                 if (const QualifiedNameId *qualifiedName = referenceName->asQualifiedNameId())
                     referenceName = qualifiedName->name();
@@ -2321,6 +2768,7 @@ Enum *conditionEnum(const CppQuickFixInterface &interface, SwitchStatementAST *s
     Block *block = statement->symbol;
     Scope *scope = interface.semanticInfo().doc->scopeAt(block->line(), block->column());
     TypeOfExpression typeOfExpression;
+    typeOfExpression.setExpandTemplates(true);
     typeOfExpression.init(interface.semanticInfo().doc, interface.snapshot());
     const QList<LookupItem> results = typeOfExpression(statement->condition,
                                                        interface.semanticInfo().doc,
@@ -2571,92 +3019,125 @@ public:
         }
     }
 
-    void perform() override
+    static void insertDefinition(
+            const CppQuickFixOperation *op,
+            InsertionLocation loc,
+            DefPos defPos,
+            DeclaratorAST *declAST,
+            Declaration *decl,
+            const QString &targetFilePath,
+            ChangeSet *changeSet = nullptr,
+            QList<ChangeSet::Range> *indentRanges = nullptr)
     {
-        CppRefactoringChanges refactoring(snapshot());
-        if (!m_loc.isValid())
-            m_loc = insertLocationForMethodDefinition(m_decl, true, refactoring, m_targetFileName);
-        QTC_ASSERT(m_loc.isValid(), return);
+        CppRefactoringChanges refactoring(op->snapshot());
+        if (!loc.isValid())
+            loc = insertLocationForMethodDefinition(decl, true, NamespaceHandling::Ignore,
+                                                      refactoring, targetFilePath);
+        QTC_ASSERT(loc.isValid(), return);
 
-        CppRefactoringFilePtr targetFile = refactoring.file(m_loc.fileName());
+        CppRefactoringFilePtr targetFile = refactoring.file(loc.fileName());
         Overview oo = CppCodeStyleSettings::currentProjectCodeStyleOverview();
         oo.showFunctionSignatures = true;
         oo.showReturnTypes = true;
         oo.showArgumentNames = true;
         oo.showEnclosingTemplate = true;
+        oo.showTemplateParameters = true;
 
-        if (m_defpos == DefPosInsideClass) {
-            const int targetPos = targetFile->position(m_loc.line(), m_loc.column());
-            ChangeSet target;
-            target.replace(targetPos - 1, targetPos, QLatin1String("\n {\n\n}")); // replace ';'
-            targetFile->setChangeSet(target);
-            targetFile->appendIndentRange(ChangeSet::Range(targetPos, targetPos + 4));
-            targetFile->setOpenEditor(true, targetPos);
-            targetFile->apply();
+        if (defPos == DefPosInsideClass) {
+            const int targetPos = targetFile->position(loc.line(), loc.column());
+            ChangeSet localChangeSet;
+            ChangeSet * const target = changeSet ? changeSet : &localChangeSet;
+            target->replace(targetPos - 1, targetPos, QLatin1String("\n {\n\n}")); // replace ';'
+            const ChangeSet::Range indentRange(targetPos, targetPos + 4);
+            if (indentRanges)
+                indentRanges->append(indentRange);
+            else
+                targetFile->appendIndentRange(indentRange);
 
-            // Move cursor inside definition
-            QTextCursor c = targetFile->cursor();
-            c.setPosition(targetPos);
-            c.movePosition(QTextCursor::Down);
-            c.movePosition(QTextCursor::EndOfLine);
-            editor()->setTextCursor(c);
+            if (!changeSet) {
+                targetFile->setChangeSet(*target);
+                targetFile->setOpenEditor(true, targetPos);
+                targetFile->apply();
+
+                // Move cursor inside definition
+                QTextCursor c = targetFile->cursor();
+                c.setPosition(targetPos);
+                c.movePosition(QTextCursor::Down);
+                c.movePosition(QTextCursor::EndOfLine);
+                op->editor()->setTextCursor(c);
+            }
         } else {
             // make target lookup context
             Document::Ptr targetDoc = targetFile->cppDocument();
-            Scope *targetScope = targetDoc->scopeAt(m_loc.line(), m_loc.column());
-            LookupContext targetContext(targetDoc, snapshot());
+            Scope *targetScope = targetDoc->scopeAt(loc.line(), loc.column());
+            LookupContext targetContext(targetDoc, op->snapshot());
             ClassOrNamespace *targetCoN = targetContext.lookupType(targetScope);
             if (!targetCoN)
                 targetCoN = targetContext.globalNamespace();
 
             // setup rewriting to get minimally qualified names
             SubstitutionEnvironment env;
-            env.setContext(context());
-            env.switchScope(m_decl->enclosingScope());
+            env.setContext(op->context());
+            env.switchScope(decl->enclosingScope());
             UseMinimalNames q(targetCoN);
             env.enter(&q);
-            Control *control = context().bindings()->control().data();
+            Control *control = op->context().bindings()->control().data();
 
             // rewrite the function type
-            const FullySpecifiedType tn = rewriteType(m_decl->type(), &env, control);
+            const FullySpecifiedType tn = rewriteType(decl->type(), &env, control);
 
             // rewrite the function name
-            if (nameIncludesOperatorName(m_decl->name())) {
-                CppRefactoringFilePtr file = refactoring.file(fileName());
-                const QString operatorNameText = file->textOf(m_declAST->core_declarator);
+            if (nameIncludesOperatorName(decl->name())) {
+                CppRefactoringFilePtr file = refactoring.file(op->filePath().toString());
+                const QString operatorNameText = file->textOf(declAST->core_declarator);
                 oo.includeWhiteSpaceInOperatorName = operatorNameText.contains(QLatin1Char(' '));
             }
-            const QString name = oo.prettyName(LookupContext::minimalName(m_decl, targetCoN,
+            const QString name = oo.prettyName(LookupContext::minimalName(decl, targetCoN,
                                                                           control));
+            const QString defText = inlinePrefix(
+                        targetFilePath, [defPos] { return defPos == DefPosOutsideClass; })
+                    + oo.prettyType(tn, name)
+                    + QLatin1String("\n{\n\n}");
 
-            const QString defText = oo.prettyType(tn, name) + QLatin1String("\n{\n\n}");
+            const int targetPos = targetFile->position(loc.line(), loc.column());
+            const int targetPos2 = qMax(0, targetFile->position(loc.line(), 1) - 1);
 
-            const int targetPos = targetFile->position(m_loc.line(), m_loc.column());
-            const int targetPos2 = qMax(0, targetFile->position(m_loc.line(), 1) - 1);
+            ChangeSet localChangeSet;
+            ChangeSet * const target = changeSet ? changeSet : &localChangeSet;
+            target->insert(targetPos,  loc.prefix() + defText + loc.suffix());
+            const ChangeSet::Range indentRange(targetPos2, targetPos);
+            if (indentRanges)
+                indentRanges->append(indentRange);
+            else
+                targetFile->appendIndentRange(indentRange);
 
-            ChangeSet target;
-            target.insert(targetPos,  m_loc.prefix() + defText + m_loc.suffix());
-            targetFile->setChangeSet(target);
-            targetFile->appendIndentRange(ChangeSet::Range(targetPos2, targetPos));
-            targetFile->setOpenEditor(true, targetPos);
-            targetFile->apply();
+            if (!changeSet) {
+                targetFile->setChangeSet(*target);
+                targetFile->setOpenEditor(true, targetPos);
+                targetFile->apply();
 
-            // Move cursor inside definition
-            QTextCursor c = targetFile->cursor();
-            c.setPosition(targetPos);
-            c.movePosition(QTextCursor::Down, QTextCursor::MoveAnchor,
-                           m_loc.prefix().count(QLatin1String("\n")) + 2);
-            c.movePosition(QTextCursor::EndOfLine);
-            if (m_defpos == DefPosImplementationFile) {
-                if (targetFile->editor())
-                    targetFile->editor()->setTextCursor(c);
-            } else {
-                editor()->setTextCursor(c);
+                // Move cursor inside definition
+                QTextCursor c = targetFile->cursor();
+                c.setPosition(targetPos);
+                c.movePosition(QTextCursor::Down, QTextCursor::MoveAnchor,
+                               loc.prefix().count(QLatin1String("\n")) + 2);
+                c.movePosition(QTextCursor::EndOfLine);
+                if (defPos == DefPosImplementationFile) {
+                    if (targetFile->editor())
+                        targetFile->editor()->setTextCursor(c);
+                } else {
+                    op->editor()->setTextCursor(c);
+                }
             }
         }
     }
 
 private:
+    void perform() override
+    {
+        insertDefinition(this, m_loc, m_defpos, m_declAST, m_decl, m_targetFileName);
+    }
+
     Declaration *m_decl;
     DeclaratorAST *m_declAST;
     InsertionLocation m_loc;
@@ -2680,7 +3161,7 @@ void InsertDefFromDecl::match(const CppQuickFixInterface &interface, QuickFixOpe
                 if (Symbol *symbol = simpleDecl->symbols->value) {
                     if (Declaration *decl = symbol->asDeclaration()) {
                         if (Function *func = decl->type()->asFunctionType()) {
-                            if (func->isSignal() || func->isPureVirtual())
+                            if (func->isSignal() || func->isPureVirtual() || func->isFriend())
                                 return;
 
                             // Check if there is already a definition
@@ -2693,7 +3174,7 @@ void InsertDefFromDecl::match(const CppQuickFixInterface &interface, QuickFixOpe
                             // Insert Position: Implementation File
                             DeclaratorAST *declAST = simpleDecl->declarator_list->value;
                             InsertDefOperation *op = nullptr;
-                            ProjectFile::Kind kind = ProjectFile::classify(interface.fileName());
+                            ProjectFile::Kind kind = ProjectFile::classify(interface.filePath().toString());
                             const bool isHeaderFile = ProjectFile::isHeader(kind);
                             if (isHeaderFile) {
                                 CppRefactoringChanges refactoring(interface.snapshot());
@@ -2737,7 +3218,7 @@ void InsertDefFromDecl::match(const CppQuickFixInterface &interface, QuickFixOpe
                                 result << new InsertDefOperation(interface, decl, declAST,
                                                                  InsertionLocation(),
                                                                  DefPosOutsideClass,
-                                                                 interface.fileName());
+                                                                 interface.filePath().toString());
                             }
 
                             // Insert Position: Inside Class
@@ -2746,8 +3227,8 @@ void InsertDefFromDecl::match(const CppQuickFixInterface &interface, QuickFixOpe
                             const CppRefactoringFilePtr file = interface.currentFile();
                             file->lineAndColumn(file->endOf(simpleDecl), &line, &column);
                             const InsertionLocation loc
-                                    = InsertionLocation(interface.fileName(), QString(), QString(),
-                                                        line, column);
+                                    = InsertionLocation(interface.filePath().toString(), QString(),
+                                                        QString(), line, column);
                             result << new InsertDefOperation(interface, decl, declAST, loc,
                                                              DefPosInsideClass, QString(),
                                                              isFreeFunction);
@@ -2760,6 +3241,401 @@ void InsertDefFromDecl::match(const CppQuickFixInterface &interface, QuickFixOpe
             break;
         }
     }
+}
+
+class InsertMemberFromInitializationOp : public CppQuickFixOperation
+{
+public:
+    InsertMemberFromInitializationOp(
+            const CppQuickFixInterface &interface,
+            const Class *theClass,
+            const QString &member,
+            const QString &type)
+        : CppQuickFixOperation(interface), m_class(theClass), m_member(member), m_type(type)
+    {
+        setDescription(QCoreApplication::translate("CppTools::Quickfix",
+                                                   "Add Class Member \"%1\"").arg(m_member));
+    }
+
+private:
+    void perform() override
+    {
+        QString type = m_type;
+        if (type.isEmpty()) {
+            type = QInputDialog::getText(
+                        Core::ICore::dialogParent(),
+                        QCoreApplication::translate("CppTools::Quickfix","Provide the type"),
+                        QCoreApplication::translate("CppTools::Quickfix","Data type:"),
+                        QLineEdit::Normal);
+        }
+        if (type.isEmpty())
+            return;
+
+        const CppRefactoringChanges refactoring(snapshot());
+        const InsertionPointLocator locator(refactoring);
+        const QString filePath = QString::fromUtf8(m_class->fileName());
+        const InsertionLocation loc = locator.methodDeclarationInClass(
+                    filePath, m_class, InsertionPointLocator::Private);
+        QTC_ASSERT(loc.isValid(), return);
+
+        CppRefactoringFilePtr targetFile = refactoring.file(filePath);
+        const int targetPosition1 = targetFile->position(loc.line(), loc.column());
+        const int targetPosition2 = qMax(0, targetFile->position(loc.line(), 1) - 1);
+        ChangeSet target;
+        target.insert(targetPosition1, loc.prefix() + type + ' ' + m_member + ";\n");
+        targetFile->setChangeSet(target);
+        targetFile->appendIndentRange(ChangeSet::Range(targetPosition2, targetPosition1));
+        targetFile->apply();
+    }
+
+    const Class * const m_class;
+    const QString m_member;
+    const QString m_type;
+};
+
+void InsertMemberFromInitialization::match(const CppQuickFixInterface &interface,
+                                           QuickFixOperations &result)
+{
+    // First check whether we are on a member initialization.
+    const QList<AST *> path = interface.path();
+    const int size = path.size();
+    if (size < 4)
+        return;
+    const SimpleNameAST * const name = path.at(size - 1)->asSimpleName();
+    if (!name)
+        return;
+    const MemInitializerAST * const memInitializer = path.at(size - 2)->asMemInitializer();
+    if (!memInitializer)
+        return;
+    if (!path.at(size - 3)->asCtorInitializer())
+        return;
+    const FunctionDefinitionAST * ctor = path.at(size - 4)->asFunctionDefinition();
+    if (!ctor)
+        return;
+
+    // Now find the class.
+    const Class *theClass = nullptr;
+    if (size > 4) {
+        const ClassSpecifierAST * const classSpec = path.at(size - 5)->asClassSpecifier();
+        if (classSpec) // Inline constructor. We get the class directly.
+            theClass = classSpec->symbol;
+    }
+    if (!theClass) {
+        // Out-of-line constructor. We need to find the class.
+        SymbolFinder finder;
+        const QList<Declaration *> matches = finder.findMatchingDeclaration(
+                    LookupContext(interface.currentFile()->cppDocument(), interface.snapshot()),
+                    ctor->symbol);
+        if (!matches.isEmpty())
+            theClass = matches.first()->enclosingClass();
+    }
+
+    if (!theClass)
+        return;
+
+    // Check whether the member exists already.
+    if (theClass->find(interface.currentFile()->cppDocument()->translationUnit()->identifier(
+                           name->identifier_token))) {
+        return;
+    }
+
+    const QString type = getType(interface, memInitializer, ctor);
+    const Identifier * const memberId = interface.currentFile()->cppDocument()
+            ->translationUnit()->identifier(name->identifier_token);
+    const QString member = QString::fromUtf8(memberId->chars(), memberId->size());
+
+    result << new InsertMemberFromInitializationOp(interface, theClass, member, type);
+}
+
+QString InsertMemberFromInitialization::getType(
+        const CppQuickFixInterface &interface,
+        const MemInitializerAST *memInitializer,
+        const FunctionDefinitionAST *ctor) const
+{
+    // Try to deduce the type: If the initialization expression is just a name
+    // (e.g. a constructor argument) or a function call, we don't bother the user.
+    if (!memInitializer->expression)
+        return {};
+    const ExpressionListParenAST * const lParenAst
+            = memInitializer->expression->asExpressionListParen();
+    if (!lParenAst || !lParenAst->expression_list || !lParenAst->expression_list->value)
+        return {};
+    const IdExpressionAST *idExpr = lParenAst->expression_list->value->asIdExpression();
+    if (!idExpr) { // Not a variable, so check for function call.
+        const CallAST * const call = lParenAst->expression_list->value->asCall();
+        if (!call || !call->base_expression)
+            return {};
+        idExpr = call->base_expression->asIdExpression();
+    }
+    if (!idExpr || !idExpr->name)
+        return {};
+
+    LookupContext context(interface.currentFile()->cppDocument(), interface.snapshot());
+    const QList<LookupItem> matches = context.lookup(idExpr->name->name, ctor->symbol);
+    if (matches.isEmpty())
+        return {};
+    Overview o = CppCodeStyleSettings::currentProjectCodeStyleOverview();
+    TypePrettyPrinter tpp(&o);
+    FullySpecifiedType type = matches.first().type();
+    if (!type.type())
+        return {};
+    const Function * const funcType = type.type()->asFunctionType();
+    if (funcType)
+        type = funcType->returnType();
+    return tpp(type);
+}
+
+class MemberFunctionImplSetting
+{
+public:
+    Symbol *func = nullptr;
+    DefPos defPos = DefPosImplementationFile;
+};
+using MemberFunctionImplSettings = QList<MemberFunctionImplSetting>;
+
+class AddImplementationsDialog : public QDialog
+{
+    Q_DECLARE_TR_FUNCTIONS(AddImplementationsDialog)
+public:
+    AddImplementationsDialog(const QList<Symbol *> &candidates, const Utils::FilePath &implFile)
+        : QDialog(Core::ICore::dialogParent()), m_candidates(candidates)
+    {
+        setWindowTitle(tr("Member Function Implementations"));
+
+        const auto defaultImplTargetComboBox = new QComboBox;
+        QStringList implTargetStrings{tr("None"), tr("Inline"), tr("Outside Class")};
+        if (!implFile.isEmpty())
+            implTargetStrings.append(implFile.fileName());
+        defaultImplTargetComboBox->insertItems(0, implTargetStrings);
+        connect(defaultImplTargetComboBox, qOverload<int>(&QComboBox::currentIndexChanged), this,
+                [this](int index) {
+            for (QComboBox * const cb : m_implTargetBoxes)
+                cb->setCurrentIndex(index);
+        });
+        const auto defaultImplTargetLayout = new QHBoxLayout;
+        defaultImplTargetLayout->addWidget(new QLabel(tr("Default implementation location:")));
+        defaultImplTargetLayout->addWidget(defaultImplTargetComboBox);
+
+        const auto candidatesLayout = new QGridLayout;
+        Overview oo = CppCodeStyleSettings::currentProjectCodeStyleOverview();
+        oo.showFunctionSignatures = true;
+        oo.showReturnTypes = true;
+        for (int i = 0; i < m_candidates.size(); ++i) {
+            const auto implTargetComboBox = new QComboBox;
+            m_implTargetBoxes.append(implTargetComboBox);
+            implTargetComboBox->insertItems(0, implTargetStrings);
+            const Symbol * const func = m_candidates.at(i);
+            candidatesLayout->addWidget(new QLabel(oo.prettyType(func->type(), func->name())),
+                                        i, 0);
+            candidatesLayout->addWidget(implTargetComboBox, i, 1);
+        }
+
+        const auto buttonBox
+                = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+        connect(buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
+        connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
+
+        defaultImplTargetComboBox->setCurrentIndex(implTargetStrings.size() - 1);
+        const auto mainLayout = new QVBoxLayout(this);
+        mainLayout->addLayout(defaultImplTargetLayout);
+        const auto separator = new QFrame();
+        separator->setFrameShape(QFrame::HLine);
+        mainLayout->addWidget(separator);
+        mainLayout->addLayout(candidatesLayout);
+        mainLayout->addWidget(buttonBox);
+    }
+
+    MemberFunctionImplSettings settings() const
+    {
+        QTC_ASSERT(m_candidates.size() == m_implTargetBoxes.size(), return {});
+        MemberFunctionImplSettings settings;
+        for (int i = 0; i < m_candidates.size(); ++i) {
+            MemberFunctionImplSetting setting;
+            const int index = m_implTargetBoxes.at(i)->currentIndex();
+            const bool addImplementation = index != 0;
+            if (!addImplementation)
+                continue;
+            setting.func = m_candidates.at(i);
+            setting.defPos = static_cast<DefPos>(index - 1);
+            settings << setting;
+        }
+        return settings;
+    }
+
+private:
+    const QList<Symbol *> m_candidates;
+    QList<QComboBox *> m_implTargetBoxes;
+};
+
+class InsertDefsOperation: public CppQuickFixOperation
+{
+public:
+    InsertDefsOperation(const CppQuickFixInterface &interface)
+        : CppQuickFixOperation(interface)
+    {
+        setDescription(CppQuickFixFactory::tr("Create Implementations for Member Functions"));
+
+        const QList<AST *> &path = interface.path();
+        if (path.size() < 2)
+            return;
+
+        // Determine if cursor is on a class
+        const SimpleNameAST * const nameAST = path.at(path.size() - 1)->asSimpleName();
+        if (!nameAST || !interface.isCursorOn(nameAST))
+           return;
+        m_classAST = path.at(path.size() - 2)->asClassSpecifier();
+        if (!m_classAST)
+            return;
+        const Class * const theClass = m_classAST->symbol;
+        if (!theClass)
+            return;
+
+        // Collect all member functions.
+        for (auto it = theClass->memberBegin(); it != theClass->memberEnd(); ++it) {
+            Symbol * const s = *it;
+            if (!s->identifier() || !s->type() || !s->isDeclaration() || s->asFunction())
+                continue;
+            Function * const func = s->type()->asFunctionType();
+            if (!func || func->isSignal() || func->isFriend())
+                continue;
+            Overview oo = CppCodeStyleSettings::currentProjectCodeStyleOverview();
+            oo.showFunctionSignatures = true;
+            if (magicQObjectFunctions().contains(oo.prettyName(func->name())))
+                continue;
+            m_declarations << s;
+        }
+    }
+
+    bool isApplicable() const { return !m_declarations.isEmpty(); }
+    void setMode(InsertDefsFromDecls::Mode mode) { m_mode = mode; }
+
+private:
+    void perform() override
+    {
+        QList<Symbol *> unimplemented;
+        SymbolFinder symbolFinder;
+        for (Symbol * const s : qAsConst(m_declarations)) {
+            if (!symbolFinder.findMatchingDefinition(s, snapshot()))
+                unimplemented << s;
+        }
+        if (unimplemented.isEmpty())
+            return;
+
+        CppRefactoringChanges refactoring(snapshot());
+        const bool isHeaderFile = ProjectFile::isHeader(ProjectFile::classify(filePath().toString()));
+        QString cppFile; // Only set if the class is defined in a header file.
+        if (isHeaderFile) {
+            InsertionPointLocator locator(refactoring);
+            for (const InsertionLocation &location
+                 : locator.methodDefinition(unimplemented.first(), false, {})) {
+                if (!location.isValid())
+                    continue;
+                const QString fileName = location.fileName();
+                if (ProjectFile::isHeader(ProjectFile::classify(fileName))) {
+                    const QString source = CppTools::correspondingHeaderOrSource(fileName);
+                    if (!source.isEmpty())
+                        cppFile = source;
+                } else {
+                    cppFile = fileName;
+                }
+                break;
+            }
+        }
+
+        MemberFunctionImplSettings settings;
+        switch (m_mode) {
+        case InsertDefsFromDecls::Mode::User: {
+            AddImplementationsDialog dlg(unimplemented, Utils::FilePath::fromString(cppFile));
+            if (dlg.exec() == QDialog::Accepted)
+                settings = dlg.settings();
+            break;
+        }
+        case InsertDefsFromDecls::Mode::Alternating: {
+            int defPos = DefPosImplementationFile;
+            const auto incDefPos = [&defPos] {
+                defPos = (defPos + 1) % (DefPosImplementationFile + 2);
+            };
+            for (Symbol * const func : qAsConst(unimplemented)) {
+                incDefPos();
+                if (defPos > DefPosImplementationFile)
+                    continue;
+                MemberFunctionImplSetting setting;
+                setting.func = func;
+                setting.defPos = static_cast<DefPos>(defPos);
+                settings << setting;
+            }
+            break;
+        }
+        case InsertDefsFromDecls::Mode::Off:
+            break;
+        }
+
+        if (settings.isEmpty())
+            return;
+
+        class DeclFinder : public ASTVisitor
+        {
+        public:
+            DeclFinder(const CppRefactoringFile *file, const Symbol *func)
+                : ASTVisitor(file->cppDocument()->translationUnit()), m_func(func) {}
+
+            SimpleDeclarationAST *decl() const { return m_decl; }
+
+        private:
+            bool visit(SimpleDeclarationAST *decl) override
+            {
+                if (m_decl)
+                    return false;
+                if (decl->symbols && decl->symbols->value == m_func)
+                    m_decl = decl;
+                return !m_decl;
+            }
+
+            const Symbol * const m_func;
+            SimpleDeclarationAST *m_decl = nullptr;
+        };
+
+        QHash<QString, QPair<ChangeSet, QList<ChangeSet::Range>>> changeSets;
+        for (const MemberFunctionImplSetting &setting : qAsConst(settings)) {
+            DeclFinder finder(currentFile().data(), setting.func);
+            finder.accept(m_classAST);
+            QTC_ASSERT(finder.decl(), continue);
+            InsertionLocation loc;
+            const QString targetFilePath = setting.defPos == DefPosImplementationFile
+                    ? cppFile : filePath().toString();
+            QTC_ASSERT(!targetFilePath.isEmpty(), continue);
+            if (setting.defPos == DefPosInsideClass) {
+                int line, column;
+                currentFile()->lineAndColumn(currentFile()->endOf(finder.decl()), &line, &column);
+                loc = InsertionLocation(filePath().toString(), QString(), QString(), line, column);
+            }
+            auto &changeSet = changeSets[targetFilePath];
+            InsertDefOperation::insertDefinition(
+                        this, loc, setting.defPos, finder.decl()->declarator_list->value,
+                        setting.func->asDeclaration(),targetFilePath,
+                        &changeSet.first, &changeSet.second);
+        }
+        for (auto it = changeSets.cbegin(); it != changeSets.cend(); ++it) {
+            const CppRefactoringFilePtr file = refactoring.file(it.key());
+            for (const ChangeSet::Range &r : it.value().second)
+                file->appendIndentRange(r);
+            file->setChangeSet(it.value().first);
+            file->apply();
+        }
+    }
+
+    ClassSpecifierAST *m_classAST = nullptr;
+    InsertDefsFromDecls::Mode m_mode;
+    QList<Symbol *> m_declarations;
+};
+
+
+void InsertDefsFromDecls::match(const CppQuickFixInterface &interface, QuickFixOperations &result)
+{
+    const auto op = QSharedPointer<InsertDefsOperation>::create(interface);
+    op->setMode(m_mode);
+    if (op->isApplicable())
+        result << op;
 }
 
 namespace {
@@ -2940,16 +3816,6 @@ public:
         updateDescriptionAndPriority();
     }
 
-    bool generateGetter() const
-    {
-        return (m_type == GetterSetterType || m_type == GetterType);
-    }
-
-    bool generateSetter() const
-    {
-        return (m_type == GetterSetterType || m_type == SetterType);
-    }
-
     void determineGetterSetterNames()
     {
         m_baseName = memberBaseName(m_variableString);
@@ -3006,13 +3872,21 @@ public:
             && m_offerQuickFix;
     }
 
-    void perform() override
+    static void addGetterAndOrSetter(
+            const CppQuickFixInterface *quickFix,
+            Symbol *symbol,
+            const ClassSpecifierAST *classSpecifier,
+            const QString &rawName,
+            const QString &baseName,
+            const QString &getterName,
+            const QString &setterName,
+            OperationType op)
     {
-        CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr currentFile = refactoring.file(fileName());
+        CppRefactoringChanges refactoring(quickFix->snapshot());
+        CppRefactoringFilePtr currentFile = refactoring.file(quickFix->filePath().toString());
 
-        QTC_ASSERT(m_symbol, return);
-        FullySpecifiedType fullySpecifiedType = m_symbol->type();
+        QTC_ASSERT(symbol, return);
+        FullySpecifiedType fullySpecifiedType = symbol->type();
         Type *type = fullySpecifiedType.type();
         QTC_ASSERT(type, return);
         Overview oo = CppCodeStyleSettings::currentProjectCodeStyleOverview();
@@ -3021,7 +3895,7 @@ public:
         oo.showArgumentNames = true;
         const QString typeString = oo.prettyType(fullySpecifiedType);
 
-        const NameAST *classNameAST = m_classSpecifier->name;
+        const NameAST *classNameAST = classSpecifier->name;
         QTC_ASSERT(classNameAST, return);
         const Name *className = classNameAST->name;
         QTC_ASSERT(className, return);
@@ -3038,12 +3912,11 @@ public:
 
         InsertionPointLocator locator(refactoring);
         InsertionLocation declLocation = locator.methodDeclarationInClass
-            (declFileName, m_classSpecifier->symbol->asClass(), InsertionPointLocator::Public);
+            (declFileName, classSpecifier->symbol->asClass(), InsertionPointLocator::Public);
 
         const bool passByValue = type->isIntegerType() || type->isFloatType()
                 || type->isPointerType() || type->isEnumType();
-        const QString paramName = m_baseName != m_variableString
-            ? m_baseName : QLatin1String("value");
+        const QString paramName = baseName != rawName ? baseName : QLatin1String("value");
         QString paramString;
         if (passByValue) {
             paramString = oo.prettyType(fullySpecifiedType, paramName);
@@ -3057,7 +3930,7 @@ public:
             paramString = oo.prettyType(referenceToConstParamType, paramName);
         }
 
-        const bool isStatic = m_symbol->storage() == Symbol::Static;
+        const bool isStatic = symbol->storage() == Symbol::Static;
 
         // Construct declaration strings
         QString declaration = declLocation.prefix();
@@ -3068,15 +3941,18 @@ public:
             getterTypeString = oo.prettyType(getterType);
         }
 
-        const QString declarationGetterTypeAndNameString = oo.prettyType(getterType, m_getterName);
+        const QString declarationGetterTypeAndNameString = oo.prettyType(getterType, getterName);
         const QString declarationGetter = QString::fromLatin1("%1%2()%3;\n")
                                               .arg(isStatic ? QLatin1String("static ") : QString(),
                                                    declarationGetterTypeAndNameString,
                                                    isStatic ? QString() : QLatin1String(" const"));
         const QString declarationSetter = QString::fromLatin1("%1void %2(%3);\n")
                                               .arg(isStatic ? QLatin1String("static ") : QString(),
-                                                   m_setterName,
+                                                   setterName,
                                                    paramString);
+
+        const auto generateGetter = [op] { return op == GetterSetterType || op == GetterType; };
+        const auto generateSetter = [op] { return op == GetterSetterType || op == SetterType; };
 
         if (generateGetter())
             declaration += declarationGetter;
@@ -3086,23 +3962,25 @@ public:
 
         // Construct implementation strings
         const QString implementationGetterTypeAndNameString = oo.prettyType(
-            getterType, QString::fromLatin1("%1::%2").arg(classString, m_getterName));
-        const QString implementationGetter = QString::fromLatin1("%1()%2\n"
+            getterType, QString::fromLatin1("%1::%2").arg(classString, getterName));
+        const QString inlineSpecifier = sameFile && wasHeader ? QString("inline") : QString();
+        const QString implementationGetter = QString::fromLatin1("%4 %1()%2\n"
                                                                  "{\n"
                                                                  "return %3;\n"
                                                                  "}")
                                                  .arg(implementationGetterTypeAndNameString,
                                                       isStatic ? QString() : QLatin1String(" const"),
-                                                      m_variableString);
-        const QString implementationSetter = QString::fromLatin1("void %1::%2(%3)\n"
+                                                      rawName, inlineSpecifier);
+        const QString implementationSetter = QString::fromLatin1("%6 void %1::%2(%3)\n"
                                                                  "{\n"
                                                                  "%4 = %5;\n"
                                                                  "}")
                                                  .arg(classString,
-                                                      m_setterName,
+                                                      setterName,
                                                       paramString,
-                                                      m_variableString,
-                                                      paramName);
+                                                      rawName,
+                                                      paramName,
+                                                      inlineSpecifier);
 
         QString implementation;
         if (generateGetter())
@@ -3120,16 +3998,21 @@ public:
         currChanges.insert(declInsertPos, declaration);
 
         if (sameFile) {
-            InsertionLocation loc = insertLocationForMethodDefinition(m_symbol, false, refactoring,
-                                                                      currentFile->fileName());
+            InsertionLocation loc = insertLocationForMethodDefinition(
+                        symbol, false, NamespaceHandling::CreateMissing, refactoring,
+                        currentFile->fileName());
             implementation = loc.prefix() + implementation + loc.suffix();
-            currChanges.insert(currentFile->position(loc.line(), loc.column()), implementation);
+            const int implInsertPos = currentFile->position(loc.line(), loc.column());
+            currChanges.insert(implInsertPos, implementation);
+            currentFile->appendIndentRange(
+                ChangeSet::Range(implInsertPos, implInsertPos + implementation.size()));
         } else {
-            CppRefactoringChanges implRef(snapshot());
+            CppRefactoringChanges implRef(quickFix->snapshot());
             CppRefactoringFilePtr implFile = implRef.file(implFileName);
             ChangeSet implChanges;
-            InsertionLocation loc = insertLocationForMethodDefinition(m_symbol, false,
-                                                                      implRef, implFileName);
+            InsertionLocation loc = insertLocationForMethodDefinition(
+                        symbol, false, NamespaceHandling::CreateMissing,
+                        implRef, implFileName);
             implementation = loc.prefix() + implementation + loc.suffix();
             const int implInsertPos = implFile->position(loc.line(), loc.column());
             implChanges.insert(implInsertPos, implementation);
@@ -3142,6 +4025,12 @@ public:
         currentFile->appendIndentRange(
             ChangeSet::Range(declInsertPos, declInsertPos + declaration.size()));
         currentFile->apply();
+    }
+
+    void perform() override
+    {
+        addGetterAndOrSetter(this, m_symbol, m_classSpecifier, m_variableString, m_baseName,
+                             m_getterName, m_setterName, m_type);
     }
 
     OperationType m_type = InvalidType;
@@ -3178,6 +4067,334 @@ void GenerateGetterSetter::match(const CppQuickFixInterface &interface,
         delete op;
     }
 }
+
+class MemberInfo {
+public:
+    MemberInfo(Symbol *m, const QString &r, const QString &b, bool g, bool s)
+        : member(m), rawName(r), baseName(b), hasGetter(g), hasSetter(s) {}
+
+    Symbol *member = nullptr;
+    QString rawName;
+    QString baseName;
+    bool hasGetter = false;
+    bool hasSetter = false;
+    bool getterRequested = false;
+    bool setterRequested = false;
+};
+using GetterSetterCandidates = std::vector<MemberInfo>;
+
+class CandidateTreeItem : public Utils::TreeItem
+{
+public:
+    static const int NameColumn = 0;
+    static const int GetterColumn = 1;
+    static const int SetterColumn = 2;
+
+    CandidateTreeItem(MemberInfo *candidate) : m_candidate(candidate) { }
+
+private:
+    QVariant data(int column, int role) const override
+    {
+        switch (column) {
+        case NameColumn:
+            if (role == Qt::DisplayRole)
+                return m_candidate->rawName;
+            break;
+        case GetterColumn:
+            if (role == Qt::CheckStateRole)
+                return m_candidate->hasGetter || m_candidate->getterRequested
+                        ? Qt::Checked : Qt::Unchecked;
+            break;
+        case SetterColumn:
+            if (role == Qt::CheckStateRole)
+                return m_candidate->hasSetter || m_candidate->setterRequested ?
+                            Qt::Checked : Qt::Unchecked;
+            break;
+        }
+        return {};
+    }
+
+    bool setData(int column, const QVariant &data, int role) override
+    {
+        switch (column) {
+        case GetterColumn:
+            if (role == Qt::CheckStateRole && !m_candidate->hasGetter) {
+                m_candidate->getterRequested = data.toInt() == Qt::Checked;
+                return true;
+            }
+            break;
+        case SetterColumn:
+            if (role == Qt::CheckStateRole && !m_candidate->hasSetter) {
+                m_candidate->setterRequested = data.toInt() == Qt::Checked;
+                return true;
+            }
+            break;
+        default:
+            break;
+        }
+        return false;
+    }
+
+    Qt::ItemFlags flags(int column) const override
+    {
+        switch (column) {
+        case NameColumn:
+            return Qt::ItemIsEnabled;
+        case GetterColumn:
+            if (m_candidate->hasGetter)
+                return {};
+            return Qt::ItemIsEnabled | Qt::ItemIsUserCheckable;
+        case SetterColumn:
+            if (m_candidate->hasSetter)
+                return {};
+            return Qt::ItemIsEnabled | Qt::ItemIsUserCheckable;
+        }
+        return {};
+    }
+
+    MemberInfo * const m_candidate;
+};
+
+class GenerateGettersSettersDialog : public QDialog
+{
+    Q_DECLARE_TR_FUNCTIONS(GenerateGettersSettersDialog)
+public:
+    GenerateGettersSettersDialog(const GetterSetterCandidates &candidates)
+        : QDialog(), m_candidates(candidates)
+    {
+        setWindowTitle(tr("Getters and Setters"));
+        const auto model = new Utils::TreeModel<Utils::TreeItem, CandidateTreeItem>(this);
+        model->setHeader(QStringList({tr("Member"), tr("Getter"), tr("Setter")}));
+        for (MemberInfo &candidate : m_candidates)
+            model->rootItem()->appendChild(new CandidateTreeItem(&candidate));
+        const auto view = new Utils::BaseTreeView(this);
+        view->setModel(model);
+
+        const auto buttonBox
+                = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+        connect(buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
+        connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
+
+        const auto setCheckStateForAll = [model](int column, int checkState) {
+            for (int i = 0; i < model->rowCount(); ++i) {
+                model->setData(model->index(i, column), checkState,
+                               Qt::CheckStateRole);
+            }
+        };
+        const auto preventPartiallyChecked = [](QCheckBox *checkbox) {
+            if (checkbox->checkState() == Qt::PartiallyChecked)
+                checkbox->setCheckState(Qt::Checked);
+        };
+
+        QCheckBox *allGettersCheckbox = nullptr;
+        if (Utils::anyOf(candidates, [](const MemberInfo &mi) { return !mi.hasGetter; })) {
+            allGettersCheckbox = new QCheckBox(tr("Create getters for all members"));
+            connect(allGettersCheckbox, &QCheckBox::stateChanged, [setCheckStateForAll](int state) {
+                if (state != Qt::PartiallyChecked)
+                    setCheckStateForAll(CandidateTreeItem::GetterColumn, state);
+            });
+            connect(allGettersCheckbox, &QCheckBox::clicked, this,
+                    [allGettersCheckbox, preventPartiallyChecked] {
+                preventPartiallyChecked(allGettersCheckbox);
+            });
+        }
+        QCheckBox *allSettersCheckbox = nullptr;
+        if (Utils::anyOf(candidates, [](const MemberInfo &mi) { return !mi.hasSetter; })) {
+            allSettersCheckbox = new QCheckBox(tr("Create setters for all members"));
+            connect(allSettersCheckbox, &QCheckBox::stateChanged, [setCheckStateForAll](int state) {
+                if (state != Qt::PartiallyChecked)
+                    setCheckStateForAll(CandidateTreeItem::SetterColumn, state);
+            });
+            connect(allSettersCheckbox, &QCheckBox::clicked, this,
+                    [allSettersCheckbox, preventPartiallyChecked] {
+                preventPartiallyChecked(allSettersCheckbox);
+            });
+        }
+        const auto hasGetterCount = Utils::count(m_candidates, [](const MemberInfo &mi) {
+            return mi.hasGetter; });
+        const auto hasSetterCount = Utils::count(m_candidates, [](const MemberInfo &mi) {
+            return mi.hasSetter; });
+        connect(model, &QAbstractItemModel::dataChanged, this,
+                [this, allGettersCheckbox, allSettersCheckbox, hasGetterCount, hasSetterCount] {
+            const int getterRequestedCount = Utils::count(m_candidates, [](const MemberInfo &mi) {
+                return mi.getterRequested; });
+            const int setterRequestedCount = Utils::count(m_candidates, [](const MemberInfo &mi) {
+                return mi.setterRequested; });
+            const auto countToState = [this](int requestedCount, int alreadyExistsCount) {
+                if (requestedCount == 0)
+                    return Qt::Unchecked;
+                if (int(m_candidates.size()) - requestedCount == alreadyExistsCount)
+                    return Qt::Checked;
+                return Qt::PartiallyChecked;
+            };
+            if (allGettersCheckbox) {
+                allGettersCheckbox->setCheckState(countToState(getterRequestedCount,
+                                                               hasGetterCount));
+            }
+            if (allSettersCheckbox) {
+                allSettersCheckbox->setCheckState(countToState(setterRequestedCount,
+                                                               hasSetterCount));
+            }
+        });
+
+        const auto mainLayout = new QVBoxLayout(this);
+        mainLayout->addWidget(new QLabel(tr("Please select the getters and/or setters "
+                                            "to be created.")));
+        if (allGettersCheckbox)
+            mainLayout->addWidget(allGettersCheckbox);
+        if (allSettersCheckbox)
+            mainLayout->addWidget(allSettersCheckbox);
+        mainLayout->addWidget(view);
+        mainLayout->addWidget(buttonBox);
+    }
+
+    GetterSetterCandidates candidates() const { return m_candidates; }
+
+private:
+    GetterSetterCandidates m_candidates;
+};
+
+class GenerateGettersSettersOperation : public CppQuickFixOperation
+{
+public:
+    GenerateGettersSettersOperation(const CppQuickFixInterface &interface)
+        : CppQuickFixOperation(interface)
+    {
+        setDescription(CppQuickFixFactory::tr("Create Getter and Setter Member Functions"));
+
+        const QList<AST *> &path = interface.path();
+        if (path.size() < 2)
+            return;
+
+        // Determine if cursor is on a class
+        const SimpleNameAST * const nameAST = path.at(path.size() - 1)->asSimpleName();
+        if (!nameAST || !interface.isCursorOn(nameAST))
+           return;
+        m_classAST = path.at(path.size() - 2)->asClassSpecifier();
+        if (!m_classAST)
+            return;
+
+        const Class * const theClass = m_classAST->symbol;
+        if (!theClass)
+            return;
+
+        // Go through all data members and try to find out whether they have getters and/or setters.
+        QList<Symbol *> dataMembers;
+        QList<Symbol *> memberFunctions;
+        for (auto it = theClass->memberBegin(); it != theClass->memberEnd(); ++it) {
+            Symbol * const s = *it;
+            if (!s->identifier() || !s->type())
+                continue;
+            if ((s->isDeclaration() && s->type()->asFunctionType()) || s->asFunction())
+                memberFunctions << s;
+            else if (s->isDeclaration() && (s->isPrivate() || s->isProtected()))
+                dataMembers << s;
+        }
+
+        for (Symbol * const member : dataMembers) {
+            const QString rawName = QString::fromUtf8(member->identifier()->chars(),
+                                                      member->identifier()->size());
+            const QString semanticName = memberBaseName(rawName);
+            const QString capitalizedSemanticName = semanticName.at(0).toUpper()
+                    + semanticName.mid(1);
+            const QStringList getterNames{semanticName, "get_" + semanticName,
+                        "get" + capitalizedSemanticName, "is_" + semanticName,
+                        "is" + capitalizedSemanticName};
+            const QStringList setterNames{"set_" + semanticName,
+                        "set" + capitalizedSemanticName};
+            const bool hasGetter = Utils::anyOf(memberFunctions, [&getterNames](const Symbol *s) {
+                const Identifier * const id = s->identifier();
+                const auto funcName = QString::fromUtf8(id->chars(), id->size());
+                return getterNames.contains(funcName);
+            });
+            const bool hasSetter = Utils::anyOf(memberFunctions, [&setterNames](const Symbol *s) {
+                const Identifier * const id = s->identifier();
+                const auto funcName = QString::fromUtf8(id->chars(), id->size());
+                return setterNames.contains(funcName);
+            });
+            if (!hasGetter || !hasSetter)
+                m_candidates.emplace_back(member, rawName, semanticName, hasGetter, hasSetter);
+        }
+    }
+
+    GetterSetterCandidates candidates() const { return m_candidates; }
+    bool isApplicable() const { return !m_candidates.empty(); }
+
+    void setGetterSetterData(const GetterSetterCandidates &data)
+    {
+        m_candidates = data;
+        m_hasData = true;
+    }
+
+private:
+    void perform() override
+    {
+        if (!m_hasData) {
+            GenerateGettersSettersDialog dlg(m_candidates);
+            if (dlg.exec() == QDialog::Rejected)
+                return;
+            m_candidates = dlg.candidates();
+        }
+
+        for (const MemberInfo &mi : m_candidates) {
+            GenerateGetterSetterOperation::OperationType op
+                    = GenerateGetterSetterOperation::InvalidType;
+            if (mi.getterRequested) {
+                if (mi.setterRequested)
+                    op = GenerateGetterSetterOperation::GetterSetterType;
+                else
+                    op = GenerateGetterSetterOperation::GetterType;
+            } else if (mi.setterRequested) {
+                op = GenerateGetterSetterOperation::SetterType;
+            }
+            if (op == GenerateGetterSetterOperation::InvalidType)
+                continue;
+
+            const Utils::optional<CppCodeStyleSettings> codeStyleSettings
+                    = CppCodeStyleSettings::currentProjectCodeStyle();
+            const CppCodeStyleSettings settings
+                    = codeStyleSettings.value_or(CppCodeStyleSettings::currentGlobalCodeStyle());
+            const QString capitalizedBaseName = mi.baseName.at(0).toUpper() + mi.baseName.mid(1);
+            const QString getterName = settings.preferGetterNameWithoutGetPrefix
+                    && mi.baseName != mi.rawName ? mi.baseName : "get" + capitalizedBaseName;
+            const QString setterName = "set" + capitalizedBaseName;
+            GenerateGetterSetterOperation::addGetterAndOrSetter(
+                        this,
+                        mi.member,
+                        m_classAST,
+                        mi.rawName,
+                        mi.baseName,
+                        getterName,
+                        setterName,
+                        op);
+        }
+    }
+
+
+    GetterSetterCandidates m_candidates;
+    const ClassSpecifierAST *m_classAST = nullptr;
+    bool m_hasData = false;
+};
+
+void GenerateGettersSettersForClass::match(const CppQuickFixInterface &interface,
+                                           QuickFixOperations &result)
+{
+    const auto op = QSharedPointer<GenerateGettersSettersOperation>::create(interface);
+    if (!op->isApplicable())
+        return;
+    if (m_test) {
+        GetterSetterCandidates candidates = op->candidates();
+        for (MemberInfo &mi : candidates) {
+            if (!mi.hasGetter)
+                mi.getterRequested = true;
+            if (!mi.hasSetter)
+                mi.setterRequested = true;
+        }
+        op->setGetterSetterData(candidates);
+    }
+    result << op;
+}
+
 
 namespace {
 
@@ -3224,7 +4441,7 @@ public:
     {
         QTC_ASSERT(!m_funcReturn || !m_relevantDecls.isEmpty(), return);
         CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr currentFile = refactoring.file(fileName());
+        CppRefactoringFilePtr currentFile = refactoring.file(filePath().toString());
 
         ExtractFunctionOptions options;
         if (m_functionNameGetter)
@@ -3271,11 +4488,16 @@ public:
 
         // Write class qualification, if any.
         if (matchingClass) {
-            Class *current = matchingClass;
+            const Scope *current = matchingClass;
             QVector<const Name *> classes{matchingClass->name()};
             while (current->enclosingScope()->asClass()) {
                 current = current->enclosingScope()->asClass();
                 classes.prepend(current->name());
+            }
+            while (current->enclosingScope() && current->enclosingScope()->asNamespace()) {
+                current = current->enclosingScope()->asNamespace();
+                if (current->name())
+                    classes.prepend(current->name());
             }
             for (const Name *n : classes) {
                 const Name *name = rewriteName(n, &env, control);
@@ -3314,7 +4536,7 @@ public:
             funcDef.append(QLatin1String(" const"));
             funcDecl.append(QLatin1String(" const"));
         }
-        funcDef.append(QLatin1String("\n{\n"));
+        funcDef.append(QLatin1String("\n{"));
         if (matchingClass)
             funcDecl.append(QLatin1String(";\n"));
         if (m_funcReturn) {
@@ -3325,6 +4547,7 @@ public:
         }
         funcDef.append(QLatin1String("\n}\n\n"));
         funcDef.replace(QChar::ParagraphSeparator, QLatin1String("\n"));
+        funcDef.prepend(inlinePrefix(currentFile->fileName()));
         funcCall.append(QLatin1Char(';'));
 
         // Get starting indentation from original code.
@@ -3353,7 +4576,7 @@ public:
         QTC_ASSERT(tc.hasSelection(), return);
         position = tc.selectionEnd() + 1;
         change.clear();
-        change.insert(position, extract);
+        change.insert(position, extract + '\n');
         currentFile->setChangeSet(change);
         currentFile->appendReindentRange(ChangeSet::Range(position, position + 1));
         currentFile->apply();
@@ -3894,7 +5117,7 @@ public:
         } else if (Namespace *matchingNamespace = isNamespaceFunction(context(), func)) {
             // Dealing with free functions and inline member functions.
             bool isHeaderFile;
-            declFileName = correspondingHeaderOrSource(fileName(), &isHeaderFile);
+            declFileName = correspondingHeaderOrSource(filePath().toString(), &isHeaderFile);
             if (!QFile::exists(declFileName))
                 return FoundDeclaration();
             result.file = refactoring.file(declFileName);
@@ -3926,7 +5149,7 @@ public:
         FunctionDeclaratorAST *functionDeclaratorOfDefinition
                 = functionDeclarator(m_functionDefinition);
         const CppRefactoringChanges refactoring(snapshot());
-        const CppRefactoringFilePtr currentFile = refactoring.file(fileName());
+        const CppRefactoringFilePtr currentFile = refactoring.file(filePath().toString());
         deduceTypeNameOfLiteral(currentFile->cppDocument());
 
         ChangeSet changes;
@@ -4102,7 +5325,7 @@ public:
         , m_identifierAST(identifierAST)
         , m_symbol(symbol)
         , m_refactoring(snapshot())
-        , m_file(m_refactoring.file(fileName()))
+        , m_file(m_refactoring.file(filePath().toString()))
         , m_document(interface.semanticInfo().doc)
     {
         setDescription(
@@ -4450,19 +5673,21 @@ public:
         GenerateGetter = 1 << 0,
         GenerateSetter = 1 << 1,
         GenerateSignal = 1 << 2,
-        GenerateStorage = 1 << 3
+        GenerateStorage = 1 << 3,
+        GenerateReset = 1 << 4
     };
 
     InsertQtPropertyMembersOp(const CppQuickFixInterface &interface,
               int priority, QtPropertyDeclarationAST *declaration, Class *klass, int generateFlags,
-              const QString &getterName, const QString &setterName, const QString &signalName,
-              const QString &storageName)
+              const QString &getterName, const QString &setterName, const QString &resetName,
+              const QString &signalName, const QString &storageName)
         : CppQuickFixOperation(interface, priority)
         , m_declaration(declaration)
         , m_class(klass)
         , m_generateFlags(generateFlags)
         , m_getterName(getterName)
         , m_setterName(setterName)
+        , m_resetName(resetName)
         , m_signalName(signalName)
         , m_storageName(storageName)
     {
@@ -4472,7 +5697,7 @@ public:
     void perform() override
     {
         CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr file = refactoring.file(fileName());
+        CppRefactoringFilePtr file = refactoring.file(filePath().toString());
 
         InsertionPointLocator locator(refactoring);
         ChangeSet declarations;
@@ -4493,6 +5718,7 @@ public:
         }
 
         // setter declaration
+        InsertionLocation setterLoc;
         if (m_generateFlags & GenerateSetter) {
             QString setterDeclaration;
             QTextStream setter(&setterDeclaration);
@@ -4509,9 +5735,34 @@ public:
                 setter << m_storageName << " = " << baseName << ";\nemit " << m_signalName
                        << '(' << m_storageName << ");\n}\n";
             }
-            InsertionLocation setterLoc = locator.methodDeclarationInClass(file->fileName(), m_class, InsertionPointLocator::PublicSlot);
+            setterLoc = locator.methodDeclarationInClass(file->fileName(), m_class, InsertionPointLocator::PublicSlot);
             QTC_ASSERT(setterLoc.isValid(), return);
             insertAndIndent(file, &declarations, setterLoc, setterDeclaration);
+        }
+
+        // reset declaration
+        if (m_generateFlags & GenerateReset) {
+            QString declaration;
+            QTextStream stream(&declaration);
+            stream << "void " << m_resetName << "()\n{\n";
+            if (m_generateFlags & GenerateSetter) {
+                stream << m_setterName << "({}); // TODO: Adapt to use your actual default value\n";
+            } else {
+                stream << "static const " << typeName << " defaultValue{}; "
+                          "// TODO: Adapt to use your actual default value\n";
+                if (!m_signalName.isEmpty())
+                    stream << "if (" << m_storageName << " == defaultValue)\nreturn;\n\n";
+                stream << m_storageName <<  " = defaultValue;\n";
+                if (!m_signalName.isEmpty())
+                    stream << "emit " << m_signalName << '(' << m_storageName << ");\n";
+            }
+            stream << "}\n";
+            const InsertionLocation loc = setterLoc.isValid()
+                    ? InsertionLocation(setterLoc.fileName(), {}, {}, setterLoc.line(), 1)
+                    : locator.methodDeclarationInClass(file->fileName(), m_class,
+                                                       InsertionPointLocator::PublicSlot);
+            QTC_ASSERT(loc.isValid(), return);
+            insertAndIndent(file, &declarations, loc, declaration);
         }
 
         // signal declaration
@@ -4552,6 +5803,7 @@ private:
     int m_generateFlags;
     QString m_getterName;
     QString m_setterName;
+    QString m_resetName;
     QString m_signalName;
     QString m_storageName;
 };
@@ -4584,6 +5836,7 @@ void InsertQtPropertyMembers::match(const CppQuickFixInterface &interface,
     const QString propertyName = file->textOf(qtPropertyDeclaration->property_name);
     QString getterName;
     QString setterName;
+    QString resetName;
     QString signalName;
     int generateFlags = 0;
     QtPropertyDeclarationItemListAST *it = qtPropertyDeclaration->property_declaration_item_list;
@@ -4595,6 +5848,9 @@ void InsertQtPropertyMembers::match(const CppQuickFixInterface &interface,
         } else if (!qstrcmp(tokenString, "WRITE")) {
             setterName = file->textOf(it->value->expression);
             generateFlags |= InsertQtPropertyMembersOp::GenerateSetter;
+        } else if (!qstrcmp(tokenString, "RESET")) {
+            resetName = file->textOf(it->value->expression);
+            generateFlags |= InsertQtPropertyMembersOp::GenerateReset;
         } else if (!qstrcmp(tokenString, "NOTIFY")) {
             signalName = file->textOf(it->value->expression);
             generateFlags |= InsertQtPropertyMembersOp::GenerateSignal;
@@ -4615,6 +5871,8 @@ void InsertQtPropertyMembers::match(const CppQuickFixInterface &interface,
                 generateFlags &= ~InsertQtPropertyMembersOp::GenerateGetter;
             else if (name == setterName)
                 generateFlags &= ~InsertQtPropertyMembersOp::GenerateSetter;
+            else if (name == resetName)
+                generateFlags &= ~InsertQtPropertyMembersOp::GenerateReset;
             else if (name == signalName)
                 generateFlags &= ~InsertQtPropertyMembersOp::GenerateSignal;
         } else if (member->asDeclaration()) {
@@ -4628,7 +5886,7 @@ void InsertQtPropertyMembers::match(const CppQuickFixInterface &interface,
         return;
 
     result << new InsertQtPropertyMembersOp(interface, path.size() - 1, qtPropertyDeclaration, c,
-                                            generateFlags, getterName, setterName,
+                                            generateFlags, getterName, setterName, resetName,
                                             signalName, storageName);
 }
 
@@ -4700,6 +5958,7 @@ QString definitionSignature(const CppQuickFixInterface *assist,
     oo.showReturnTypes = true;
     oo.showArgumentNames = true;
     oo.showEnclosingTemplate = true;
+    oo.showTemplateParameters = true;
     const Name *name = func->name();
     if (name && nameIncludesOperatorName(name)) {
         CoreDeclaratorAST *coreDeclarator = functionDefinitionAST->declarator->core_declarator;
@@ -4732,16 +5991,19 @@ public:
     void performMove(FunctionDefinitionAST *funcAST)
     {
         // Determine file, insert position and scope
-        InsertionLocation l = insertLocationForMethodDefinition(funcAST->symbol, false,
-                                                                m_changes, m_toFile->fileName());
+        InsertionLocation l = insertLocationForMethodDefinition(
+                    funcAST->symbol, false, NamespaceHandling::Ignore,
+                    m_changes, m_toFile->fileName());
         const QString prefix = l.prefix();
         const QString suffix = l.suffix();
         const int insertPos = m_toFile->position(l.line(), l.column());
         Scope *scopeAtInsertPos = m_toFile->cppDocument()->scopeAt(l.line(), l.column());
 
         // construct definition
-        const QString funcDec = definitionSignature(m_operation, funcAST, m_fromFile, m_toFile,
-                                                    scopeAtInsertPos);
+        const QString funcDec = inlinePrefix(
+                    m_toFile->fileName(), [this] { return m_type == MoveOutside; })
+                + definitionSignature(m_operation, funcAST, m_fromFile, m_toFile,
+                                      scopeAtInsertPos);
         QString funcDef = prefix + funcDec;
         const int startPosition = m_fromFile->endOf(funcAST->declarator);
         const int endPosition = m_fromFile->endOf(funcAST);
@@ -4861,7 +6123,8 @@ void MoveFuncDefOutside::match(const CppQuickFixInterface &interface, QuickFixOp
         return;
 
     bool isHeaderFile = false;
-    const QString cppFileName = correspondingHeaderOrSource(interface.fileName(), &isHeaderFile);
+    const QString cppFileName = correspondingHeaderOrSource(interface.filePath().toString(),
+                                                            &isHeaderFile);
 
     if (isHeaderFile && !cppFileName.isEmpty()) {
         const MoveFuncDefRefactoringHelper::MoveType type = moveOutsideMemberDefinition
@@ -4955,7 +6218,8 @@ void MoveAllFuncDefOutside::match(const CppQuickFixInterface &interface, QuickFi
         return;
 
     bool isHeaderFile = false;
-    const QString cppFileName = correspondingHeaderOrSource(interface.fileName(), &isHeaderFile);
+    const QString cppFileName = correspondingHeaderOrSource(interface.filePath().toString(),
+                                                            &isHeaderFile);
     if (isHeaderFile && !cppFileName.isEmpty()) {
         result << new MoveAllFuncDefOutsideOp(interface,
                                               MoveFuncDefRefactoringHelper::MoveToCppFile,
@@ -5060,7 +6324,7 @@ void MoveFuncDefToDecl::match(const CppQuickFixInterface &interface, QuickFixOpe
         return;
 
     const CppRefactoringChanges refactoring(interface.snapshot());
-    const CppRefactoringFilePtr defFile = refactoring.file(interface.fileName());
+    const CppRefactoringFilePtr defFile = refactoring.file(interface.filePath().toString());
     const ChangeSet::Range defRange = defFile->range(completeDefAST);
 
     // Determine declaration (file, range, text);
@@ -5115,7 +6379,7 @@ void MoveFuncDefToDecl::match(const CppQuickFixInterface &interface, QuickFixOpe
     } else if (Namespace *matchingNamespace = isNamespaceFunction(interface.context(), func)) {
         // Dealing with free functions
         bool isHeaderFile = false;
-        declFileName = correspondingHeaderOrSource(interface.fileName(), &isHeaderFile);
+        declFileName = correspondingHeaderOrSource(interface.filePath().toString(), &isHeaderFile);
         if (isHeaderFile)
             return;
 
@@ -5138,14 +6402,16 @@ void MoveFuncDefToDecl::match(const CppQuickFixInterface &interface, QuickFixOpe
                 }
             }
 
-            if (!declText.isEmpty())
+            if (!declText.isEmpty()) {
+                declText.prepend(inlinePrefix(declFileName));
                 break;
+            }
         }
     }
 
     if (!declFileName.isEmpty() && !declText.isEmpty())
         result << new MoveFuncDefToDeclOp(interface,
-                                          interface.fileName(),
+                                          interface.filePath().toString(),
                                           declFileName,
                                           funcAST, declText,
                                           defRange, declRange);
@@ -5169,7 +6435,7 @@ public:
     void perform() override
     {
         CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr file = refactoring.file(fileName());
+        CppRefactoringFilePtr file = refactoring.file(filePath().toString());
 
         // Determine return type and new variable name
         TypeOfExpression typeOfExpression;
@@ -5634,7 +6900,7 @@ public:
     void perform() override
     {
         CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr currentFile = refactoring.file(fileName());
+        CppRefactoringFilePtr currentFile = refactoring.file(filePath().toString());
 
         const int startPos = currentFile->startOf(m_literal);
         const int endPos = currentFile->endOf(m_literal);
@@ -5721,7 +6987,7 @@ private:
     void perform() override
     {
         CppRefactoringChanges refactoring(snapshot());
-        CppRefactoringFilePtr currentFile = refactoring.file(fileName());
+        CppRefactoringFilePtr currentFile = refactoring.file(filePath().toString());
         currentFile->setChangeSet(m_changes);
         currentFile->apply();
     }
@@ -5822,7 +7088,7 @@ Class *senderOrReceiverClass(const CppQuickFixInterface &interface,
     toe.init(interface.semanticInfo().doc, interface.snapshot(), context.bindings());
     const QList<LookupItem> objectPointerExpressions = toe(objectPointerExpression,
                                                            objectPointerScope, TypeOfExpression::Preprocess);
-    QTC_ASSERT(objectPointerExpressions.size() == 1, return nullptr);
+    QTC_ASSERT(!objectPointerExpressions.isEmpty(), return nullptr);
 
     Type *objectPointerTypeBase = objectPointerExpressions.first().type().type();
     QTC_ASSERT(objectPointerTypeBase, return nullptr);
@@ -6023,10 +7289,565 @@ void ConvertQt4Connect::match(const CppQuickFixInterface &interface, QuickFixOpe
 void ExtraRefactoringOperations::match(const CppQuickFixInterface &interface,
                                        QuickFixOperations &result)
 {
-    const auto processor = CppTools::CppToolsBridge::baseEditorDocumentProcessor(interface.fileName());
+    const auto processor = CppTools::CppToolsBridge::baseEditorDocumentProcessor(interface.filePath().toString());
     if (processor) {
         const auto clangFixItOperations = processor->extraRefactoringOperations(interface);
         result.append(clangFixItOperations);
+    }
+}
+
+namespace {
+
+/**
+ * @brief The NameCounter class counts the parts of a name. E.g. 2 for std::vector or 1 for variant
+ */
+class NameCounter : private NameVisitor
+{
+public:
+    int count(const Name *name)
+    {
+        counter = 0;
+        accept(name);
+        return counter;
+    }
+
+private:
+    void visit(const Identifier *) override { ++counter; }
+    void visit(const DestructorNameId *) override { ++counter; }
+    void visit(const TemplateNameId *) override { ++counter; }
+    void visit(const QualifiedNameId *name) override
+    {
+        if (name->base())
+            accept(name->base());
+        accept(name->name());
+    }
+    int counter;
+};
+
+/**
+ * @brief getBaseName returns the base name of a qualified name or nullptr.
+ * E.g.: foo::bar => foo; bar => bar
+ * @param name The Name, maybe qualified
+ * @return The base name of the qualified name or nullptr
+ */
+const Identifier *getBaseName(const Name *name)
+{
+    class GetBaseName : public NameVisitor
+    {
+        void visit(const Identifier *name) override { baseName = name; }
+        void visit(const QualifiedNameId *name) override
+        {
+            if (name->base())
+                accept(name->base());
+            else
+                accept(name->name());
+        }
+
+    public:
+        const Identifier *baseName = nullptr;
+    };
+    GetBaseName getter;
+    getter.accept(name);
+    return getter.baseName;
+}
+
+/**
+ * @brief countNames counts the parts of the Name.
+ * E.g. if the name is std::vector, the function returns 2, if the name is variant, returns 1
+ * @param name The name that should be counted
+ * @return the number of parts of the name
+ */
+int countNames(const Name *name)
+{
+    return NameCounter{}.count(name);
+}
+
+/**
+ * @brief removeLine removes the whole line in which the ast node is located if there are otherwise only whitespaces
+ * @param file The file in which the AST node is located
+ * @param ast The ast node
+ * @param changeSet The ChangeSet of the file
+ */
+void removeLine(const CppRefactoringFile *file, AST *ast, ChangeSet &changeSet)
+{
+    RefactoringFile::Range range = file->range(ast);
+    --range.start;
+    while (range.start >= 0) {
+        QChar current = file->charAt(range.start);
+        if (!current.isSpace()) {
+            ++range.start;
+            break;
+        }
+        if (current == QChar::ParagraphSeparator)
+            break;
+        --range.start;
+    }
+    range.start = std::max(0, range.start);
+    while (range.end < file->document()->characterCount()) {
+        QChar current = file->charAt(range.end);
+        if (!current.isSpace())
+            break;
+        if (current == QChar::ParagraphSeparator)
+            break;
+        ++range.end;
+    }
+    range.end = std::min(file->document()->characterCount(), range.end);
+    const bool newLineStart = file->charAt(range.start) == QChar::ParagraphSeparator;
+    const bool newLineEnd = file->charAt(range.end) == QChar::ParagraphSeparator;
+    if (!newLineEnd && newLineStart)
+        ++range.start;
+    changeSet.remove(range);
+}
+
+/**
+ * @brief The RemoveNamespaceVisitor class removes a using namespace and rewrites all types that
+ * are in the namespace if needed
+ */
+class RemoveNamespaceVisitor : public ASTVisitor
+{
+public:
+    constexpr static int SearchGlobalUsingDirectivePos = std::numeric_limits<int>::max();
+    RemoveNamespaceVisitor(const CppRefactoringFile *file,
+                           const Snapshot &snapshot,
+                           const Name *namespace_,
+                           int symbolPos,
+                           bool removeAllAtGlobalScope)
+        : ASTVisitor(file->cppDocument()->translationUnit())
+        , m_file(file)
+        , m_snapshot(snapshot)
+        , m_namespace(namespace_)
+        , m_missingNamespace(toString(namespace_) + "::")
+        , m_context(m_file->cppDocument(), m_snapshot)
+        , m_symbolPos(symbolPos)
+        , m_removeAllAtGlobalScope(removeAllAtGlobalScope)
+
+    {}
+
+    const ChangeSet &getChanges() { return m_changeSet; }
+
+    /**
+     * @brief isGlobalUsingNamespace return true if the using namespace that should be removed
+     * is not scoped and other files that include this file will also use the using namespace
+     * @return true if using namespace statement is global and not scoped, false otherwise
+     */
+    bool isGlobalUsingNamespace() const { return m_parentNode == nullptr; }
+
+    /**
+     * @brief foundGlobalUsingNamespace return true if removeAllAtGlobalScope is false and
+     * another using namespace is found at the global scope, so that other files that include this
+     * file don't have to be processed
+     * @return true if there was a 'global' second using namespace in this file and
+     * removeAllAtGlobalScope is false
+     */
+    bool foundGlobalUsingNamespace() const { return m_foundNamespace; }
+
+private:
+    bool preVisit(AST *ast) override
+    {
+        if (!m_start) {
+            if (ast->asTranslationUnit())
+                return true;
+            if (UsingDirectiveAST *usingDirective = ast->asUsingDirective()) {
+                if (nameEqual(usingDirective->name->name, m_namespace)) {
+                    if (m_symbolPos == SearchGlobalUsingDirectivePos) {
+                        // we have found a global using directive, so lets start
+                        m_start = true;
+                        removeLine(m_file, ast, m_changeSet);
+                        return false;
+                    }
+                    // ignore the using namespace that should be removed
+                    if (m_file->endOf(ast) != m_symbolPos) {
+                        if (m_removeAllAtGlobalScope)
+                            removeLine(m_file, ast, m_changeSet);
+                        else
+                            m_done = true;
+                    }
+                }
+            }
+            // if the end of the ast is before we should start, we are not interested in the node
+            if (m_file->endOf(ast) <= m_symbolPos)
+                return false;
+
+            if (m_file->startOf(ast) > m_symbolPos)
+                m_start = true;
+        }
+        return !m_foundNamespace && !m_done;
+    }
+
+    bool visit(NamespaceAST *ast) override
+    {
+        if (m_start && nameEqual(m_namespace, ast->symbol->name()))
+            return false;
+
+        return m_start;
+    }
+
+    // scopes for using namespace statements:
+    bool visit(LinkageBodyAST *ast) override { return visitNamespaceScope(ast); }
+    bool visit(CompoundStatementAST *ast) override { return visitNamespaceScope(ast); }
+    bool visitNamespaceScope(AST *ast)
+    {
+        ++m_namespaceScopeCounter;
+        if (!m_start)
+            m_parentNode = ast;
+        return true;
+    }
+
+    void endVisit(LinkageBodyAST *ast) override { endVisitNamespaceScope(ast); }
+    void endVisit(CompoundStatementAST *ast) override { endVisitNamespaceScope(ast); }
+    void endVisitNamespaceScope(AST *ast)
+    {
+        --m_namespaceScopeCounter;
+        m_foundNamespace = false;
+        // if we exit the scope of the using namespace we are done
+        if (ast == m_parentNode)
+            m_done = true;
+    }
+
+    bool visit(UsingDirectiveAST *ast) override
+    {
+        if (nameEqual(ast->name->name, m_namespace)) {
+            if (m_removeAllAtGlobalScope && m_namespaceScopeCounter == 0)
+                removeLine(m_file, ast, m_changeSet);
+            else
+                m_foundNamespace = true;
+            return false;
+        }
+        return handleAstWithLongestName(ast);
+    }
+
+    bool visit(DeclaratorIdAST *ast) override
+    {
+        // e.g. we have the following code and get the following Lookup items:
+        // namespace test {
+        //   struct foo { // 1. item with test::foo
+        //     foo();     // 2. item with test::foo::foo
+        //   };
+        // }
+        // using namespace foo;
+        // foo::foo() { ... } // 3. item with foo::foo
+        // Our current name is foo::foo so we have to match with the 2. item / longest name
+        return handleAstWithLongestName(ast);
+    }
+
+    template<typename AST>
+    bool handleAstWithLongestName(AST *ast)
+    {
+        if (m_start) {
+            Scope *scope = m_file->scopeAt(ast->firstToken());
+            const QList<LookupItem> localLookup = m_context.lookup(ast->name->name, scope);
+            QList<const Name *> longestName;
+            for (const LookupItem &item : localLookup) {
+                QList<const Name *> names
+                    = m_context.fullyQualifiedName(item.declaration(),
+                                                   LookupContext::HideInlineNamespaces);
+                if (names.length() > longestName.length())
+                    longestName = names;
+            }
+            const int currentNameCount = countNames(ast->name->name);
+            const bool needNew = needMissingNamespaces(std::move(longestName), currentNameCount);
+            if (needNew)
+                insertMissingNamespace(ast);
+        }
+        return false;
+    }
+
+    bool visit(NamedTypeSpecifierAST *ast) override { return handleAstWithName(ast); }
+
+    bool visit(IdExpressionAST *ast) override { return handleAstWithName(ast); }
+
+    template<typename AST>
+    bool handleAstWithName(AST *ast)
+    {
+        if (m_start) {
+            Scope *scope = m_file->scopeAt(ast->firstToken());
+            const Name *wantToLookup = ast->name->name;
+            // first check if the base name is a typedef. Consider the following example:
+            // using namespace std;
+            // using vec = std::vector<int>;
+            // vec::iterator it; // we have to lookup 'vec' and not iterator (would result in
+            //   std::vector<int>::iterator => std::vec::iterator, which is wrong)
+            const Name *baseName = getBaseName(wantToLookup);
+            QList<LookupItem> typedefCandidates = m_context.lookup(baseName, scope);
+            if (!typedefCandidates.isEmpty()) {
+                if (typedefCandidates.front().declaration()->isTypedef())
+                    wantToLookup = baseName;
+            }
+
+            const QList<LookupItem> lookups = m_context.lookup(wantToLookup, scope);
+            if (!lookups.empty()) {
+                QList<const Name *> fullName
+                    = m_context.fullyQualifiedName(lookups.first().declaration(),
+                                                   LookupContext::HideInlineNamespaces);
+                const int currentNameCount = countNames(wantToLookup);
+                const bool needNamespace = needMissingNamespaces(std::move(fullName),
+                                                                 currentNameCount);
+                if (needNamespace)
+                    insertMissingNamespace(ast);
+            }
+        }
+        return true;
+    }
+
+    template<typename AST>
+    void insertMissingNamespace(AST *ast)
+    {
+        DestructorNameAST *destructorName = ast->name->asDestructorName();
+        if (destructorName)
+            m_changeSet.insert(m_file->startOf(destructorName->unqualified_name), m_missingNamespace);
+        else
+            m_changeSet.insert(m_file->startOf(ast->name), m_missingNamespace);
+    }
+
+    bool needMissingNamespaces(QList<const Name *> &&fullName, int currentNameCount)
+    {
+        if (currentNameCount > fullName.length())
+            return false;
+
+        // eg. fullName = std::vector, currentName = vector => result should be std
+        fullName.erase(fullName.end() - currentNameCount, fullName.end());
+        if (fullName.empty())
+            return false;
+        return nameEqual(m_namespace, fullName.last());
+    }
+
+    static bool nameEqual(const Name *name1, const Name *name2)
+    {
+        return Matcher::match(name1, name2);
+    }
+
+    QString toString(const Name *id)
+    {
+        const Identifier *identifier = id->asNameId();
+        QTC_ASSERT(identifier, return {});
+        return QString::fromUtf8(identifier->chars(), identifier->size());
+    }
+
+    const CppRefactoringFile *const m_file;
+    const Snapshot &m_snapshot;
+
+    const Name *m_namespace;          // the name of the namespace that should be removed
+    const QString m_missingNamespace; // that should be added if a type was using the namespace
+    LookupContext m_context;
+    ChangeSet m_changeSet;
+    const int m_symbolPos; // the end position of the start symbol
+    bool m_done = false;
+    bool m_start = false;
+    // true if a using namespace was found at a scope and the scope should be left
+    bool m_foundNamespace = false;
+    bool m_removeAllAtGlobalScope;
+    // the scope where the using namespace that should be removed is valid
+    AST *m_parentNode = nullptr;
+    int m_namespaceScopeCounter = 0;
+};
+
+class RemoveUsingNamespaceOperation : public CppQuickFixOperation
+{
+    struct Node
+    {
+        Document::Ptr document;
+        bool hasGlobalUsingDirective = false;
+        int unprocessedParents;
+        std::vector<std::reference_wrapper<Node>> includes;
+        std::vector<std::reference_wrapper<Node>> includedBy;
+        Node() = default;
+        Node(const Node &) = delete;
+        Node(Node &&) = delete;
+    };
+
+public:
+    RemoveUsingNamespaceOperation(const CppQuickFixInterface &interface,
+                                  UsingDirectiveAST *usingDirective,
+                                  bool removeAllAtGlobalScope)
+        : CppQuickFixOperation(interface, 1)
+        , m_usingDirective(usingDirective)
+        , m_removeAllAtGlobalScope(removeAllAtGlobalScope)
+    {
+        const QString name = Overview{}.prettyName(usingDirective->name->name);
+        if (m_removeAllAtGlobalScope) {
+            setDescription(QApplication::translate(
+                               "CppTools::QuickFix",
+                               "Remove All Occurrences of \"using namespace %1\" in Global Scope "
+                               "and Adjust Type Names Accordingly")
+                               .arg(name));
+        } else {
+            setDescription(QApplication::translate("CppTools::QuickFix",
+                                                   "Remove \"using namespace %1\" and "
+                                                   "Adjust Type Names Accordingly")
+                               .arg(name));
+        }
+    }
+
+private:
+    std::map<Utils::FilePath, Node> buildIncludeGraph(CppRefactoringChanges &refactoring)
+    {
+        using namespace ProjectExplorer;
+        using namespace Utils;
+
+        const Snapshot &s = refactoring.snapshot();
+        std::map<Utils::FilePath, Node> includeGraph;
+
+        auto handleFile = [&](const FilePath &filePath, Document::Ptr doc, auto shouldHandle) {
+            Node &node = includeGraph[filePath];
+            node.document = doc;
+            for (const Document::Include &include : doc->resolvedIncludes()) {
+                const auto filePath = FilePath::fromString(include.resolvedFileName());
+                if (shouldHandle(filePath)) {
+                    Node &includedNode = includeGraph[filePath];
+                    includedNode.includedBy.push_back(node);
+                    node.includes.push_back(includedNode);
+                }
+            }
+        };
+
+        if (const Project *project = SessionManager::projectForFile(filePath())) {
+            const FilePaths files = project->files(ProjectExplorer::Project::SourceFiles);
+            QSet<FilePath> projectFiles(files.begin(), files.end());
+            for (const auto &file : files) {
+                const Document::Ptr doc = s.document(file);
+                if (!doc)
+                    continue;
+                handleFile(file, doc, [&](const FilePath &file) {
+                    return projectFiles.contains(file);
+                });
+            }
+        } else {
+            for (auto i = s.begin(); i != s.end(); ++i) {
+                if (ProjectFile::classify(i.key().toString()) != ProjectFile::Unsupported) {
+                    handleFile(i.key(), i.value(), [](const FilePath &file) {
+                        return ProjectFile::classify(file.toString()) != ProjectFile::Unsupported;
+                    });
+                }
+            }
+        }
+        for (auto &[_, node] : includeGraph) {
+            Q_UNUSED(_)
+            node.unprocessedParents = static_cast<int>(node.includes.size());
+        }
+        return includeGraph;
+    }
+
+    void removeAllUsingsAtGlobalScope(CppRefactoringChanges &refactoring)
+    {
+        auto includeGraph = buildIncludeGraph(refactoring);
+        std::vector<std::reference_wrapper<Node>> nodesWithProcessedParents;
+        for (auto &[_, node] : includeGraph) {
+            Q_UNUSED(_)
+            if (!node.unprocessedParents)
+                nodesWithProcessedParents.push_back(node);
+        }
+        while (!nodesWithProcessedParents.empty()) {
+            Node &node = nodesWithProcessedParents.back();
+            nodesWithProcessedParents.pop_back();
+            CppRefactoringFilePtr file = refactoring.file(node.document->fileName());
+            const bool parentHasUsing = Utils::anyOf(node.includes, &Node::hasGlobalUsingDirective);
+            const int startPos = parentHasUsing
+                                     ? 0
+                                     : RemoveNamespaceVisitor::SearchGlobalUsingDirectivePos;
+            const bool noGlobalUsing = refactorFile(file, refactoring.snapshot(), startPos);
+            node.hasGlobalUsingDirective = !noGlobalUsing || parentHasUsing;
+
+            for (Node &subNode : node.includedBy) {
+                --subNode.unprocessedParents;
+                if (subNode.unprocessedParents == 0)
+                    nodesWithProcessedParents.push_back(subNode);
+            }
+        }
+    }
+
+    void perform() override
+    {
+        CppRefactoringChanges refactoring(snapshot());
+        CppRefactoringFilePtr currentFile = refactoring.file(filePath().toString());
+        if (m_removeAllAtGlobalScope) {
+            removeAllUsingsAtGlobalScope(refactoring);
+        } else if (refactorFile(currentFile,
+                                refactoring.snapshot(),
+                                currentFile->endOf(m_usingDirective),
+                                true)) {
+            processIncludes(refactoring, filePath().toString());
+        }
+
+        for (auto &file : m_changes)
+            file->apply();
+    }
+
+    /**
+     * @brief refactorFile remove using namespace xyz in the given file and rewrite types
+     * @param file The file that should be processed
+     * @param snapshot The snapshot to work on
+     * @param startSymbol start processing after this index
+     * @param removeUsing if the using directive is in this file, remove it
+     * @return true if the using statement is global and there is no other global using namespace
+     */
+    bool refactorFile(CppRefactoringFilePtr &file,
+                      const Snapshot &snapshot,
+                      int startSymbol,
+                      bool removeUsing = false)
+    {
+        RemoveNamespaceVisitor visitor(file.get(),
+                                       snapshot,
+                                       m_usingDirective->name->name,
+                                       startSymbol,
+                                       m_removeAllAtGlobalScope);
+        visitor.accept(file->cppDocument()->translationUnit()->ast());
+        Utils::ChangeSet changes = visitor.getChanges();
+        if (removeUsing)
+            removeLine(file.get(), m_usingDirective, changes);
+        if (!changes.isEmpty()) {
+            file->setChangeSet(changes);
+            // apply changes at the end, otherwise the symbol finder will fail to resolve symbols if
+            // the using namespace is missing
+            m_changes.insert(file);
+        }
+        return visitor.isGlobalUsingNamespace() && !visitor.foundGlobalUsingNamespace();
+    }
+
+    void processIncludes(CppRefactoringChanges &refactoring, const QString &fileName)
+    {
+        QList<Snapshot::IncludeLocation>
+            includeLocationsOfDocument = refactoring.snapshot().includeLocationsOfDocument(fileName);
+        for (Snapshot::IncludeLocation &loc : includeLocationsOfDocument) {
+            if (m_processed.contains(loc.first))
+                continue;
+
+            CppRefactoringFilePtr file = refactoring.file(loc.first->fileName());
+            const bool noGlobalUsing = refactorFile(file,
+                                                    refactoring.snapshot(),
+                                                    file->position(loc.second, 1));
+            m_processed.insert(loc.first);
+            if (noGlobalUsing)
+                processIncludes(refactoring, loc.first->fileName());
+        }
+    }
+
+    QSet<Document::Ptr> m_processed;
+    QSet<CppRefactoringFilePtr> m_changes;
+
+    UsingDirectiveAST *m_usingDirective;
+    bool m_removeAllAtGlobalScope;
+};
+} // namespace
+
+void RemoveUsingNamespace::match(const CppQuickFixInterface &interface, QuickFixOperations &result)
+{
+    const QList<AST *> &path = interface.path();
+    // We expect something like
+    // [0] TranslationUnitAST
+    // ...
+    // [] UsingDirectiveAST : if activated at 'using namespace'
+    // [] NameAST (optional): if activated at the name e.g. 'std'
+    int n = path.size() - 1;
+    if (n <= 0)
+        return;
+    if (path.last()->asName())
+        --n;
+    UsingDirectiveAST *usingDirective = path.at(n)->asUsingDirective();
+    if (usingDirective && usingDirective->name->name->isNameId()) {
+        result << new RemoveUsingNamespaceOperation(interface, usingDirective, false);
+        const bool isHeader = ProjectFile::isHeader(ProjectFile::classify(interface.filePath().toString()));
+        if (isHeader && path.at(n - 1)->asTranslationUnit()) // using namespace at global scope
+            result << new RemoveUsingNamespaceOperation(interface, usingDirective, true);
     }
 }
 
@@ -6065,8 +7886,11 @@ void createCppQuickFixes()
     new ExtractFunction;
     new ExtractLiteralAsParameter;
     new GenerateGetterSetter;
+    new GenerateGettersSettersForClass;
     new InsertDeclFromDef;
     new InsertDefFromDecl;
+    new InsertMemberFromInitialization;
+    new InsertDefsFromDecls;
 
     new MoveFuncDefOutside;
     new MoveAllFuncDefOutside;
@@ -6081,6 +7905,8 @@ void createCppQuickFixes()
     new EscapeStringLiteral;
 
     new ExtraRefactoringOperations;
+
+    new RemoveUsingNamespace;
 }
 
 void destroyCppQuickFixes()

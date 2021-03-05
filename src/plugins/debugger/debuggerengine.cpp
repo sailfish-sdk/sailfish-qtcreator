@@ -1090,10 +1090,12 @@ void DebuggerEngine::gotoLocation(const Location &loc)
     const QString file = loc.fileName().toString();
     const int line = loc.lineNumber();
     bool newEditor = false;
-    IEditor *editor = EditorManager::openEditor(
-                file, Id(),
-                EditorManager::IgnoreNavigationHistory | EditorManager::DoNotSwitchToDesignMode,
-                &newEditor);
+    IEditor *editor = EditorManager::openEditor(file,
+                                                Id(),
+                                                EditorManager::IgnoreNavigationHistory
+                                                    | EditorManager::DoNotSwitchToDesignMode
+                                                    | EditorManager::SwitchSplitIfAlreadyVisible,
+                                                &newEditor);
     QTC_ASSERT(editor, return); // Unreadable file?
 
     editor->gotoLine(line, 0, !boolSetting(StationaryEditorWhileStepping));
@@ -1247,7 +1249,6 @@ void DebuggerEngine::notifyEngineSetupOk()
     d->m_progress.setProgressValue(250);
     QTC_ASSERT(state() == EngineSetupRequested, qDebug() << this << state());
     setState(EngineSetupOk);
-    // Slaves will get called setupSlaveInferior() below.
     setState(EngineRunRequested);
     showMessage("CALL: RUN ENGINE");
     d->m_progress.setProgressValue(300);
@@ -1514,9 +1515,6 @@ void DebuggerEnginePrivate::updateState()
     const bool detachable = stopped && !isCore;
     m_detachAction.setEnabled(detachable);
 
-    if (stopped)
-        QApplication::alert(ICore::mainWindow(), 3000);
-
     updateReverseActions();
 
     const bool canSnapshot = m_engine->hasCapability(SnapshotCapability);
@@ -1764,11 +1762,11 @@ void DebuggerEngine::showMessage(const QString &msg, int channel, int timeout) c
         case AppOutput:
         case AppStuff:
             d->m_logWindow->showOutput(channel, msg);
-            emit appendMessageRequested(msg, StdOutFormatSameLine, false);
+            emit appendMessageRequested(msg, StdOutFormat, false);
             break;
         case AppError:
             d->m_logWindow->showOutput(channel, msg);
-            emit appendMessageRequested(msg, StdErrFormatSameLine, false);
+            emit appendMessageRequested(msg, StdErrFormat, false);
             break;
         default:
             d->m_logWindow->showOutput(channel, msg);
@@ -1779,8 +1777,11 @@ void DebuggerEngine::showMessage(const QString &msg, int channel, int timeout) c
 void DebuggerEngine::notifyDebuggerProcessFinished(int exitCode,
     QProcess::ExitStatus exitStatus, const QString &backendName)
 {
-    showMessage(QString("%1 PROCESS FINISHED, status %2, exit code %3")
-                .arg(backendName).arg(exitStatus).arg(exitCode));
+    showMessage(QString("%1 PROCESS FINISHED, status %2, exit code %3 (0x%4)")
+                    .arg(backendName)
+                    .arg(exitStatus)
+                    .arg(exitCode)
+                    .arg(QString::number(exitCode, 16)));
 
     switch (state()) {
     case DebuggerFinished:
@@ -2818,7 +2819,7 @@ void CppDebuggerEngine::validateRunParameters(DebuggerRunParameters &rp)
             const GlobalDebuggerOptions *options = Internal::globalDebuggerOptions();
             SourcePathRegExpMap globalRegExpSourceMap;
             globalRegExpSourceMap.reserve(options->sourcePathRegExpMap.size());
-            for (auto entry : qAsConst(options->sourcePathRegExpMap)) {
+            for (const auto &entry : qAsConst(options->sourcePathRegExpMap)) {
                 const QString expanded = Utils::globalMacroExpander()->expand(entry.second);
                 if (!expanded.isEmpty())
                     globalRegExpSourceMap.push_back(qMakePair(entry.first, expanded));
@@ -2834,10 +2835,10 @@ void CppDebuggerEngine::validateRunParameters(DebuggerRunParameters &rp)
                     for (auto itExp = globalRegExpSourceMap.begin(), itEnd = globalRegExpSourceMap.end();
                          itExp != itEnd;
                          ++itExp) {
-                        QRegExp exp = itExp->first;
-                        int index = exp.indexIn(string);
-                        if (index != -1) {
-                            rp.sourcePathMap.insert(string.left(index) + exp.cap(1), itExp->second);
+                        const QRegularExpressionMatch match = itExp->first.match(string);
+                        if (match.hasMatch()) {
+                            rp.sourcePathMap.insert(string.left(match.capturedStart()) + match.captured(1),
+                                                    itExp->second);
                             found = true;
                             break;
                         }

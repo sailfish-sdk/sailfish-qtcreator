@@ -26,7 +26,7 @@
 #pragma once
 
 #include "core_global.h"
-#include "id.h"
+#include "icontext.h"
 
 #include <QList>
 #include <QMainWindow>
@@ -42,10 +42,12 @@ class QStatusBar;
 class QWidget;
 QT_END_NAMESPACE
 
+namespace Utils {
+class InfoBar;
+}
+
 namespace Core {
 class Context;
-class IContext;
-class InfoBar;
 class IWizardFactory;
 class SettingsDatabase;
 
@@ -67,9 +69,6 @@ public:
         Low
     };
 
-    // This should only be used to acccess the signals, so it could
-    // theoretically return an QObject *. For source compatibility
-    // it returns a ICore.
     static ICore *instance();
 
     static bool isNewItemDialogRunning();
@@ -79,13 +78,13 @@ public:
                                   const QString &defaultLocation = QString(),
                                   const QVariantMap &extraVariables = QVariantMap());
 
-    static bool showOptionsDialog(Id page, QWidget *parent = nullptr);
+    static bool showOptionsDialog(const Utils::Id page, QWidget *parent = nullptr);
     static QString msgShowOptionsDialog();
     static QString msgShowOptionsDialogToolTip();
 
     static bool showWarningWithOptions(const QString &title, const QString &text,
                                        const QString &details = QString(),
-                                       Id settingsId = Id(),
+                                       Utils::Id settingsId = {},
                                        QWidget *parent = nullptr);
 
     static QSettings *settings(QSettings::Scope scope = QSettings::UserScope);
@@ -99,28 +98,18 @@ public:
     static QString cacheResourcePath();
     static QString installerResourcePath();
     static QString libexecPath();
-    static QString clangExecutable(const QString &clangBinDirectory);
-    static QString clangTidyExecutable(const QString &clangBinDirectory);
-    static QString clazyStandaloneExecutable(const QString &clangBinDirectory);
-    static QString clangIncludeDirectory(const QString &clangVersion,
-                                         const QString &clangResourceDirectory);
 
     static QString versionString();
-    static QString buildCompatibilityString();
 
     static QMainWindow *mainWindow();
     static QWidget *dialogParent();
-    static QStatusBar *statusBar();
-    static InfoBar *infoBar();
+    static Utils::InfoBar *infoBar();
 
-    /* Raises and activates the window for the widget. This contains workarounds for X11. */
     static void raiseWindow(QWidget *widget);
 
     static IContext *currentContextObject();
     static QWidget *currentContextWidget();
     static IContext *contextObject(QWidget *widget);
-    // Adds and removes additional active contexts, these contexts are appended
-    // to the currently active contexts.
     static void updateAdditionalContexts(const Context &remove, const Context &add,
                                          ContextPriority priority = ContextPriority::Low);
     static void addAdditionalContext(const Context &context,
@@ -129,7 +118,6 @@ public:
     static void addContextObject(IContext *context);
     static void removeContextObject(IContext *context);
 
-    // manages the minimize, zoom and fullscreen actions for the window
     static void registerWindow(QWidget *window, const Context &context);
 
     enum OpenFilesFlags {
@@ -144,8 +132,7 @@ public:
 
     static void addPreCloseListener(const std::function<bool()> &listener);
 
-    static QString systemInformation();
-    static void setupScreenShooter(const QString &name, QWidget *w, const QRect &rc = QRect());
+    static void restart();
 
     enum SaveSettingsReason {
         InitializationDone,
@@ -153,11 +140,6 @@ public:
         ModeChanged,
         MainWindowClosing,
     };
-
-    static void restart();
-
-public slots:
-    static void saveSettings(SaveSettingsReason reason);
 
 signals:
     void coreAboutToOpen();
@@ -172,6 +154,19 @@ public:
     /* internal use */
     static QStringList additionalAboutInformation();
     static void appendAboutInformation(const QString &line);
+    static QString systemInformation();
+    static void setupScreenShooter(const QString &name, QWidget *w, const QRect &rc = QRect());
+    static QString pluginPath();
+    static QString userPluginPath();
+    static QString clangExecutable(const QString &clangBinDirectory);
+    static QString clangTidyExecutable(const QString &clangBinDirectory);
+    static QString clazyStandaloneExecutable(const QString &clangBinDirectory);
+    static QString clangIncludeDirectory(const QString &clangVersion,
+                                         const QString &clangFallbackIncludeDir);
+    static QString buildCompatibilityString();
+    static QStatusBar *statusBar();
+
+    static void saveSettings(SaveSettingsReason reason);
 
 private:
     static void updateNewItemDialogState();

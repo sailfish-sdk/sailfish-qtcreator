@@ -59,9 +59,11 @@ std::ostream &operator<<(std::ostream &out, const QVariant &variant)
     QString output;
     QDebug debug(&output);
 
-    debug << variant;
+    debug.noquote().nospace() << variant;
 
-    return out << output;
+    QByteArray utf8Text = output.toUtf8();
+
+    return out.write(utf8Text.data(), utf8Text.size());
 }
 
 std::ostream &operator<<(std::ostream &out, const QTextCharFormat &format)
@@ -83,7 +85,22 @@ std::ostream &operator<<(std::ostream &out, const QTextCharFormat &format)
     return out;
 }
 
+std::ostream &operator<<(std::ostream &out, const QImage &image)
+{
+    return out << "(" << image.width() << ", " << image.height() << ", " << image.format() << ")";
+}
+
 void PrintTo(const QString &text, std::ostream *os)
+{
+    *os << text;
+}
+
+void PrintTo(const QVariant &variant, std::ostream *os)
+{
+    *os << variant;
+}
+
+void PrintTo(const QByteArray &text, std::ostream *os)
 {
     *os << text;
 }

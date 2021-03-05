@@ -24,97 +24,229 @@
 ****************************************************************************/
 
 #include "nimbletaskstep.h"
-#include "nimbletaskstepwidget.h"
+
 #include "nimconstants.h"
+#include "nimblebuildsystem.h"
 #include "nimbleproject.h"
 
+#include <projectexplorer/abstractprocessstep.h>
 #include <projectexplorer/buildstep.h>
 #include <projectexplorer/buildconfiguration.h>
 #include <projectexplorer/processparameters.h>
-#include <utils/fileutils.h>
+#include <projectexplorer/projectexplorerconstants.h>
+#include <projectexplorer/target.h>
 
+#include <utils/aspects.h>
+#include <utils/algorithm.h>
+#include <utils/fileutils.h>
+#include <utils/layoutbuilder.h>
+
+#include <QFormLayout>
+#include <QLineEdit>
+#include <QListView>
+#include <QStandardItemModel>
 #include <QStandardPaths>
 
-using namespace Nim;
 using namespace ProjectExplorer;
+using namespace Utils;
 
-NimbleTaskStep::NimbleTaskStep(BuildStepList *parentList, Core::Id id)
+namespace Nim {
+
+class NimbleTaskStep final : public AbstractProcessStep
+{
+    Q_DECLARE_TR_FUNCTIONS(Nim::NimbleTaskStep)
+
+public:
+    NimbleTaskStep(BuildStepList *parentList, Id id);
+
+private:
+    QWidget *createConfigWidget() final;
+
+    void setTaskName(const QString &name);
+
+    void updateTaskList();
+    void selectTask(const QString &name);
+    void onDataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight, const QVector<int> &roles);
+    void uncheckedAllDifferentFrom(QStandardItem *item);
+
+    bool validate();
+
+    StringAspect *m_taskName = nullptr;
+    StringAspect *m_taskArgs = nullptr;
+
+    QStandardItemModel m_tasks;
+    bool m_selecting = false;
+};
+
+NimbleTaskStep::NimbleTaskStep(BuildStepList *parentList, Id id)
     : AbstractProcessStep(parentList, id)
 {
     setDefaultDisplayName(tr(Constants::C_NIMBLETASKSTEP_DISPLAY));
     setDisplayName(tr(Constants::C_NIMBLETASKSTEP_DISPLAY));
+
+    setCommandLineProvider([this] {
+        QString args = m_taskName->value() + " " + m_taskArgs->value();
+        return CommandLine(Nim::nimblePathFromKit(target()->kit()), args, CommandLine::Raw);
+    });
+
+    setWorkingDirectoryProvider([this] { return project()->projectDirectory(); });
+
+    m_taskName = addAspect<StringAspect>();
+    m_taskName->setSettingsKey(Constants::C_NIMBLETASKSTEP_TASKNAME);
+
+    m_taskArgs = addAspect<StringAspect>();
+    m_taskArgs->setSettingsKey(Constants::C_NIMBLETASKSTEP_TASKARGS);
+    m_taskArgs->setDisplayStyle(StringAspect::LineEditDisplay);
+    m_taskArgs->setLabelText(tr("Task arguments:"));
 }
 
-bool NimbleTaskStep::init()
+QWidget *NimbleTaskStep::createConfigWidget()
 {
-    processParameters()->setEnvironment(buildConfiguration()->environment());
-    processParameters()->setWorkingDirectory(project()->projectDirectory());
-    return validate() && AbstractProcessStep::init();
+    auto widget = new QWidget;
+
+    auto taskList = new QListView(widget);
+    taskList->setFrameShape(QFrame::StyledPanel);
+    taskList->setSelectionMode(QAbstractItemView::NoSelection);
+    taskList->setSelectionBehavior(QAbstractItemView::SelectRows);
+    taskList->setModel(&m_tasks);
+
+    LayoutBuilder builder(widget);
+    builder.addRow(m_taskArgs);
+    builder.addRow({tr("Tasks:"), taskList});
+
+    auto buildSystem = dynamic_cast<NimbleBuildSystem *>(this->buildSystem());
+    QTC_ASSERT(buildSystem, return widget);
+
+    updateTaskList();
+    selectTask(m_taskName->value());
+
+    connect(&m_tasks, &QAbstractItemModel::dataChanged, this, &NimbleTaskStep::onDataChanged);
+
+    connect(buildSystem, &NimbleBuildSystem::tasksChanged, this, &NimbleTaskStep::updateTaskList);
+
+    setSummaryUpdater([this] {
+        return QString("<b>%1:</b> nimble %2 %3")
+                .arg(displayName(), m_taskName->value(), m_taskArgs->value());
+    });
+
+    return widget;
 }
 
-BuildStepConfigWidget *NimbleTaskStep::createConfigWidget()
+void NimbleTaskStep::updateTaskList()
 {
-    return new NimbleTaskStepWidget(this);
+    auto buildSystem = dynamic_cast<NimbleBuildSystem *>(this->buildSystem());
+    QTC_ASSERT(buildSystem, return);
+    const std::vector<NimbleTask> &tasks = buildSystem->tasks();
+
+    QSet<QString> newTasks;
+    for (const NimbleTask &t : tasks)
+        newTasks.insert(t.name);
+
+    QSet<QString> currentTasks;
+    for (int i = 0; i < m_tasks.rowCount(); ++i)
+        currentTasks.insert(m_tasks.item(i)->text());
+
+    const QSet<QString> added = newTasks - currentTasks;
+    const QSet<QString> removed = currentTasks - newTasks;
+
+    for (const QString &name : added) {
+        auto item = new QStandardItem();
+        item->setText(name);
+        item->setCheckable(true);
+        item->setCheckState(Qt::Unchecked);
+        item->setEditable(false);
+        item->setSelectable(false);
+        m_tasks.appendRow(item);
+    }
+
+    for (int i = m_tasks.rowCount() - 1; i >= 0; i--)
+        if (removed.contains(m_tasks.item(i)->text()))
+            m_tasks.removeRow(i);
+
+    m_tasks.sort(0);
 }
 
-bool NimbleTaskStep::fromMap(const QVariantMap &map)
+void NimbleTaskStep::selectTask(const QString &name)
 {
-    setTaskName(map.value(Constants::C_NIMBLETASKSTEP_TASKNAME, QString()).toString());
-    setTaskArgs(map.value(Constants::C_NIMBLETASKSTEP_TASKARGS, QString()).toString());
-    return validate() ? AbstractProcessStep::fromMap(map) : false;
+    if (m_selecting)
+        return;
+    m_selecting = true;
+
+    QList<QStandardItem *> items = m_tasks.findItems(name);
+    QStandardItem *item = items.empty() ? nullptr : items.front();
+    uncheckedAllDifferentFrom(item);
+    if (item)
+        item->setCheckState(Qt::Checked);
+
+    setTaskName(name);
+
+    m_selecting = false;
 }
 
-QVariantMap NimbleTaskStep::toMap() const
+void NimbleTaskStep::onDataChanged(const QModelIndex &topLeft,
+                                   const QModelIndex &bottomRight,
+                                   const QVector<int> &roles)
 {
-    QVariantMap result = AbstractProcessStep::toMap();
-    result[Constants::C_NIMBLETASKSTEP_TASKNAME] = taskName();
-    result[Constants::C_NIMBLETASKSTEP_TASKARGS] = taskArgs();
-    return result;
+    QTC_ASSERT(topLeft == bottomRight, return );
+    if (!roles.contains(Qt::CheckStateRole))
+        return;
+
+    auto item = m_tasks.itemFromIndex(topLeft);
+    if (!item)
+        return;
+
+    if (m_selecting)
+        return;
+    m_selecting = true;
+
+    if (item->checkState() == Qt::Checked) {
+        uncheckedAllDifferentFrom(item);
+        setTaskName(item->text());
+    } else if (item->checkState() == Qt::Unchecked) {
+        setTaskName(QString());
+    }
+
+    m_selecting = false;
+}
+
+void NimbleTaskStep::uncheckedAllDifferentFrom(QStandardItem *toSkip)
+{
+    for (int i = 0; i < m_tasks.rowCount(); ++i) {
+        auto item = m_tasks.item(i);
+        if (!item || item == toSkip)
+            continue;
+        item->setCheckState(Qt::Unchecked);
+    }
 }
 
 void NimbleTaskStep::setTaskName(const QString &name)
 {
-    if (m_taskName == name)
+    if (m_taskName->value() == name)
         return;
-    m_taskName = name;
-    emit taskNameChanged(name);
-    updateCommandLine();
-}
-
-void NimbleTaskStep::setTaskArgs(const QString &args)
-{
-    if (m_taskArgs == args)
-        return;
-    m_taskArgs = args;
-    emit taskArgsChanged(args);
-    updateCommandLine();
-}
-
-void NimbleTaskStep::updateCommandLine()
-{
-    QString args = m_taskName + " " + m_taskArgs;
-    Utils::CommandLine commandLine(Utils::FilePath::fromString(QStandardPaths::findExecutable("nimble")),
-                                   args, Utils::CommandLine::Raw);
-
-    processParameters()->setCommandLine(commandLine);
+    m_taskName->setValue(name);
+    selectTask(name);
 }
 
 bool NimbleTaskStep::validate()
 {
-    if (m_taskName.isEmpty())
+    if (m_taskName->value().isEmpty())
         return true;
 
     auto nimbleBuildSystem = dynamic_cast<NimbleBuildSystem*>(buildSystem());
     QTC_ASSERT(nimbleBuildSystem, return false);
 
-    if (!Utils::contains(nimbleBuildSystem->tasks(), [this](const NimbleTask &task){ return task.name == m_taskName; })) {
-        emit addTask(BuildSystemTask(Task::Error, tr("Nimble task %1 not found.").arg(m_taskName)));
+    auto matchName = [this](const NimbleTask &task) { return task.name == m_taskName->value(); };
+    if (!Utils::contains(nimbleBuildSystem->tasks(), matchName)) {
+        emit addTask(BuildSystemTask(Task::Error, tr("Nimble task %1 not found.")
+                                     .arg(m_taskName->value())));
         emitFaultyConfigurationMessage();
         return false;
     }
 
     return true;
 }
+
+// Factory
 
 NimbleTaskStepFactory::NimbleTaskStepFactory()
 {
@@ -126,3 +258,5 @@ NimbleTaskStepFactory::NimbleTaskStepFactory()
     setSupportedConfiguration(Constants::C_NIMBLEBUILDCONFIGURATION_ID);
     setRepeatable(true);
 }
+
+} // Nim

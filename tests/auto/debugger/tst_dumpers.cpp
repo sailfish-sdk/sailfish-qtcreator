@@ -28,11 +28,11 @@
 #include "watchdata.h"
 #include "watchutils.h"
 
+#include <utils/fileutils.h>
 #ifdef Q_OS_WIN
 #include <utils/environment.h>
 #ifdef Q_CC_MSVC
 #include <utils/qtcprocess.h>
-#include <utils/fileutils.h>
 #include <utils/synchronousprocess.h>
 #endif // Q_CC_MSVC
 #endif // Q_OS_WIN
@@ -44,6 +44,22 @@
 
 using namespace Debugger;
 using namespace Internal;
+
+enum class BuildSystem
+{
+    Qmake,
+    CMake,
+    Nim
+};
+
+enum class Language
+{
+    Cxx,
+    C,
+    ObjectiveCxx,
+    Nim,
+    Fortran90
+};
 
 #ifdef Q_CC_MSVC
 
@@ -118,12 +134,13 @@ static bool generateEnvironmentSettings(Utils::Environment &env,
     if (!varsFile.open(QIODevice::ReadOnly))
         return false;
 
-    QRegExp regexp("(\\w*)=(.*)");
+    const QRegularExpression regexp("^(\\w*)=(.*)$");
     while (!varsFile.atEnd()) {
         const QString line = QString::fromLocal8Bit(varsFile.readLine()).trimmed();
-        if (regexp.exactMatch(line)) {
-            const QString varName = regexp.cap(1);
-            const QString varValue = regexp.cap(2);
+        const QRegularExpressionMatch match = regexp.match(line);
+        if (match.hasMatch()) {
+            const QString varName = match.captured(1);
+            const QString varValue = match.captured(2);
 
             if (!varValue.isEmpty())
                 envPairs.insert(varName, varValue);
@@ -220,6 +237,12 @@ struct BoostVersion : VersionBase
     {}
 };
 
+struct ConfigTest
+{
+    QString executable;
+    QStringList arguments;
+};
+
 static QString noValue = "\001";
 
 enum DebuggerEngine
@@ -310,13 +333,10 @@ struct Value
             expectedValue.replace('@', context.nameSpace);
 
         if (isPattern) {
-            expectedValue.replace("(", "!");
-            expectedValue.replace(")", "!");
-            actualValue.replace("(", "!");
-            actualValue.replace(")", "!");
+            const QString anchoredPattern = QRegularExpression::anchoredPattern(expectedValue);
             //QWARN(qPrintable("MATCH EXP: " + expectedValue + "   ACT: " + actualValue));
-            //QWARN(QRegExp(expectedValue).exactMatch(actualValue) ? "OK" : "NOT OK");
-            return QRegExp(expectedValue).exactMatch(actualValue);
+            //QWARN(QRegularExpression(anchoredPattern).match(actualValue).hasMatch() ? "OK" : "NOT OK");
+            return QRegularExpression(anchoredPattern).match(actualValue).hasMatch();
         }
 
         if (hasPtrSuffix)
@@ -350,6 +370,8 @@ struct ValuePattern : Value
     ValuePattern(const QString &ba) : Value(ba) { isPattern = true; }
 };
 
+const ValuePattern AnyValue{".*"};
+
 struct Pointer : Value
 {
     Pointer() { hasPtrSuffix = true; }
@@ -370,6 +392,11 @@ struct Value4 : Value
 struct Value5 : Value
 {
     Value5(const QString &value) : Value(value) { qtVersion = 5; }
+};
+
+struct Value6 : Value
+{
+    Value6(const QString &value) : Value(value) { qtVersion = 6; }
 };
 
 struct UnsubstitutedValue : Value
@@ -413,9 +440,10 @@ struct Type
         expectedType.replace("const", "");
         expectedType.replace('@', context.nameSpace);
 
-        if (isPattern)
-            return QRegExp(expectedType).exactMatch(actualType);
-
+        if (isPattern) {
+            return QRegularExpression(QRegularExpression::anchoredPattern(expectedType))
+                    .match(actualType).hasMatch();
+        }
         if (fullNamespaceMatch)
             expectedType.replace('?', context.nameSpace);
         else
@@ -486,6 +514,21 @@ struct Watcher : DumperOptions
     {}
 };
 
+enum AdditionalCriteria
+{
+    NeedsInferiorCall = 0x1,
+};
+
+static bool matchesAdditionalCriteria(int criteria)
+{
+#ifdef Q_OS_UNIX
+    Q_UNUSED(criteria)
+    return true;
+#else
+    return !(criteria & NeedsInferiorCall);
+#endif
+}
+
 struct Check
 {
     Check() {}
@@ -508,7 +551,8 @@ struct Check
             && gccVersionForCheck.covers(context.gccVersion)
             && clangVersionForCheck.covers(context.clangVersion)
             && msvcVersionForCheck.covers(context.msvcVersion)
-            && qtVersionForCheck.covers(context.qtVersion);
+            && qtVersionForCheck.covers(context.qtVersion)
+            && matchesAdditionalCriteria(additionalCriteria);
     }
 
     const Check &operator%(Optional) const
@@ -570,6 +614,12 @@ struct Check
         return *this;
     }
 
+    const Check &operator%(AdditionalCriteria criteria) const
+    {
+        additionalCriteria = criteria;
+        return *this;
+    }
+
     QString iname;
     Name expectedName;
     Value expectedValue;
@@ -582,6 +632,7 @@ struct Check
     mutable VersionBase msvcVersionForCheck;
     mutable QtVersion qtVersionForCheck;
     mutable BoostVersion boostVersionForCheck;
+    mutable int additionalCriteria = 0;
     mutable bool optionallyPresent = false;
 };
 
@@ -591,20 +642,9 @@ struct CheckSet : public Check
     QList<Check> checks;
 };
 
-struct CheckType : public Check
-{
-    CheckType(const QByteArray &iname, const Name &name,
-         const Type &type)
-        : Check(QString::fromUtf8(iname), name, noValue, type)
-    {}
-
-    CheckType(const QByteArray &iname, const Type &type)
-        : Check(QString::fromUtf8(iname), noValue, type)
-    {}
-};
-
 const QtVersion Qt4 = QtVersion(0, 0x4ffff);
-const QtVersion Qt5 = QtVersion(0x50000);
+const QtVersion Qt5 = QtVersion(0x50000, 0x5ffff);
+const QtVersion Qt6 = QtVersion(0x60000, 0x6ffff);
 
 struct Check4 : Check
 {
@@ -626,12 +666,44 @@ struct Check5 : Check
     Check5(const QByteArray &iname, const Name &name, const Value &value, const Type &type)
         : Check(QString::fromUtf8(iname), name, value, type)
     { qtVersionForCheck = Qt5; }
-
 };
+
+struct Check6 : Check
+{
+    Check6(const QByteArray &iname, const Value &value, const Type &type)
+        : Check(QString::fromUtf8(iname), value, type)
+    { qtVersionForCheck = Qt6; }
+
+    Check6(const QByteArray &iname, const Name &name, const Value &value, const Type &type)
+        : Check(QString::fromUtf8(iname), name, value, type)
+    { qtVersionForCheck = Qt6; }
+};
+
+// To brush over uses of 'key'/'value' vs 'first'/'second' in inames
+struct CheckPairish : Check
+{
+    using Check::Check;
+};
+
+
+QDebug operator<<(QDebug os, const QtVersion &version)
+{
+    return os << Qt::hex << version.min << '-' << Qt::hex << version.max;
+}
+
+QDebug operator<<(QDebug os, const Check &check)
+{
+    return os
+        << check.iname
+        << check.expectedName.name
+        << check.expectedValue.value
+        << check.expectedType.type
+        << check.qtVersionForCheck;
+}
 
 struct Profile
 {
-    Profile(const QByteArray &contents) : contents(contents) {}
+    Profile(const QByteArray &contents) : contents(contents + '\n') {}
 
     QByteArray includes;
     QByteArray contents;
@@ -659,6 +731,7 @@ struct BoostProfile : public Profile
         const QByteArray &boostLibPath = qgetenv("QTC_BOOST_LIBRARY_PATH_FOR_TEST");
         if (!boostLibPath.isEmpty())
             contents += QByteArray("\nLIBS += \"-L") + boostLibPath.constData() + QByteArray("\"");
+        contents += '\n'; // ensure newline at end no matter what has been added before
         includes = "#include <boost/version.hpp>\n";
     }
 };
@@ -697,6 +770,7 @@ struct NetworkProfile {};
 struct QmlProfile {};
 struct QmlPrivateProfile {};
 struct SqlProfile {};
+struct XmlProfile {};
 
 struct NimProfile {};
 
@@ -714,6 +788,23 @@ public:
     const Data &operator+(const Check &check) const
     {
         checks.append(check);
+        return *this;
+    }
+
+    const Data &operator+(const CheckPairish &check) const
+    {
+        Check check5 = check;
+        check5.qtVersionForCheck = QtVersion(0, 0x5ffff);
+        checks.append(check5);
+
+        Check check6 = check;
+        check6.qtVersionForCheck = QtVersion(0x60000, 0x6ffff);
+        check6.iname.replace("key", "first");
+        check6.iname.replace("value", "second");
+        check6.expectedName.name.replace("key", "first");
+        check6.expectedName.name.replace("value", "second");
+        checks.append(check6);
+
         return *this;
     }
 
@@ -838,6 +929,10 @@ public:
     {
         profileExtra += "QT += core\n";
 
+        cmakelistsExtra +=
+            "find_package(Qt5 COMPONENTS Core REQUIRED)\n"
+            "target_link_libraries(doit PRIVATE Qt5::Core)\n";
+
         useQt = true;
         useQHash = true;
 
@@ -847,6 +942,10 @@ public:
     const Data &operator+(const NetworkProfile &) const
     {
         profileExtra += "QT += core network\n";
+
+        cmakelistsExtra +=
+            "find_package(Qt5 COMPONENTS Core Network REQUIRED)\n"
+            "target_link_libraries(doit PRIVATE Qt5::Core Qt::Network)\n";
 
         useQt = true;
         useQHash = true;
@@ -876,6 +975,10 @@ public:
             "QT += gui\n"
             "greaterThan(QT_MAJOR_VERSION, 4):QT *= widgets\n";
 
+        cmakelistsExtra +=
+             "find_package(Qt5 COMPONENTS Core Gui Widgets REQUIRED)\n"
+             "target_link_libraries(doit PRIVATE Qt5::Core Qt5::Gui Qt::Widgets)\n";
+
         return *this;
     }
 
@@ -900,6 +1003,10 @@ public:
             "  CONFIG += no_private_qt_headers_warning\n"
             "}";
 
+        cmakelistsExtra +=
+             //"find_package(Qt5 COMPONENTS Core Gui GuiPrivate REQUIRED)\n"
+             "target_link_libraries(doit PRIVATE Qt5::Core Qt5::Gui Qt5::GuiPrivate)\n";
+
         return *this;
     }
 
@@ -923,6 +1030,24 @@ public:
             "  CONFIG += no_private_qt_headers_warning\n"
             "}";
 
+        cmakelistsExtra +=
+             "find_package(Qt5 COMPONENTS Core Gui Qml REQUIRED)\n"
+             "target_link_libraries(doit PRIVATE Qt5::Core Qt5::Qml Qt5::QmlPrivate)\n";
+
+        return *this;
+    }
+
+    const Data &operator+(const XmlProfile &) const
+    {
+        this->operator+(CoreProfile());
+        profileExtra +=
+            "greaterThan(QT_MAJOR_VERSION, 5): QT += core5compat\n"
+            "else: QT += xml\n";
+
+        cmakelistsExtra +=
+             "find_package(Qt5 COMPONENTS Core Xml REQUIRED)\n"
+             "target_link_libraries(doit PRIVATE Qt5::Core Qt5::Xml)\n";
+
         return *this;
     }
 
@@ -935,19 +1060,27 @@ public:
 
         useQt = false;
         useQHash = false;
-        mainFile = "main.mm";
+        language = Language::ObjectiveCxx;
         return *this;
     }
 
     const Data &operator+(const ForceC &) const
     {
-        mainFile = "main.c";
+        language = Language::C;
+        return *this;
+    }
+
+    const Data &operator+(const BoostProfile &p) const
+    {
+        useBoost = true;
+        this->operator+(Profile(p));
         return *this;
     }
 
 public:
     mutable bool useQt = false;
     mutable bool useQHash = false;
+    mutable bool useBoost = false;
     mutable int engines = AllEngines;
     mutable int skipLevels = 0;              // Levels to go 'up' before dumping variables.
     mutable bool glibcxxDebug = false;
@@ -962,16 +1095,15 @@ public:
     mutable BoostVersion neededBoostVersion; // DEC. 105400 for 1.54.0
     mutable DwarfVersion neededDwarfVersion; // DEC. 105400 for 1.54.0
 
-    mutable QString configTest;
+    mutable ConfigTest configTest;
 
     mutable QString allProfile;      // Overrides anything below if not empty.
     mutable QString allCode;         // Overrides anything below if not empty.
 
-    mutable QString mainFile = "main.cpp";
-    mutable QString projectFile = "doit.pro";
-
+    mutable Language language = Language::Cxx;
     mutable QString dumperOptions;
     mutable QString profileExtra;
+    mutable QString cmakelistsExtra;
     mutable QString includes;
     mutable QString code;
     mutable QString unused;
@@ -1015,9 +1147,11 @@ private slots:
 private:
     void disarm() { t->buildTemp.setAutoRemove(!keepTemp()); }
     bool keepTemp() const { return m_keepTemp || m_forceKeepTemp; }
-    TempStuff *t = 0;
+    TempStuff *t = nullptr;
+    BuildSystem m_buildSystem = BuildSystem::Qmake;
     QString m_debuggerBinary;
     QString m_qmakeBinary;
+    QString m_cmakeBinary{"cmake"};
     QProcessEnvironment m_env;
     DebuggerEngine m_debuggerEngine;
     QString m_makeBinary;
@@ -1056,7 +1190,11 @@ void tst_Dumpers::initTestCase()
     m_qmakeBinary = QDir::fromNativeSeparators(QString::fromLocal8Bit(qgetenv("QTC_QMAKE_PATH_FOR_TEST")));
     if (m_qmakeBinary.isEmpty())
         m_qmakeBinary = "qmake";
+    if (qEnvironmentVariableIntValue("QTC_USE_CMAKE_FOR_TEST"))
+        m_buildSystem = BuildSystem::CMake;
+
     qDebug() << "QMake              : " << m_qmakeBinary;
+    qDebug() << "Use CMake          : " << (m_buildSystem == BuildSystem::CMake) << int(m_buildSystem);
 
     m_useGLibCxxDebug = qgetenv("QTC_USE_GLIBCXXDEBUG_FOR_TEST").toInt();
     qDebug() << "Use _GLIBCXX_DEBUG : " << m_useGLibCxxDebug;
@@ -1114,9 +1252,9 @@ void tst_Dumpers::initTestCase()
         QVERIFY(generateEnvironmentSettings(env, QString::fromLatin1(envBat), QString(), envPairs));
         for (auto envIt = envPairs.begin(); envIt != envPairs.end(); ++envIt)
             env.set(envIt.key(), envIt.value());
-        QByteArray cdbextPath = qgetenv("QTC_CDBEXT_PATH");
+        QString cdbextPath = qEnvironmentVariable("QTC_CDBEXT_PATH");
         if (cdbextPath.isEmpty())
-            cdbextPath = CDBEXT_PATH "\\qtcreatorcdbext64";
+            cdbextPath = QString(CDBEXT_PATH "\\qtcreatorcdbext64");
         QVERIFY(QFile::exists(cdbextPath + "\\qtcreatorcdbext.dll"));
         env.set("_NT_DEBUGGER_EXTENSION_PATH", cdbextPath);
         env.prependOrSetPath(QDir::toNativeSeparators(QFileInfo(m_qmakeBinary).absolutePath()));
@@ -1154,6 +1292,7 @@ void tst_Dumpers::initTestCase()
         m_debuggerVersion = ba.toInt();
         if (!m_debuggerVersion) {
             if (output.startsWith("lldb version")) {
+                output = output.split('\n')[0]; // drop clang/llvm version
                 int pos1 = output.indexOf('.', 13);
                 int major = output.mid(13, pos1++ - 13).toInt();
                 int pos2 = output.indexOf(' ', pos1);
@@ -1194,20 +1333,20 @@ void tst_Dumpers::dumper()
 
     if (data.neededGdbVersion.isRestricted && m_debuggerEngine == GdbEngine) {
         if (data.neededGdbVersion.min > m_debuggerVersion)
-            MSKIP_SINGLE("Need minimum GDB version "
-                + QByteArray::number(data.neededGdbVersion.min));
+            MSKIP_SINGLE(QByteArray("Need minimum GDB version "
+                + QByteArray::number(data.neededGdbVersion.min)));
         if (data.neededGdbVersion.max < m_debuggerVersion)
-            MSKIP_SINGLE("Need maximum GDB version "
-                + QByteArray::number(data.neededGdbVersion.max));
+            MSKIP_SINGLE(QByteArray("Need maximum GDB version "
+                + QByteArray::number(data.neededGdbVersion.max)));
     }
 
     if (data.neededLldbVersion.isRestricted && m_debuggerEngine == LldbEngine) {
         if (data.neededLldbVersion.min > m_debuggerVersion)
-            MSKIP_SINGLE("Need minimum LLDB version "
-                + QByteArray::number(data.neededLldbVersion.min));
+            MSKIP_SINGLE(QByteArray("Need minimum LLDB version "
+                + QByteArray::number(data.neededLldbVersion.min)));
         if (data.neededLldbVersion.max < m_debuggerVersion)
-            MSKIP_SINGLE("Need maximum LLDB version "
-                + QByteArray::number(data.neededLldbVersion.max));
+            MSKIP_SINGLE(QByteArray("Need maximum LLDB version "
+                + QByteArray::number(data.neededLldbVersion.max)));
     }
 
     QByteArray output;
@@ -1236,11 +1375,11 @@ void tst_Dumpers::dumper()
         m_qtVersion = 0x10000 * major + 0x100 * minor + patch;
 
         if (data.neededQtVersion.min > m_qtVersion)
-            MSKIP_SINGLE("Need minimum Qt version "
-                + QByteArray::number(data.neededQtVersion.min, 16));
+            MSKIP_SINGLE(QByteArray("Need minimum Qt version "
+                + QByteArray::number(data.neededQtVersion.min, 16)));
         if (data.neededQtVersion.max < m_qtVersion)
-            MSKIP_SINGLE("Need maximum Qt version "
-                + QByteArray::number(data.neededQtVersion.max, 16));
+            MSKIP_SINGLE(QByteArray("Need maximum Qt version "
+                + QByteArray::number(data.neededQtVersion.max, 16)));
     }
 
     if (data.neededGccVersion.isRestricted) {
@@ -1272,60 +1411,127 @@ void tst_Dumpers::dumper()
         qDebug() << "GCC version: " << m_gccVersion;
 
         if (data.neededGccVersion.min > m_gccVersion)
-            MSKIP_SINGLE("Need minimum GCC version "
-                + QByteArray::number(data.neededGccVersion.min));
+            MSKIP_SINGLE(QByteArray("Need minimum GCC version "
+                + QByteArray::number(data.neededGccVersion.min)));
         if (data.neededGccVersion.max < m_gccVersion)
-            MSKIP_SINGLE("Need maximum GCC version "
-                + QByteArray::number(data.neededGccVersion.max));
+            MSKIP_SINGLE(QByteArray("Need maximum GCC version "
+                + QByteArray::number(data.neededGccVersion.max)));
     }
 
     if (data.neededMsvcVersion.isRestricted && m_debuggerEngine == CdbEngine) {
         if (data.neededMsvcVersion.min > m_msvcVersion)
-            MSKIP_SINGLE("Need minimum Msvc version "
-                         + QByteArray::number(data.neededMsvcVersion.min));
+            MSKIP_SINGLE(QByteArray("Need minimum Msvc version "
+                         + QByteArray::number(data.neededMsvcVersion.min)));
         if (data.neededMsvcVersion.max < m_msvcVersion)
-            MSKIP_SINGLE("Need maximum Msvc version "
-                         + QByteArray::number(data.neededMsvcVersion.max));
+            MSKIP_SINGLE(QByteArray("Need maximum Msvc version "
+                         + QByteArray::number(data.neededMsvcVersion.max)));
     }
 
-    if (!data.configTest.isEmpty()) {
+    if (!data.configTest.executable.isEmpty()) {
         QProcess configTest;
-        configTest.start(data.configTest);
+        configTest.start(data.configTest.executable, data.configTest.arguments);
         QVERIFY(configTest.waitForFinished());
         output = configTest.readAllStandardOutput();
         error = configTest.readAllStandardError();
         if (configTest.exitCode()) {
-            MSKIP_SINGLE("Configure test failed: '"
-                + data.configTest.toUtf8() + "' " + output + ' ' + error);
+            QString msg = "Configure test failed: '"
+                         + data.configTest.executable + ' '
+                         + data.configTest.arguments.join(' ')
+                         +  "' " + output + ' ' + error;
+            MSKIP_SINGLE(msg.toUtf8());
         }
     }
 
-    QFile proFile(t->buildPath + '/' + data.projectFile);
-    QVERIFY(proFile.open(QIODevice::ReadWrite));
-    if (data.allProfile.isEmpty()) {
-        proFile.write("SOURCES = ");
-        proFile.write(data.mainFile.toUtf8());
-        proFile.write("\nTARGET = doit\n");
-        proFile.write("\nCONFIG -= app_bundle\n");
-        proFile.write("\nmacos: CONFIG += sdk_no_version_check\n");
-        proFile.write("\nCONFIG -= release\n");
-        proFile.write("\nCONFIG += debug\n");
-        proFile.write("\nCONFIG += console\n");
-        if (data.useQt)
-            proFile.write("QT -= widgets gui\n");
-        else
-            proFile.write("CONFIG -= qt\n");
-        if (m_useGLibCxxDebug)
-            proFile.write("DEFINES += _GLIBCXX_DEBUG\n");
-        if (m_debuggerEngine == GdbEngine && m_debuggerVersion < 70500)
-            proFile.write("QMAKE_CXXFLAGS += -gdwarf-3\n");
-        proFile.write(data.profileExtra.toUtf8());
+    QString mainFile;
+    QByteArray cmakeLanguage;
+    if (data.language == Language::C) {
+        mainFile = "main.c";
+        cmakeLanguage = "C";
+    } else if (data.language == Language::ObjectiveCxx) {
+        mainFile = "main.mm";
+        cmakeLanguage = "CXX";
+    } else if (data.language == Language::Nim) {
+        mainFile = "main.nim";
+        cmakeLanguage = "CXX";
+    } else if (data.language == Language::Fortran90) {
+        mainFile = "main.f90";
+        cmakeLanguage = "Fortran";
     } else {
-        proFile.write(data.allProfile.toUtf8());
+        mainFile = "main.cpp";
+        cmakeLanguage = "CXX";
     }
-    proFile.close();
 
-    QFile source(t->buildPath + '/' + data.mainFile);
+    QFile projectFile;
+    if (m_buildSystem == BuildSystem::CMake) {
+        projectFile.setFileName(t->buildPath + "/CMakeLists.txt");
+        QVERIFY(projectFile.open(QIODevice::ReadWrite));
+        if (data.allProfile.isEmpty()) {
+            projectFile.write("cmake_minimum_required(VERSION 3.5)\n\n");
+            projectFile.write("project(doit LANGUAGES " + cmakeLanguage + ")\n\n");
+            projectFile.write("set(CMAKE_INCLUDE_CURRENT_DIR ON)\n\n");
+
+            if (data.useQt) {
+                projectFile.write("set(CMAKE_AUTOUIC ON)\n");
+                projectFile.write("set(CMAKE_AUTOMOC ON)\n");
+                projectFile.write("set(CMAKE_AUTORCC ON)\n");
+            }
+
+            projectFile.write("set(CMAKE_CXX_STANDARD 11)\n");
+            projectFile.write("set(CMAKE_CXX_STANDARD_REQUIRED ON)\n");
+
+            projectFile.write("add_executable(doit\n");
+            projectFile.write("    " + mainFile.toUtf8() + "\n");
+            projectFile.write(")\n\n");
+
+            //projectFile.write("target_link_libraries(doit PRIVATE Qt5::Widgets)\n");
+
+            //projectFile.write("\nmacos: CONFIG += sdk_no_version_check\n");
+            //projectFile.write("\nCONFIG -= release\n");
+            //projectFile.write("\nCONFIG += debug\n");
+            //projectFile.write("\nCONFIG += console\n");
+
+            //if (m_useGLibCxxDebug)
+            //    projectFile.write("DEFINES += _GLIBCXX_DEBUG\n");
+            //if (m_debuggerEngine == GdbEngine && m_debuggerVersion < 70500)
+            //    projectFile.write("QMAKE_CXXFLAGS += -gdwarf-3\n");
+            projectFile.write(data.cmakelistsExtra.toUtf8());
+        } else {
+            projectFile.write(data.allProfile.toUtf8());
+        }
+        projectFile.close();
+    } else {
+        projectFile.setFileName(t->buildPath + "/doit.pro");
+        QVERIFY(projectFile.open(QIODevice::ReadWrite));
+        if (data.allProfile.isEmpty()) {
+            projectFile.write("SOURCES = ");
+            projectFile.write(mainFile.toUtf8());
+            projectFile.write("\nTARGET = doit\n");
+            projectFile.write("\nCONFIG -= app_bundle\n");
+            projectFile.write("\nmacos: CONFIG += sdk_no_version_check\n");
+            projectFile.write("\nCONFIG -= release\n");
+            projectFile.write("\nCONFIG += debug\n");
+            projectFile.write("\nCONFIG += console\n");
+            if (data.useQt)
+                projectFile.write("QT -= widgets gui\n");
+            else
+                projectFile.write("CONFIG -= qt\n");
+            if (m_useGLibCxxDebug)
+                projectFile.write("DEFINES += _GLIBCXX_DEBUG\n");
+            if (m_debuggerEngine == GdbEngine && m_debuggerVersion < 70500)
+                projectFile.write("QMAKE_CXXFLAGS += -gdwarf-3\n");
+            if (m_debuggerEngine == CdbEngine)
+                projectFile.write("CONFIG += utf8_source\n");
+            projectFile.write(data.profileExtra.toUtf8());
+        } else {
+            projectFile.write(data.allProfile.toUtf8());
+        }
+#ifdef Q_OS_WIN
+        projectFile.write("TARGET = ../doit\n"); // avoid handling debug / release folder
+#endif
+        projectFile.close();
+    }
+
+    QFile source(t->buildPath + '/' + mainFile);
     QVERIFY(source.open(QIODevice::ReadWrite));
 
     QString unused;
@@ -1411,23 +1617,47 @@ void tst_Dumpers::dumper()
     source.write(fullCode.toUtf8());
     source.close();
 
-    QProcess qmake;
-    qmake.setWorkingDirectory(t->buildPath);
-    //qDebug() << "Starting qmake: " << m_qmakeBinary;
-    QStringList options;
-#ifdef Q_OS_MAC
-    if (m_qtVersion && m_qtVersion < 0x050000)
-        options << "-spec" << "unsupported/macx-clang";
-#endif
-    qmake.start(m_qmakeBinary, options);
-    QVERIFY(qmake.waitForFinished());
-    output = qmake.readAllStandardOutput();
-    error = qmake.readAllStandardError();
-    //qDebug() << "stdout: " << output;
+    if (m_buildSystem == BuildSystem::CMake) {
+        QProcess cmake;
+        cmake.setWorkingDirectory(t->buildPath);
+        QDir dir = QFileInfo(m_qmakeBinary).dir(); // {Qt:QT_INSTALL_PREFIX}
+        dir.cdUp();
+        QStringList options = {
+            "-DCMAKE_BUILD_TYPE=Debug",
+            "-DCMAKE_PREFIX_PATH=" + dir.absolutePath(),
+            "."
+        };
+        //qDebug() << "Starting cmake: " << m_cmakeBinary << ' ' << qPrintable(options.join(' '));
+        cmake.start(m_cmakeBinary, options);
+        QVERIFY(cmake.waitForFinished());
+        output = cmake.readAllStandardOutput();
+        error = cmake.readAllStandardError();
+        //qDebug() << "stdout: " << output;
 
-    if (data.allProfile.isEmpty()) { // Nim...
-        if (!error.isEmpty()) {
-            qDebug() << error; QVERIFY(false);
+        if (data.allProfile.isEmpty()) { // Nim...
+            if (!error.isEmpty()) {
+                qDebug() << error; QVERIFY(false);
+            }
+        }
+    } else {
+        QProcess qmake;
+        qmake.setWorkingDirectory(t->buildPath);
+        //qDebug() << "Starting qmake: " << m_qmakeBinary;
+        QStringList options;
+    #ifdef Q_OS_MACOS
+        if (m_qtVersion && m_qtVersion < 0x050000)
+            options << "-spec" << "unsupported/macx-clang";
+    #endif
+        qmake.start(m_qmakeBinary, options);
+        QVERIFY(qmake.waitForFinished());
+        output = qmake.readAllStandardOutput();
+        error = qmake.readAllStandardError();
+        //qDebug() << "stdout: " << output;
+
+        if (data.allProfile.isEmpty()) { // Nim...
+            if (!error.isEmpty()) {
+                qDebug() << error; QVERIFY(false);
+            }
         }
     }
 
@@ -1441,11 +1671,14 @@ void tst_Dumpers::dumper()
     error = make.readAllStandardError();
     //qDebug() << "stdout: " << output;
     if (make.exitCode()) {
+        if (data.useBoost && make.exitStatus() == QProcess::NormalExit)
+            MSKIP_SINGLE("Compile failed - probably missing Boost?");
+
         qDebug().noquote() << error;
         qDebug() << "\n------------------ CODE --------------------";
         qDebug().noquote() << fullCode;
         qDebug() << "\n------------------ CODE --------------------";
-        qDebug().noquote() << "Project file: " << proFile.fileName();
+        qDebug().noquote() << "Project file: " << projectFile.fileName();
         QCOMPARE(make.exitCode(), 0);
     }
 
@@ -1464,11 +1697,11 @@ void tst_Dumpers::dumper()
         qDebug() << "DWARF Version : " << dwarfVersion;
 
         if (data.neededDwarfVersion.min > dwarfVersion)
-            MSKIP_SINGLE("Need minimum DWARF version "
-                + QByteArray::number(data.neededDwarfVersion.min));
+            MSKIP_SINGLE(QByteArray("Need minimum DWARF version "
+                + QByteArray::number(data.neededDwarfVersion.min)));
         if (data.neededDwarfVersion.max < dwarfVersion)
-            MSKIP_SINGLE("Need maximum DWARF version "
-                + QByteArray::number(data.neededDwarfVersion.max));
+            MSKIP_SINGLE(QByteArray("Need maximum DWARF version "
+                + QByteArray::number(data.neededDwarfVersion.max)));
     }
 
     QByteArray dumperDir = DUMPERDIR;
@@ -1487,7 +1720,7 @@ void tst_Dumpers::dumper()
         }
     };
     collectExpandedINames(data.checks);
-    for (const auto checkset : qAsConst(data.checksets))
+    for (const auto &checkset : qAsConst(data.checksets))
         collectExpandedINames(checkset.checks);
 
     QString expanded;
@@ -1518,12 +1751,7 @@ void tst_Dumpers::dumper()
         QByteArray nograb = "-nograb";
 
         cmds = "set confirm off\n"
-#ifdef Q_OS_WIN
-                "file debug/doit\n"
-#else
                 "file doit\n"
-#endif
-                "set print object on\n"
                 "set auto-load python-scripts off\n";
 
         cmds += "python sys.path.insert(1, '" + dumperDir + "')\n"
@@ -1547,7 +1775,7 @@ void tst_Dumpers::dumper()
              << "0x4000001f"
              << "-c"
              << "bm doit!qtcDebugBreakFunction;g"
-             << "debug\\doit.exe";
+             << "doit.exe";
         cmds += ".symopt+0x8000\n"
                 "!qtcreatorcdbext.script sys.path.insert(1, '" + dumperDir + "')\n"
                 "!qtcreatorcdbext.script from cdbbridge import *\n"
@@ -1571,7 +1799,8 @@ void tst_Dumpers::dumper()
                "sc sys.path.insert(1, '" + dumperDir + "')\n"
                "sc from lldbbridge import *\n"
               // "sc print(dir())\n"
-               "sc Tester('" + t->buildPath.toLatin1() + "/doit', {'fancy':1,'forcens':1,"
+               "sc Tester('" + t->buildPath.toLatin1() + "/doit', {" + dumperOptions +
+                    "'fancy':1,'forcens':1,"
                     "'autoderef':1,'dyntype':1,'passexceptions':1,"
                     "'testing':1,'qobjectnames':1,"
                     "'expanded':[" + expandedq + "]})\n"
@@ -1702,7 +1931,7 @@ void tst_Dumpers::dumper()
     auto test = [&](const Check &check, bool *removeIt, bool single) {
         if (!check.matches(m_debuggerEngine, m_debuggerVersion, context)) {
             if (single)
-                qDebug() << "SKIPPING NON-MATCHING TEST FOR " << check.iname;
+                qDebug() << "SKIPPING NON-MATCHING TEST " << check;
             return true; // we have not failed
         }
 
@@ -1769,6 +1998,8 @@ void tst_Dumpers::dumper()
         }
         if (!setok) {
             qDebug() << "NO CHECK IN SET PASSED";
+            for (const Check &check : checkset.checks)
+                qDebug() << check;
             ok = false;
         }
     }
@@ -1785,9 +2016,9 @@ void tst_Dumpers::dumper()
         qDebug() << "SOME TESTS NOT EXECUTED: ";
         for (const Check &check : qAsConst(data.checks)) {
             if (check.optionallyPresent) {
-                qDebug() << "  OPTIONAL TEST NOT FOUND FOR INAME: " << check.iname << " IGNORED.";
+                qDebug() << "  OPTIONAL TEST NOT FOUND: " << check << " IGNORED.";
             } else {
-                qDebug() << "  COMPULSORY TEST NOT FOUND FOR INAME: " << check.iname;
+                qDebug() << "  COMPULSORY TEST NOT FOUND: " << check;
                 ok = false;
             }
         }
@@ -1813,7 +2044,7 @@ void tst_Dumpers::dumper()
             pos1 = fullOutput.indexOf("bridgemessage={msg=", pos2 + 1);
             if (pos1 == -1)
                 break;
-            pos1 += 21;
+            pos1 += 20;
             pos2 = fullOutput.indexOf("\"}", pos1 + 1);
             if (pos2 == -1)
                 break;
@@ -1974,14 +2205,14 @@ void tst_Dumpers::dumper_data()
                + Check("ba1.12", "[12]", "1", "char")
                + Check("ba1.13", "[13]", "2", "char")
 
-               + CheckType("ba2", "@QByteArray")
+               + Check("ba2", AnyValue, "@QByteArray")
                + Check("s", Value('"' + QString(100, QChar('x')) + '"'), "@QString")
                + Check("ss", Value('"' + QString(100, QChar('c')) + '"'), "std::string")
 
                + Check("buf1", Value("\"" + QString(1, QChar(0xee)) + "\""), "@QByteArray")
                + Check("buf2", Value("\"" + QString(1, QChar(0xee)) + "\""), "@QByteArray")
                + Check("buf3", "\"\\ee\"", "@QByteArray")
-               + CheckType("str1", "char *")
+               + Check("str1", AnyValue, "char *")
 
                + Check("ba4", "\"Hell\"", "@QByteArray")
                + Check("ba5", "\"ello\"", "@QByteArray");
@@ -2037,29 +2268,35 @@ void tst_Dumpers::dumper_data()
 
                + Check("d0", "(invalid)", "@QDate")
                + Check("d1", "Tue Jan 1 1980", "@QDate")
-               + Check("d1.(ISO)", "\"1980-01-01\"", "@QString") % Optional()
-               + Check("d1.toString", "\"Tue Jan 1 1980\"", "@QString") % Optional()
-               + CheckType("d1.(Locale)", "@QString") % Optional()
-               + CheckType("d1.(SystemLocale)", "@QString") % Optional()
+               + Check("d1.(ISO)", "\"1980-01-01\"", "@QString") % NeedsInferiorCall
+               + Check("d1.toString", "\"Tue Jan 1 1980\"", "@QString") % NeedsInferiorCall
+               + Check("d1.(Locale)", AnyValue, "@QString") % NeedsInferiorCall
+                    % QtVersion(0, 0x5ffff) // Gone in Qt6
+               + Check("d1.(SystemLocale)", AnyValue, "@QString") % NeedsInferiorCall
+                    % QtVersion(0, 0x5ffff) // Gone in Qt6
 
                + Check("t0", "(invalid)", "@QTime")
                + Check("t1", "13:15:32", "@QTime")
-               + Check("t1.(ISO)", "\"13:15:32\"", "@QString") % Optional()
-               + Check("t1.toString", "\"13:15:32\"", "@QString") % Optional()
-               + CheckType("t1.(Locale)", "@QString") % Optional()
-               + CheckType("t1.(SystemLocale)", "@QString") % Optional()
+               + Check("t1.(ISO)", "\"13:15:32\"", "@QString") % NeedsInferiorCall
+               + Check("t1.toString", "\"13:15:32\"", "@QString") % NeedsInferiorCall
+               + Check("t1.(Locale)", AnyValue, "@QString") % NeedsInferiorCall
+                    % QtVersion(0, 0x5ffff) // Gone in Qt6
+               + Check("t1.(SystemLocale)", AnyValue, "@QString") % NeedsInferiorCall
+                    % QtVersion(0, 0x5ffff) // Gone in Qt6
 
                + Check("dt0", "(invalid)", "@QDateTime")
                + Check("dt1", Value4("Tue Jan 1 13:15:32 1980"), "@QDateTime")
                + Check("dt1", Value5("Tue Jan 1 13:15:32 1980 GMT"), "@QDateTime")
                + Check("dt1.(ISO)",
-                    "\"1980-01-01T13:15:32Z\"", "@QString") % Optional()
-               + CheckType("dt1.(Locale)", "@QString") % Optional()
-               + CheckType("dt1.(SystemLocale)", "@QString") % Optional()
+                    "\"1980-01-01T13:15:32Z\"", "@QString") % NeedsInferiorCall
+               + Check("dt1.(Locale)", AnyValue, "@QString") % NeedsInferiorCall
+                    % QtVersion(0, 0x5ffff) // Gone in Qt6
+               + Check("dt1.(SystemLocale)", AnyValue, "@QString") % NeedsInferiorCall
+                    % QtVersion(0, 0x5ffff) // Gone in Qt6
                + Check("dt1.toString",
-                    Value4("\"Tue Jan 1 13:15:32 1980\""), "@QString") % Optional()
+                    Value4("\"Tue Jan 1 13:15:32 1980\""), "@QString") % NeedsInferiorCall
                + Check("dt1.toString",
-                    Value5("\"Tue Jan 1 13:15:32 1980 GMT\""), "@QString") % Optional();
+                    Value5("\"Tue Jan 1 13:15:32 1980 GMT\""), "@QString") % NeedsInferiorCall;
                //+ Check("dt1.toUTC",
                //     Value4("Tue Jan 1 13:15:32 1980"), "@QDateTime") % Optional()
                //+ Check("dt1.toUTC",
@@ -2204,8 +2441,10 @@ void tst_Dumpers::dumper_data()
 
                + Check("h2", "<3 items>", "@QHash<int, float>")
                + Check("h2.0", "[0] 0", FloatValue("33"), "")
-               + Check("h2.1", "[1] 22", FloatValue("22"), "")
-               + Check("h2.2", "[2] 11", FloatValue("11"), "")
+               + Check5("h2.1", "[1] 22", FloatValue("22"), "")
+               + Check5("h2.2", "[2] 11", FloatValue("11"), "")
+               + Check6("h2.1", "[1] 11", FloatValue("11"), "")
+               + Check6("h2.2", "[2] 22", FloatValue("22"), "")
 
                + Check("h3", "<1 items>", "@QHash<@QString, int>")
                + Check("h3.0.key", "key", "\"22.0\"", "@QString")
@@ -2221,24 +2460,27 @@ void tst_Dumpers::dumper_data()
 
                + Check("h6", "<1 items>", "@QHash<@QString, Foo>")
                + Check("h6.0.key", "\"22.0\"", "@QString")
-               + CheckType("h6.0.value", "Foo")
+               + Check("h6.0.value", AnyValue, "Foo")
                + Check("h6.0.value.a", "22", "int")
 
                + CoreProfile()
                + Check("h7", "<3 items>", "@QHash<@QString, @QPointer<@QObject>>")
                + Check("h7.0.key", Value4("\"Hallo\""), "@QString")
                + Check("h7.0.key", Value5("\"Welt\""), "@QString")
-               + CheckType("h7.0.value", "@QPointer<@QObject>")
-               //+ CheckType("h7.0.value.o", "@QObject")
+               + Check("h7.0.value", AnyValue, "@QPointer<@QObject>")
+               //+ Check("h7.0.value.o", AnyValue, "@QObject")
                + Check("h7.2.key", "\".\"", "@QString")
-               + CheckType("h7.2.value", "@QPointer<@QObject>")
+               + Check("h7.2.value", AnyValue, "@QPointer<@QObject>")
 
                + Check("h8", "<3 items>", TypeDef("@QHash<int,float>", "Hash"))
-               + Check("h8.0", "[0] 22", FloatValue("22"), "")
-               + Check("it1.key", "22", "int")
-               + Check("it1.value", FloatValue("22"), "float")
-               + Check("it3.key", "33", "int")
-               + Check("it3.value", FloatValue("33"), "float");
+               + Check5("h8.0", "[0] 22", FloatValue("22"), "")
+               + Check6("h8.0", "[0] 33", FloatValue("33"), "")
+
+                // FIXME: Qt6 QHash::iterator broken.
+               + Check5("it1.key", "22", "int")
+               + Check5("it1.value", FloatValue("22"), "float")
+               + Check5("it3.key", "33", "int")
+               + Check5("it3.value", FloatValue("33"), "float");
 
 
     QTest::newRow("QHostAddress")
@@ -2294,7 +2536,7 @@ void tst_Dumpers::dumper_data()
                + GuiProfile()
 
                + Check("im", "(200x200)", "@QImage")
-               + CheckType("pain", "@QPainter")
+               + Check("pain", AnyValue, "@QPainter")
                + Check("pm", "(200x200)", "@QPixmap");
 
 
@@ -2333,6 +2575,7 @@ void tst_Dumpers::dumper_data()
                     "&l1, &l2, &l3, &l4, &l5, &l6")
 
                + CoreProfile()
+               + QtVersion(0, 0x5ffff)  // QLinkedList was dropped in Qt 6
 
                + Check("l0", "<0 items>", "@QLinkedList<float>")
 
@@ -2345,10 +2588,10 @@ void tst_Dumpers::dumper_data()
                + Check("l2.1", "[1]", "104", "unsigned int")
 
                + Check("l3", "<3 items>", "@QLinkedList<Foo*>")
-               + CheckType("l3.0", "[0]", "Foo")
+               + Check("l3.0", "[0]", AnyValue, "Foo")
                + Check("l3.0.a", "1", "int")
                + Check("l3.1", "[1]", "0x0", "Foo *")
-               + CheckType("l3.2", "[2]", "Foo")
+               + Check("l3.2", "[2]", AnyValue, "Foo")
                + Check("l3.2.a", "3", "int")
 
                + Check("l4", "<2 items>", TypeDef("@QLinkedList<unsigned __int64>",
@@ -2358,9 +2601,9 @@ void tst_Dumpers::dumper_data()
 
 
                + Check("l5", "<2 items>", "@QLinkedList<Foo>")
-               + CheckType("l5.0", "[0]", "Foo")
+               + Check("l5.0", "[0]", AnyValue, "Foo")
                + Check("l5.0.a", "1", "int")
-               + CheckType("l5.1", "[1]", "Foo")
+               + Check("l5.1", "[1]", AnyValue, "Foo")
                + Check("l5.1.a", "2", "int")
 
                + Check("l6", "<2 items>", "@QLinkedList<std::string>")
@@ -2455,12 +2698,12 @@ void tst_Dumpers::dumper_data()
                + Check("l3", "<2 items>", "@QList<@QString>")
                + Check("l3.0", "[0]", "\"1\"", "@QString")
 
-               + Check("l4", "<2 items>", "@QStringList")
+               + Check("l4", "<2 items>", TypePattern("@QList<@QString>|@QStringList"))
                + Check("l4.0", "[0]", "\"1\"", "@QString")
 
                + Check("l5", "<3 items>", "@QList<int*>")
-               + CheckType("l5.0", "[0]", "int")
-               + CheckType("l5.1", "[1]", "int")
+               + Check("l5.0", "[0]", AnyValue, "int")
+               + Check("l5.1", "[1]", AnyValue, "int")
 
                + Check("l5.2", "[2]", "0x0", "int*")
 
@@ -2470,9 +2713,11 @@ void tst_Dumpers::dumper_data()
                + Check("l7.0", "[0]", "101", "unsigned int")
                + Check("l7.2", "[2]", "102", "unsigned int")
 
-               + Check("l8", "<2 items>", "@QList<@QStringList>")
-               + Check("sl", "<1 items>", "@QStringList")
-               + Check("l8.1", "[1]", "<1 items>", "@QStringList")
+               + Check5("l8", "<2 items>", "@QList<@QStringList>")
+               + Check6("l8", "<2 items>", "@QList<@QList<@QString>>")
+               + Check("sl", "<1 items>", TypePattern("@QList<@QString>|@QStringList"))
+               + Check5("l8.1", "[1]", "<1 items>", "@QStringList")
+               + Check6("l8.1", "[1]", "<1 items>", "@QList<@QString>")
                + Check("l8.1.0", "[0]", "\"aaa\"", "@QString")
 
                + Check("l9", "<3 items>", "@QList<unsigned short>")
@@ -2490,7 +2735,7 @@ void tst_Dumpers::dumper_data()
 
                + Check("l12", "<0 items>", "@QList<std::string>")
                + Check("l13", "<4 items>", "@QList<std::string>")
-               + CheckType("l13.0", "[0]", "std::string")
+               + Check("l13.0", "[0]", AnyValue, "std::string")
                + Check("l13.3", "[3]" ,"\"dd\"", "std::string");
 
 
@@ -2544,9 +2789,9 @@ void tst_Dumpers::dumper_data()
               + CoreProfile()
               + NoCdbEngine
 
-              + CheckType("loc", "@QLocale")
-              + CheckType("m", "@QLocale::MeasurementSystem")
-              + Check("loc1", "\"en_US\"", "@QLocale")
+              + Check("loc", AnyValue, "@QLocale")
+              + Check("m", AnyValue, "@QLocale::MeasurementSystem")
+              + Check("loc1", "\"en_US\"", "@QLocale") % NeedsInferiorCall
               + Check("loc1.country", "@QLocale::UnitedStates (225)", "@QLocale::Country") % Qt5
               + Check("loc1.language", "@QLocale::English (31)", "@QLocale::Language") % Qt5
               + Check("loc1.numberOptions", "@QLocale::DefaultNumberOptions (0)", "@QLocale::NumberOptions")
@@ -2558,7 +2803,7 @@ void tst_Dumpers::dumper_data()
               + Check("loc1.groupSeparator", "44", "@QChar") % Qt5 // ,
               + Check("loc1.negativeSign", "45", "@QChar")  % Qt5  // -
               + Check("loc1.positiveSign", "43", "@QChar") % Qt5   // +
-              + Check("m1", ValuePattern(".*Imperial.*System (1)"),
+              + Check("m1", ValuePattern(".*Imperial.*System \\(1\\)"),
                       TypePattern(".*MeasurementSystem")) % Qt5;
 
 
@@ -2566,22 +2811,22 @@ void tst_Dumpers::dumper_data()
            << Data("#include <QMap>\n"
                    "#include <QObject>\n"
                    "#include <QPointer>\n"
-                   "#include <QStringList>\n" + fooData + nsData,
+                   "#include <QList>\n" + fooData + nsData,
 
-                   "QMap<uint, QStringList> m0;\n"
+                   "QMap<uint, QList<QString>> m0;\n"
 
-                   "QMap<uint, QStringList> m1;\n"
-                   "m1[11] = QStringList() << \"11\";\n"
-                   "m1[22] = QStringList() << \"22\";\n\n"
+                   "QMap<uint, QList<QString>> m1;\n"
+                   "m1[11] = QList<QString>() << \"11\";\n"
+                   "m1[22] = QList<QString>() << \"22\";\n\n"
 
                    "QMap<uint, float> m2;\n"
                    "m2[11] = 31.0;\n"
                    "m2[22] = 32.0;\n\n"
 
-                   "typedef QMap<uint, QStringList> T;\n"
+                   "typedef QMap<uint, QList<QString>> T;\n"
                    "T m3;\n"
-                   "m3[11] = QStringList() << \"11\";\n"
-                   "m3[22] = QStringList() << \"22\";\n\n"
+                   "m3[11] = QList<QString>() << \"11\";\n"
+                   "m3[22] = QList<QString>() << \"22\";\n\n"
 
                    "QMap<QString, float> m4;\n"
                    "m4[\"22.0\"] = 22.0;\n\n"
@@ -2613,59 +2858,60 @@ void tst_Dumpers::dumper_data()
 
               + CoreProfile()
 
-              + Check("m0", "<0 items>", "@QMap<unsigned int, @QStringList>")
+              + Check("m0", "<0 items>", "@QMap<unsigned int, @QList<@QString>>")
 
-              + Check("m1", "<2 items>", "@QMap<unsigned int, @QStringList>")
-              + Check("m1.0.key", "11", "unsigned int")
-              + Check("m1.0.value", "<1 items>", "@QStringList")
-              + Check("m1.0.value.0", "[0]", "\"11\"", "@QString")
-              + Check("m1.1.key", "22", "unsigned int")
-              + Check("m1.1.value", "<1 items>", "@QStringList")
-              + Check("m1.1.value.0", "[0]", "\"22\"", "@QString")
+              + Check("m1", "<2 items>", "@QMap<unsigned int, @QList<@QString>>")
+              + CheckPairish("m1.0.key", "11", "unsigned int")
+              + CheckPairish("m1.0.value", "<1 items>", "@QList<@QString>")
+              + CheckPairish("m1.0.value.0", "[0]", "\"11\"", "@QString")
+              + CheckPairish("m1.1.key", "22", "unsigned int")
+              + CheckPairish("m1.1.value", "<1 items>", "@QList<@QString>")
+              + CheckPairish("m1.1.value.0", "[0]", "\"22\"", "@QString")
 
               + Check("m2", "<2 items>", "@QMap<unsigned int, float>")
               + Check("m2.0", "[0] 11", FloatValue("31.0"), "")
               + Check("m2.1", "[1] 22", FloatValue("32.0"), "")
 
-              + Check("m3", "<2 items>", TypeDef("@QMap<unsigned int,@QStringList>", "T"))
+              + Check("m3", "<2 items>", TypeDef("@QMap<unsigned int,@QList<@QString>>", "T"))
 
               + Check("m4", "<1 items>", "@QMap<@QString, float>")
-              + Check("m4.0.key", "\"22.0\"", "@QString")
-              + Check("m4.0.value", FloatValue("22"), "float")
+              + CheckPairish("m4.0.key", "\"22.0\"", "@QString")
+              + CheckPairish("m4.0.value", FloatValue("22"), "float")
 
               + Check("m5", "<1 items>", "@QMap<int, @QString>")
-              + Check("m5.0.key", "22", "int")
-              + Check("m5.0.value", "\"22.0\"", "@QString")
+              + CheckPairish("m5.0.key", "22", "int")
+              + CheckPairish("m5.0.value", "\"22.0\"", "@QString")
 
               + Check("m6", "<2 items>", "@QMap<@QString, Foo>")
-              + Check("m6.0.key", "\"22.0\"", "@QString")
-              + Check("m6.0.value", "", "Foo")
-              + Check("m6.0.value.a", "22", "int")
-              + Check("m6.1.key", "\"33.0\"", "@QString")
-              + Check("m6.1.value", "", "Foo")
-              + Check("m6.1.value.a", "33", "int")
+              + CheckPairish("m6.0.key", "\"22.0\"", "@QString")
+              + CheckPairish("m6.0.value", "", "Foo")
+              + CheckPairish("m6.0.value.a", "22", "int")
+              + CheckPairish("m6.1.key", "\"33.0\"", "@QString")
+              + CheckPairish("m6.1.value", "", "Foo")
+              + CheckPairish("m6.1.value.a", "33", "int")
 
               + Check("m7", "<3 items>", "@QMap<@QString, @QPointer<@QObject>>")
-              + Check("m7.0.key", "\".\"", "@QString")
-              + Check("m7.0.value", "", "@QPointer<@QObject>")
+              + CheckPairish("m7.0.key", "\".\"", "@QString")
+              + CheckPairish("m7.0.value", "", "@QPointer<@QObject>")
               //+ Check("m7.0.value.o", Pointer(), "@QObject")
               // FIXME: it's '.wp' in Qt 5
-              + Check("m7.1.key", "\"Hallo\"", "@QString")
-              + Check("m7.2.key", "\"Welt\"", "@QString")
+              + CheckPairish("m7.1.key", "\"Hallo\"", "@QString")
+              + CheckPairish("m7.2.key", "\"Welt\"", "@QString")
 
               + Check("m8", "<4 items>", "@QMap<@QString, @QList<nsA::nsB::SomeType*>>")
-              + Check("m8.0.key", "\"1\"", "@QString")
-              + Check("m8.0.value", "<3 items>", "@QList<nsA::nsB::SomeType*>")
-              + Check("m8.0.value.0", "[0]", "", "nsA::nsB::SomeType")
-              + Check("m8.0.value.0.a", "1", "int")
-              + Check("m8.0.value.1", "[1]", "", "nsA::nsB::SomeType")
-              + Check("m8.0.value.1.a", "2", "int")
-              + Check("m8.0.value.2", "[2]", "", "nsA::nsB::SomeType")
-              + Check("m8.0.value.2.a", "3", "int")
-              + Check("m8.3.key", "\"foo\"", "@QString")
-              + Check("m8.3.value", "<3 items>", "@QList<nsA::nsB::SomeType*>")
-              + Check("m8.3.value.2", "[2]", "", "nsA::nsB::SomeType")
-              + Check("m8.3.value.2.a", "3", "int")
+              + CheckPairish("m8.0.key", "\"1\"", "@QString")
+              + CheckPairish("m8.0.value", "<3 items>", "@QList<nsA::nsB::SomeType*>")
+              + CheckPairish("m8.0.value.0", "[0]", "", "nsA::nsB::SomeType")
+              + CheckPairish("m8.0.value.0.a", "1", "int")
+              + CheckPairish("m8.0.value.1", "[1]", "", "nsA::nsB::SomeType")
+              + CheckPairish("m8.0.value.1.a", "2", "int")
+              + CheckPairish("m8.0.value.2", "[2]", "", "nsA::nsB::SomeType")
+              + CheckPairish("m8.0.value.2.a", "3", "int")
+              + CheckPairish("m8.3.key", "\"foo\"", "@QString")
+              + CheckPairish("m8.3.value", "<3 items>", "@QList<nsA::nsB::SomeType*>")
+              + CheckPairish("m8.3.value.2", "[2]", "", "nsA::nsB::SomeType")
+              + CheckPairish("m8.3.value.2.a", "3", "int")
+
               + Check("x", "<3 items>", "@QList<nsA::nsB::SomeType*>");
 
 
@@ -2714,26 +2960,26 @@ void tst_Dumpers::dumper_data()
               + Check("m1.5", "[5] 22", FloatValue("22"), "")
 
               + Check("m2", "<1 items>", "@QMultiMap<@QString, float>")
-              + Check("m2.0.key", "\"22.0\"", "@QString")
-              + Check("m2.0.value", FloatValue("22"), "float")
+              + CheckPairish("m2.0.key", "\"22.0\"", "@QString")
+              + CheckPairish("m2.0.value", FloatValue("22"), "float")
 
               + CoreProfile()
               + Check("m3", "<1 items>", "@QMultiMap<int, @QString>")
-              + Check("m3.0.key", "22", "int")
-              + Check("m3.0.value", "\"22.0\"", "@QString")
+              + CheckPairish("m3.0.key", "22", "int")
+              + CheckPairish("m3.0.value", "\"22.0\"", "@QString")
 
               + CoreProfile()
               + Check("m4", "<3 items>", "@QMultiMap<@QString, Foo>")
-              + Check("m4.0.key", "\"22.0\"", "@QString")
-              + Check("m4.0.value", "", "Foo")
-              + Check("m4.0.value.a", "22", "int")
+              + CheckPairish("m4.0.key", "\"22.0\"", "@QString")
+              + CheckPairish("m4.0.value", "", "Foo")
+              + CheckPairish("m4.0.value.a", "22", "int")
 
               + Check("m5", "<4 items>", "@QMultiMap<@QString, @QPointer<@QObject>>")
-              + Check("m5.0.key", "\".\"", "@QString")
-              + Check("m5.0.value", "", "@QPointer<@QObject>")
-              + Check("m5.1.key", "\".\"", "@QString")
-              + Check("m5.2.key", "\"Hallo\"", "@QString")
-              + Check("m5.3.key", "\"Welt\"", "@QString");
+              + CheckPairish("m5.0.key", "\".\"", "@QString")
+              + CheckPairish("m5.0.value", "", "@QPointer<@QObject>")
+              + CheckPairish("m5.1.key", "\".\"", "@QString")
+              + CheckPairish("m5.2.key", "\"Hallo\"", "@QString")
+              + CheckPairish("m5.3.key", "\"Welt\"", "@QString");
 
 
    QTest::newRow("QObject1")
@@ -2842,6 +3088,7 @@ void tst_Dumpers::dumper_data()
                + Check5("mm", "destroyed", "@QMetaMethod")
                + Check4("mm", "destroyed(QObject*)", "@QMetaMethod")
                + Check("mm.handle", "14", TypeDef("unsigned int", "uint"))
+                    % QtVersion(0, 0x5ffff) // Gone in Qt 6
                + Check("mp", "objectName", "@QMetaProperty");
 
 
@@ -3013,6 +3260,7 @@ void tst_Dumpers::dumper_data()
 
                     "&pos1, &pos2, &caps")
 
+               + Qt5
                + CoreProfile()
 
                + Check("re", "\"a(.*)b(.*)c\"", "@QRegExp")
@@ -3078,10 +3326,14 @@ void tst_Dumpers::dumper_data()
                     "region0 = region;\n"
                     "region += QRect(100, 100, 200, 200);\n"
                     "region1 = region;\n"
+                    "#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)\n"
                     "QVector<QRect> rects = region1.rects(); // Warm up internal cache.\n"
+                    "(void) rects;\n"
+                    "#endif\n"
+                    "QRect b = region1.boundingRect(); // Warm up internal cache.\n"
                     "region += QRect(300, 300, 400, 500);\n"
                     "region2 = region;",
-                    "&region0, &region1, &region2, &rects")
+                    "&region0, &region1, &region2, &b")
 
                + GuiProfile()
 
@@ -3098,7 +3350,8 @@ void tst_Dumpers::dumper_data()
                + Check("region2.innerArea", "200000", "int")
                + Check("region2.innerRect", "400x500+300+300", "@QRect")
                + Check("region2.numRects", "2", "int")
-               + Check("region2.rects", "<2 items>", "@QVector<@QRect>");
+               + Check5("region2.rects", "<2 items>", "@QVector<@QRect>")
+               + Check6("region2.rects", "<2 items>", "@QList<@QRect>");
 
 
     QTest::newRow("QSettings")
@@ -3127,8 +3380,10 @@ void tst_Dumpers::dumper_data()
                     "QT_BEGIN_NAMESPACE\n"
                     "uint qHash(const QMap<int, int> &) { return 0; }\n"
                     "uint qHash(const double & f) { return int(f); }\n"
-                    "uint qHash(const QPointer<QObject> &p) { return (ulong)p.data(); }\n"
+                    "uint qHash(const QPointer<QObject> &p) { return (quintptr)p.data(); }\n"
                     "QT_END_NAMESPACE\n",
+
+                    "QSet<double> s0;\n"
 
                     "QSet<int> s1;\n"
                     "s1.insert(11);\n"
@@ -3145,19 +3400,23 @@ void tst_Dumpers::dumper_data()
                     "s3.insert(ptr);\n"
                     "s3.insert(ptr);\n",
 
-                    "&s1, &s2, &s3")
+                    "&s0, &s1, &s2, &s3")
 
                + CoreProfile()
 
+               + Check("s0", "<0 items>", "@QSet<double>")
+
                + Check("s1", "<2 items>", "@QSet<int>")
-               + Check("s1.0", "[0]", "22", "int")
-               + Check("s1.1", "[1]", "11", "int")
+               + CheckSet({{"s1.0", "[0]", "22", "int"},
+                           {"s1.0", "[0]", "11", "int"}})
+               + CheckSet({{"s1.1", "[1]", "22", "int"},
+                           {"s1.1", "[1]", "11", "int"}})
 
                + Check("s2", "<2 items>", "@QSet<@QString>")
-               + Check("s2.0", "[0]", Value4("\"11.0\""), "@QString")
-               + Check("s2.0", "[0]", Value5("\"22.0\""), "@QString")
-               + Check("s2.1", "[1]", Value4("\"22.0\""), "@QString")
-               + Check("s2.1", "[1]", Value5("\"11.0\""), "@QString")
+               + CheckSet({{"s2.0", "[0]", "\"11.0\"", "@QString"},
+                           {"s2.0", "[0]", "\"22.0\"", "@QString"}})
+               + CheckSet({{"s2.1", "[1]", "\"11.0\"", "@QString"},
+                           {"s2.1", "[1]", "\"22.0\"", "@QString"}})
 
                + Check("s3", "<1 items>", "@QSet<@QPointer<@QObject>>")
                + Check("s3.0", "[0]", "", "@QPointer<@QObject>");
@@ -3342,7 +3601,8 @@ void tst_Dumpers::dumper_data()
 
                + QmlPrivateProfile()
 
-               + Check("l", "\"Hi\"", "@QLazilyAllocated<@QString>");
+                // Qt 6 has QLazilyAllocated<QString, unsigned short> here.
+               + Check("l", "\"Hi\"", TypePattern("@QLazilyAllocated<@QString.*>"));
 
 
     QTest::newRow("QFiniteStack")
@@ -3559,13 +3819,15 @@ void tst_Dumpers::dumper_data()
     expected1.append(QChar(1));
     expected1.append("BBB\"");
 
-    QChar oUmlaut = 0xf6;
+    QChar oUmlaut = QChar(0xf6);
 
     QTest::newRow("QString")
             << Data("#include <QByteArray>\n"
                     "#include <QString>\n"
                     "#include <QStringList>\n"
-                    "#include <QStringRef>\n",
+                    "#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)\n"
+                    "#include <QStringRef>\n"
+                    "#endif\n",
 
                     "QByteArray s0 = \"Hello\";\n"
                     "s0.prepend(\"Prefix: \");\n"
@@ -3586,16 +3848,16 @@ void tst_Dumpers::dumper_data()
                     "QString s5(\"String Test\");\n"
                     "QString *s6 = new QString(\"Pointer String Test\");\n"
 
-                    "const wchar_t *w = L\"aöa\";\n"
-                    "QString s7;\n"
-                    "if (sizeof(wchar_t) == 4)\n"
-                    "    s7 = QString::fromUcs4((uint *)w);\n"
-                    "else\n"
-                    "    s7 = QString::fromUtf16((ushort *)w);\n"
-
                     "QString str = \"Hello\";\n"
+
+                    "const wchar_t *w = L\"aöa\";\n"
+                    "#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)\n"
+                    "QString s7 = QString::fromWCharArray(w);\n"
                     "QStringRef s8(&str, 1, 2);\n"
                     "QStringRef s9;\n"
+                    "#else\n"
+                    "QString s7, s8, s9;\n"
+                    "#endif\n"
 
                     "QStringList l;\n"
                     "l << \"Hello \";\n"
@@ -3608,14 +3870,14 @@ void tst_Dumpers::dumper_data()
                     "QString str3(\"Hello\\rQt\");\n"
                     "QString str4(\"Hello\\tQt\");\n\n"
 
-                    "#if QT_VERSION > 0x50000\n"
+                    "#if QT_VERSION > 0x50000 && QT_VERSION < 0x60000\n"
                     "static const QStaticStringData<3> qstring_literal = {\n"
                     "    Q_STATIC_STRING_DATA_HEADER_INITIALIZER(3),\n"
                     "    QT_UNICODE_LITERAL(u\"ABC\") };\n"
                     "QStringDataPtr holder = { qstring_literal.data_ptr() };\n"
                     "const QString qstring_literal_temp(holder);\n\n"
 
-                    "QStaticStringData<1> sd;\n"
+                    "QStaticStringData<1> sd{};\n"
                     "sd.data[0] = 'Q';\n"
                     "sd.data[1] = 0;\n"
                     "#else\n"
@@ -3637,13 +3899,13 @@ void tst_Dumpers::dumper_data()
                + Check("s5", "\"String Test\"", "@QString")
                + Check("s6", "\"Pointer String Test\"", "@QString")
 
-               + Check("s7", QString::fromLatin1("\"a%1a\"").arg(oUmlaut), "@QString")
-               + CheckType("w", "w", "wchar_t *")
+               + Check("s7", QString::fromLatin1("\"a%1a\"").arg(oUmlaut), "@QString") % Qt5
+               + Check("w", "w", AnyValue, "wchar_t *")
 
-               + Check("s8", "\"el\"", "@QStringRef")
-               + Check("s9", "(null)", "@QStringRef")
+               + Check("s8", "\"el\"", "@QStringRef") % Qt5
+               + Check("s9", "(null)", "@QStringRef") % Qt5
 
-               + Check("l", "<2 items>", "@QStringList")
+               + Check("l", "<2 items>", TypePattern("@QList<@QString>|@QStringList"))
                + Check("l.0", "[0]", "\" big, \"", "@QString")
                + Check("l.1", "[1]", "\" World \"", "@QString")
 
@@ -3694,7 +3956,7 @@ void tst_Dumpers::dumper_data()
 
                + GuiProfile()
 
-               + CheckType("doc", "@QTextDocument")
+               + Check("doc", AnyValue, "@QTextDocument")
                + Check("tc", "4", "@QTextCursor")
                + Check("pos", "4", "int")
                + Check("anc", "1", "int");
@@ -3737,12 +3999,12 @@ void tst_Dumpers::dumper_data()
 
                + CoreProfile()
 
-               + CheckType("this", "Thread")
+               + Check("this", AnyValue, "Thread")
                + Check("this.@1", "[@QThread]", "\"This is thread #3\"", "@QThread");
                //+ Check("this.@1.@1", "[@QObject]", "\"This is thread #3\"", "@QObject");
 
 
-    QTest::newRow("QVariant")
+    QTest::newRow("QVariant1")
             << Data("#include <QMap>\n"
                     "#include <QStringList>\n"
                     "#include <QVariant>\n"
@@ -3756,9 +4018,7 @@ void tst_Dumpers::dumper_data()
 
                     "QVariant v0;\n\n"
 
-                    "QVariant::Type t1 = QVariant::String;\n"
-                    "QVariant v1 = QVariant(t1, (void*)0);\n"
-                    //"*(QString*)v1.data() = QString(\"Some string\");\n\n"
+                    "QVariant v1 = QVariant(QString(\"A string\"));\n"
 
                     "MyType my;\n"
                     "my[1] = (QStringList() << \"Hello\");\n"
@@ -3772,39 +4032,39 @@ void tst_Dumpers::dumper_data()
                     "list << 1 << 2 << 3;\n"
                     "QVariant v3 = QVariant::fromValue(list);",
 
-                    "&my, &v0, &v1, &v2, &t, &s, &list, &v3, &t1")
+                    "&my, &v0, &v1, &v2, &t, &s, &list, &v3")
 
                + CoreProfile()
 
                + Check("v0", "(invalid)", "@QVariant (invalid)")
 
                //+ Check("v1", "\"Some string\"", "@QVariant (QString)")
-               + CheckType("v1", "@QVariant (QString)")
+               + Check("v1", AnyValue, "@QVariant (QString)")
 
-               + Check("my", "<2 items>", TypeDef("@QMap<unsigned int,@QStringList>", "MyType"))
-               + Check("my.0.key", "1", "unsigned int")
-               + Check("my.0.value", "<1 items>", "@QStringList")
-               + Check("my.0.value.0", "[0]", "\"Hello\"", "@QString")
-               + Check("my.1.key", "3", "unsigned int")
-               + Check("my.1.value", "<1 items>", "@QStringList")
-               + Check("my.1.value.0", "[0]", "\"World\"", "@QString")
-               //+ CheckType("v2", "@QVariant (MyType)")
-               + Check("v2.data.0.key", "1", "unsigned int") % NoCdbEngine
-               + Check("v2.data.0.value", "<1 items>", "@QStringList") % NoCdbEngine
-               + Check("v2.data.0.value.0", "[0]", "\"Hello\"", "@QString") % NoCdbEngine
-               + Check("v2.data.1.key", "3", "unsigned int") % NoCdbEngine
-               + Check("v2.data.1.value", "<1 items>", "@QStringList") % NoCdbEngine
-               + Check("v2.data.1.value.0", "[0]", "\"World\"", "@QString") % NoCdbEngine
+               + Check("my", "<2 items>", TypePattern("@QMap<unsigned int,@QStringList>|@QMap<unsigned int,@QList<@QString>>|MyType"))
+               + CheckPairish("my.0.key", "1", "unsigned int")
+               + CheckPairish("my.0.value", "<1 items>", TypePattern("@QList<@QString>|@QStringList"))
+               + CheckPairish("my.0.value.0", "[0]", "\"Hello\"", "@QString")
+               + CheckPairish("my.1.key", "3", "unsigned int")
+               + CheckPairish("my.1.value", "<1 items>", TypePattern("@QList<@QString>|@QStringList"))
+               + CheckPairish("my.1.value.0", "[0]", "\"World\"", "@QString")
+               //+ Check("v2", AnyValue, "@QVariant (MyType)")
+               + CheckPairish("v2.data.0.key", "1", "unsigned int") % NeedsInferiorCall
+               + CheckPairish("v2.data.0.value", "<1 items>", "@QStringList") % NeedsInferiorCall
+               + CheckPairish("v2.data.0.value.0", "[0]", "\"Hello\"", "@QString") % NeedsInferiorCall
+               + CheckPairish("v2.data.1.key", "3", "unsigned int") % NeedsInferiorCall
+               + CheckPairish("v2.data.1.value", "<1 items>", "@QStringList") % NeedsInferiorCall
+               + CheckPairish("v2.data.1.value.0", "[0]", "\"World\"", "@QString") % NeedsInferiorCall
 
                + Check("list", "<3 items>", "@QList<int>")
                + Check("list.0", "[0]", "1", "int")
                + Check("list.1", "[1]", "2", "int")
                + Check("list.2", "[2]", "3", "int")
                //+ Check("v3", "", "@QVariant (@QList<int>)")
-               + Check("v3.data", "<3 items>", TypePattern(".*QList<int>")) % NoCdbEngine
-               + Check("v3.data.0", "[0]", "1", "int") % NoCdbEngine
-               + Check("v3.data.1", "[1]", "2", "int") % NoCdbEngine
-               + Check("v3.data.2", "[2]", "3", "int") % NoCdbEngine;
+               + Check("v3.data", "<3 items>", TypePattern(".*QList<int>")) % NeedsInferiorCall
+               + Check("v3.data.0", "[0]", "1", "int") % NeedsInferiorCall
+               + Check("v3.data.1", "[1]", "2", "int") % NeedsInferiorCall
+               + Check("v3.data.2", "[2]", "3", "int") % NeedsInferiorCall;
 
 
     QTest::newRow("QVariant2")
@@ -3879,7 +4139,9 @@ void tst_Dumpers::dumper_data()
                      "QVariant var24 = QLineF(); unused(&var24);                     // 24 QLineF\n"
                      "QVariant var25 = QPoint(); unused(&var25);                     // 25 QPoint\n"
                      "QVariant var26 = QPointF(); unused(&var26);                    // 26 QPointF\n"
+                     "#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)\n"
                      "QVariant var27 = QRegExp(); unused(&var27);                    // 27 QRegExp\n"
+                     "#endif\n"
                      "QVariant var28 = QVariantHash(); unused(&var28);               // 28 QVariantHash\n"
                      "QVariant var31 = QVariant::fromValue<void *>(&r); unused(&var31);         // 31 void *\n"
                      "QVariant var32 = QVariant::fromValue<long>(32); unused(&var32);           // 32 long\n"
@@ -3949,9 +4211,9 @@ void tst_Dumpers::dumper_data()
                + Check("var24", "", "@QVariant (QLineF)")
                + Check("var25", "(0, 0)", "@QVariant (QPoint)")
                + Check("var26", "(0.0, 0.0)", "@QVariant (QPointF)")
-               + Check("var27", "\"\"", "@QVariant (QRegExp)")
+               + Check("var27", "\"\"", "@QVariant (QRegExp)") % Qt5
                + Check("var28", "<0 items>", "@QVariant (QVariantHash)")
-               + CheckType("var31", "@QVariant (void *)")
+               + Check("var31", AnyValue, "@QVariant (void *)")
                + Check("var32", "32", "@QVariant (long)")
                + Check("var33", "33", "@QVariant (short)")
                + Check("var34", "34", "@QVariant (char)")
@@ -4016,8 +4278,11 @@ void tst_Dumpers::dumper_data()
                //+ Check("ha1.protocol", "IPv4Protocol",
                //        "@QAbstractSocket::NetworkLayerProtocol") % LldbEngine
                + Check("ha1.scopeId", "\"\"", "@QString")
-               + Check("var", "", "@QVariant (@QHostAddress)") % NoCdbEngine
-               + Check("var.data", ValuePattern(".*127.0.0.1.*"), "@QHostAddress") % NoCdbEngine;
+               + Check5("var", "", "@QVariant (@QHostAddress)") % NeedsInferiorCall
+               + Check5("var.data", ValuePattern(".*127.0.0.1.*"),
+                                "@QHostAddress") % NeedsInferiorCall
+               + Check6("var", ValuePattern(".*127.0.0.1.*"),
+                                "@QVariant(@QHostAddress)") % NeedsInferiorCall;
 
 
     QTest::newRow("QVariantList")
@@ -4044,8 +4309,8 @@ void tst_Dumpers::dumper_data()
                + Check("vl0", "<0 items>", TypeDef("@QList<@QVariant>", "@QVariantList"))
 
                + Check("vl1", "<6 items>", TypeDef("@QList<@QVariant>", "@QVariantList"))
-               + CheckType("vl1.0", "[0]", "@QVariant (int)")
-               + CheckType("vl1.2", "[2]", "@QVariant (QString)")
+               + Check("vl1.0", "[0]", AnyValue, "@QVariant (int)")
+               + Check("vl1.2", "[2]", AnyValue, "@QVariant (QString)")
 
                + Check("v", "<1 items>", "@QVariant (QVariantList)")
                + Check("v.0", "[0]", "\"one\"", "@QVariant (QString)");
@@ -4073,13 +4338,13 @@ void tst_Dumpers::dumper_data()
                + Check("vm0", "<0 items>", TypeDef("@QMap<@QString,@QVariant>", "@QVariantMap"))
 
                + Check("vm1", "<6 items>", TypeDef("@QMap<@QString,@QVariant>", "@QVariantMap"))
-               + Check("vm1.0.key", "\"a\"", "@QString")
-               + Check("vm1.0.value", "1", "@QVariant (int)")
-               + Check("vm1.5.key", "\"f\"", "@QString")
-               + Check("vm1.5.value", "\"2Some String\"", "@QVariant (QString)")
+               + CheckPairish("vm1.0.key", "\"a\"", "@QString")
+               + CheckPairish("vm1.0.value", "1", "@QVariant (int)")
+               + CheckPairish("vm1.5.key", "\"f\"", "@QString")
+               + CheckPairish("vm1.5.value", "\"2Some String\"", "@QVariant (QString)")
 
                + Check("v", "<6 items>", "@QVariant (QVariantMap)")
-               + Check("v.0.key", "\"a\"", "@QString");
+               + CheckPairish("v.0.key", "\"a\"", "@QString");
 
 
     QTest::newRow("QVariantHash")
@@ -4142,40 +4407,40 @@ void tst_Dumpers::dumper_data()
 
                + BigArrayProfile()
 
-               + Check("v1", "<10000 items>", "@QVector<int>")
+               + Check("v1", "<10000 items>", TypePattern("@QList<int>|@QVector<int>"))
                + Check("v1.0", "[0]", "0", "int")
                + Check("v1.8999", "[8999]", "80982001", "int")
 
-               + Check("v2", "<2 items>", "@QVector<Foo>")
+               + Check("v2", "<2 items>", TypePattern("@QList<Foo>|@QVector<Foo>"))
                + Check("v2.0", "[0]", "", "Foo")
                + Check("v2.0.a", "1", "int")
                + Check("v2.1", "[1]", "", "Foo")
                + Check("v2.1.a", "2", "int")
 
-               + Check("v3", "<2 items>", TypeDef("@QVector<Foo>", "FooVector"))
+               + Check("v3", "<2 items>", TypePattern("@QVector<Foo>|@QList<Foo>|FooVector"))
                + Check("v3.0", "[0]", "", "Foo")
                + Check("v3.0.a", "1", "int")
                + Check("v3.1", "[1]", "", "Foo")
                + Check("v3.1.a", "2", "int")
 
-               + Check("v4", "<3 items>", "@QVector<Foo*>")
-               + CheckType("v4.0", "[0]", "Foo")
+               + Check("v4", "<3 items>", TypePattern("@QList<Foo \\*>|@QVector<Foo\\*>"))
+               + Check("v4.0", "[0]", AnyValue, "Foo")
                + Check("v4.0.a", "1", "int")
                + Check("v4.1", "[1]", "0x0", "Foo *")
-               + CheckType("v4.2", "[2]", "Foo")
+               + Check("v4.2", "[2]", AnyValue, "Foo")
                + Check("v4.2.a", "5", "int")
 
-               + Check("v5", "<2 items>", "@QVector<bool>")
+               + Check("v5", "<2 items>", TypePattern("@QList<bool>|@QVector<bool>"))
                + Check("v5.0", "[0]", "1", "bool")
                + Check("v5.1", "[1]", "0", "bool")
 
-               + CheckType("pv", "@QVector<@QList<int>>")
+               + Check("pv", AnyValue, TypePattern("(@QList|@QVector)<@QList<int>>"))
                + Check("pv.0", "[0]", "<1 items>", "@QList<int>")
                + Check("pv.0.0", "[0]", "1", "int")
                + Check("pv.1", "[1]", "<2 items>", "@QList<int>")
                + Check("pv.1.0", "[0]", "2", "int")
                + Check("pv.1.1", "[1]", "3", "int")
-               + Check("v6", "<2 items>", "@QVector<@QList<int>>")
+               + Check("v6", "<2 items>", TypePattern("@QList<@QList<int>>|@QVector<@QList<int>>"))
                + Check("v6.0", "[0]", "<1 items>", "@QList<int>")
                + Check("v6.0.0", "[0]", "1", "int")
                + Check("v6.1", "[1]", "<2 items>", "@QList<int>")
@@ -4235,17 +4500,17 @@ void tst_Dumpers::dumper_data()
                + Check("v3.1.a", "2", "int")
 
                + Check("v4", "<3 items>", "@QVarLengthArray<Foo*, 256>")
-               + CheckType("v4.0", "[0]", "Foo")
+               + Check("v4.0", "[0]", AnyValue, "Foo")
                + Check("v4.0.a", "1", "int")
                + Check("v4.1", "[1]", "0x0", "Foo *")
-               + CheckType("v4.2", "[2]", "Foo")
+               + Check("v4.2", "[2]", AnyValue, "Foo")
                + Check("v4.2.a", "5", "int")
 
                + Check("v5", "<2 items>", "@QVarLengthArray<bool, 256>")
                + Check("v5.0", "[0]", "1", "bool")
                + Check("v5.1", "[1]", "0", "bool")
 
-               + CheckType("pv", "@QVarLengthArray<@QList<int>, 256>")
+               + Check("pv", AnyValue, "@QVarLengthArray<@QList<int>, 256>")
                + Check("pv.0", "[0]", "<1 items>", "@QList<int>")
                + Check("pv.0.0", "[0]", "1", "int")
                + Check("pv.1", "[1]", "<2 items>", "@QList<int>")
@@ -4267,8 +4532,7 @@ void tst_Dumpers::dumper_data()
                     "atts.append(\"name3\", \"uri3\", \"localPart3\", \"value3\");",
                     "&atts")
 
-               + CoreProfile()
-               + Profile("QT += xml\n")
+               + XmlProfile()
 
                + Check("atts", "<3 items>", "@QXmlAttributes")
                + Check("atts.0", "[0]", "", "@QXmlAttributes::Attribute")
@@ -4351,7 +4615,7 @@ void tst_Dumpers::dumper_data()
             + GdbEngine
 
             + Check("x", "(null)", "std::function<void(int)>")
-            + Check("y", ValuePattern(".* <bar(int)>"), "std::function<void(int)>");
+            + Check("y", ValuePattern(".* <bar\\(int\\)>"), "std::function<void(int)>");
 
 
     QTest::newRow("StdDeque")
@@ -4669,14 +4933,14 @@ void tst_Dumpers::dumper_data()
                + Check("map2.1.second", "", "Foo")
                + Check("map2.1.second.a", "33", "int")
 
-               + Check("map3", "<2 items>", "std::map<unsigned int, @QStringList>")
+               + Check("map3", "<2 items>", TypePattern("std::map<unsigned int, @QList<@QString>>|std::map<unsigned int, @QStringList>"))
                + Check("map3.0", "[0] 11", "<1 items>", "")
                + Check("map3.0.first", "11", "unsigned int")
-               + Check("map3.0.second", "<1 items>", "@QStringList")
+               + Check("map3.0.second", "<1 items>", TypePattern("@QList<@QString>|@QStringList"))
                + Check("map3.0.second.0", "[0]", "\"11\"", "@QString")
                + Check("map3.1", "[1] 22", "<1 items>", "")
                + Check("map3.1.first", "22", "unsigned int")
-               + Check("map3.1.second", "<1 items>", "@QStringList")
+               + Check("map3.1.second", "<1 items>", TypePattern("@QList<@QString>|@QStringList"))
                + Check("map3.1.second.0", "[0]", "\"22\"", "@QString")
 
                + Check("map4.1.second.0", "[0]", "\"22\"", "@QString")
@@ -5418,9 +5682,9 @@ void tst_Dumpers::dumper_data()
 //        "MyBar bar;\n"
 //        "MyAnon anon;\n"
 //        "baz::MyBaz baz;\n"
-//         + CheckType("anon namespc::nested::(anonymous namespace)::MyAnon");
+//         + Check("anon namespc::nested::(anonymous namespace)::MyAnon", AnyValue);
 //         + Check("bar", "namespc::nested::MyBar");
-//         + CheckType("baz namespc::nested::(anonymous namespace)::baz::MyBaz");
+//         + Check("baz namespc::nested::(anonymous namespace)::baz::MyBaz", AnyValue);
 //         + Check("foo", "namespc::nested::MyFoo");
 //        // Continue");
 //        // step into the doit() functions
@@ -5488,23 +5752,22 @@ void tst_Dumpers::dumper_data()
 
                     "&s, &t, &w, &ch, &wch")
 
-               + CheckType("s", "char [5]") % NoCdbEngine
-               + CheckType("s", "char [4]") % CdbEngine
+               + Check("s", AnyValue, "char [5]")
                + Check("s.0", "[0]", "97", "char")
-               + CheckType("t", "char [6]") % NoCdbEngine
-               + CheckType("t", "char [5]") % CdbEngine
+               + Check("t", AnyValue, "char [6]")
                + Check("t.0", "[0]", "97", "char")
-               + CheckType("w", "wchar_t [4]")
-               + Check("ch.0", "[0]", "97", TypeDef("char", "CHAR"))
-               + CheckType("ch", "CHAR [5]") % NoCdbEngine
-               + CheckType("ch", "char [4]") % CdbEngine
-               + Check("wch.0", "[0]", "97", TypeDef("wchar_t", "WCHAR"))
-               + CheckType("wch", TypeDef("wchar_t[4]", "WCHAR [4]"));
+               + Check("w", AnyValue, "wchar_t [4]")
+               + Check("ch.0", "[0]", "97", TypePattern("char|CHAR"))
+               + Check("ch", AnyValue, TypePattern("(char|CHAR)\\[5\\]"))
+               + Check("wch.0", "[0]", "97", TypePattern("wchar_t|WCHAR"))
+               + Check("wch", AnyValue, TypePattern("(wchar_t|WCHAR)\\[4\\]"));
 
 
     QTest::newRow("CharPointers")
-            << Data("",
+            << Data("using gchar = char;",
 
+                    "const char *str1 = \"abc\";\n"
+                    "const gchar *str2 = \"abc\";\n"
                     "const char *s = \"aöa\";\n"
                     "const char *t = \"a\\xc3\\xb6\";\n"
                     "unsigned char uu[] = { 'a', 153 /* ö Latin1 */, 'a' };\n"
@@ -5513,11 +5776,14 @@ void tst_Dumpers::dumper_data()
 
                     "&s, &t, &uu, &u, &w")
 
-               + CheckType("u", "unsigned char *")
-               + CheckType("uu", "unsigned char [3]")
-               + CheckType("s", "char *")
-               + CheckType("t", "char *")
-               + CheckType("w", "wchar_t *");
+               + Check("str1", "\"abc\"", "char *")
+               + Check("str2", "\"abc\"", TypeDef("char *", "gchar *"))
+               + Check("str2.0", "[0]", "97", TypeDef("char", "gchar")) // 97: ASCII 'a'
+               + Check("u", AnyValue, "unsigned char *")
+               + Check("uu", AnyValue, "unsigned char [3]")
+               + Check("s", AnyValue, "char *")
+               + Check("t", AnyValue, "char *")
+               + Check("w", AnyValue, "wchar_t *");
 
         // All: Select UTF-8 in "Change Format for Type" in L&W context menu");
         // Windows: Select UTF-16 in "Change Format for Type" in L&W context menu");
@@ -5609,7 +5875,8 @@ void tst_Dumpers::dumper_data()
                // Using numpy:
                // + Check("f1", "45.281", "@qfloat16")
                // + Check("f2", "45.094", "@qfloat16");
-               + Check("f1", "45.28125", "@qfloat16")
+               + Check("f1", "45.28125", "@qfloat16") % Qt5
+               + Check("f1", "45.3125", "@qfloat16") % Qt6
                + Check("f2", "45.09375", "@qfloat16");
 
 
@@ -5635,7 +5902,7 @@ void tst_Dumpers::dumper_data()
                     "Flags fone = one;\n"
                     "Flags fthree = (Flags)(one|two);\n"
                     "Flags fmixed = (Flags)(two|8);\n"
-                    "Flags fbad = (Flags)(24);",
+                    "Flags fbad = (Flags)(8);",
 
                     "&fone, &fthree, &fmixed, &fbad")
 
@@ -5643,8 +5910,10 @@ void tst_Dumpers::dumper_data()
 
                + Check("fone", "one (1)", "Flags")
                + Check("fthree", "(one | two) (3)", "Flags")
-               + Check("fmixed", "(two | unknown: 8) (10)", "Flags")
-               + Check("fbad", "(unknown: 24) (24)", "Flags");
+               // There are optional 'unknown:' prefixes and possibly hex
+               // displays for the unknown flags.
+               + Check("fmixed", ValuePattern("\\(two \\| .*8\\) \\(10\\)"), "Flags")
+               + Check("fbad", ValuePattern(".*8.* \\(.*8\\)"), "Flags");
 
 
     QTest::newRow("EnumInClass")
@@ -5663,9 +5932,11 @@ void tst_Dumpers::dumper_data()
 
                 + NoCdbEngine
 
-                + Check("e.e1", "(E::b1 | E::c1) (3)", "E::Enum1")
-                + Check("e.e2", "(E::b2 | E::c2) (3)", "E::Enum2")
-                + Check("e.e3", "(E::b3 | E::c3) (3)", "E::Enum3");
+                // GDB prefixes with E::, LLDB not.
+                + Check("e.e1", ValuePattern("\\((E::)?b1 \\| (E::)?c1\\) \\(3\\)"), "E::Enum1")
+                + Check("e.e2", ValuePattern("\\((E::)?b2 \\| (E::)?c2\\) \\(3\\)"), "E::Enum2")
+                + Check("e.e3", ValuePattern("\\((E::)?b3 \\| (E::)?c3\\) \\(3\\)"), "E::Enum3")
+;
 
 
     QTest::newRow("QSizePolicy")
@@ -5710,7 +5981,7 @@ void tst_Dumpers::dumper_data()
                + Check("a1.0.2", "[2]", FloatValue("20"), "double")
                + Check("a1.2", "[2]", Pointer(), "double[4]")
 
-               + Check("a2", Value("\"abcd" + QString(16, 0) + '"'), "char [20]")
+               + Check("a2", Value("\"abcd" + QString(16, QChar(0)) + '"'), "char [20]")
                + Check("a2.0", "[0]", "97", "char")
                + Check("a2.3", "[3]", "100", "char");
 
@@ -5753,19 +6024,19 @@ void tst_Dumpers::dumper_data()
                     "&a1, &a2, &a3")
 
                + CoreProfile()
-               + CheckType("a1", "@QString [20]")
+               + Check("a1", AnyValue, "@QString [20]")
                + Check("a1.0", "[0]", "\"a\"", "@QString")
                + Check("a1.3", "[3]", "\"d\"", "@QString")
                + Check("a1.4", "[4]", "\"\"", "@QString")
                + Check("a1.19", "[19]", "\"\"", "@QString")
 
-               + CheckType("a2", "@QByteArray [20]")
+               + Check("a2", AnyValue, "@QByteArray [20]")
                + Check("a2.0", "[0]", "\"a\"", "@QByteArray")
                + Check("a2.3", "[3]", "\"d\"", "@QByteArray")
                + Check("a2.4", "[4]", "\"\"", "@QByteArray")
                + Check("a2.19", "[19]", "\"\"", "@QByteArray")
 
-               + CheckType("a3", "Foo [10]")
+               + Check("a3", AnyValue, "Foo [10]")
                + Check("a3.0", "[0]", "", "Foo")
                + Check("a3.9", "[9]", "", "Foo");
 
@@ -5777,7 +6048,7 @@ void tst_Dumpers::dumper_data()
                     "struct S\n"
                     "{\n"
                     "    S() : front(13), x(2), y(3), z(39), e(V2), c(1), b(0), f(5),"
-                    "          d(6), i(7) {}\n"
+                    "          g(46), h(47), d(6), i(7) {}\n"
                     "    unsigned int front;\n"
                     "    unsigned int x : 3;\n"
                     "    unsigned int y : 4;\n"
@@ -5786,6 +6057,8 @@ void tst_Dumpers::dumper_data()
                     "    bool c : 1;\n"
                     "    bool b;\n"
                     "    float f;\n"
+                    "    char g : 7;\n"
+                    "    char h;\n"
                     "    double d;\n"
                     "    int i;\n"
                     "} s;",
@@ -5803,11 +6076,29 @@ void tst_Dumpers::dumper_data()
                + Check("s.y", "3", "unsigned int : 4") % NoCdbEngine
                + Check("s.z", "39", "unsigned int : 18") % NoCdbEngine
                + Check("s.e", "V2 (1)", "E : 3") % GdbEngine
+               + Check("s.g", "46", "char : 7") % GdbEngine
+               + Check("s.h", "47", "char") % GdbEngine
                + Check("s.x", "2", "unsigned int") % CdbEngine
                + Check("s.y", "3", "unsigned int") % CdbEngine
                + Check("s.z", "39", "unsigned int") % CdbEngine
                + Check("s.front", "13", "unsigned int")
-               + Check("s.e", "V2 (1)", TypePattern("main::[a-zA-Z0-9_]*::E")) % CdbEngine;
+               + Check("s.e", "V2 (1)", TypePattern("main::[a-zA-Z0-9_]*::E")) % CdbEngine
+
+               // checks for the "Expressions" view, GDB-only for now
+               + Watcher("watch.1", "s;s.b;s.c;s.f;s.d;s.i;s.x;s.y;s.z;s.e;s.g;s.h;s.front")
+               + Check("watch.1.0", "s", "", "S") % GdbEngine
+               + Check("watch.1.1", "s.b", "0", "bool")  % GdbEngine
+               + Check("watch.1.2", "s.c", "1", "bool") % GdbEngine
+               + Check("watch.1.3", "s.f", FloatValue("5"), "float")  % GdbEngine
+               + Check("watch.1.4", "s.d", FloatValue("6"), "double") % GdbEngine
+               + Check("watch.1.5", "s.i", "7", "int") % GdbEngine
+               + Check("watch.1.6", "s.x", "2", "unsigned int") % GdbEngine
+               + Check("watch.1.7", "s.y", "3", "unsigned int") % GdbEngine
+               + Check("watch.1.8", "s.z", "39", "unsigned int") % GdbEngine
+               + Check("watch.1.9", "s.e", "V2 (1)", "E") % GdbEngine
+               + Check("watch.1.10", "s.g", "46", "char") % GdbEngine
+               + Check("watch.1.11", "s.h", "47", "char") % GdbEngine
+               + Check("watch.1.12", "s.front", "13", "unsigned int") % GdbEngine;
 
 
     QTest::newRow("Function")
@@ -5857,7 +6148,7 @@ void tst_Dumpers::dumper_data()
 //         + Check("c.r", "1", "int");
 
 //        // Manual: Toogle "Sort Member Alphabetically" in context menu
-//        // Manual: of "Locals and Expressions" view");
+//        // Manual: of "Locals" and "Expressions" views");
 //        // Manual: Check that order of displayed members changes");
 
     QTest::newRow("Typedef")
@@ -5966,13 +6257,13 @@ void tst_Dumpers::dumper_data()
                     "U u;",
                     "&u")
                + Check("u", "", "U")
-               + CheckType("u.a", "int")
-               + CheckType("u.b", "int");
+               + Check("u.a", AnyValue, "int")
+               + Check("u.b", AnyValue, "int");
 
 //    QTest::newRow("TypeFormats")
 //                  << Data(
 //    "// These tests should result in properly displayed umlauts in the\n"
-//    "// Locals and Expressions view. It is only support on gdb with Python");\n"
+//    "// Locals and Expressions views. It is only support on gdb with Python");\n"
 //    "const char *s = "aöa";\n"
 //    "const wchar_t *w = L"aöa";\n"
 //    "QString u;\n"
@@ -5983,9 +6274,9 @@ void tst_Dumpers::dumper_data()
 //    "    u = QString::fromUcs4((uint *)w);\n"
 //    "else\n"
 //    "    u = QString::fromUtf16((ushort *)w);\n"
-//         + CheckType("s char *");
+//         + Check("s char *", AnyValue);
 //         + Check("u "" QString");
-//         + CheckType("w wchar_t *");
+//         + Check("w wchar_t *", AnyValue);
 
 
     QTest::newRow("PointerTypedef")
@@ -6078,8 +6369,8 @@ void tst_Dumpers::dumper_data()
 
                + NoCdbEngine // The Cdb has no information about references
 
-               + CheckType("b1", "DerivedClass") // autoderef
-               + CheckType("b2", "DerivedClass &");
+               + Check("b1", AnyValue, "DerivedClass") // autoderef
+               + Check("b2", AnyValue, "DerivedClass &");
 
 
 /*
@@ -6095,9 +6386,9 @@ void tst_Dumpers::dumper_data()
                     "}\n"
                     "unused(&bigv[10]);\n")
              + Check("N", "10000", "int")
-             + CheckType("bigv", "@QDateTime [10000]")
-             + CheckType("bigv.0", "[0]", "@QDateTime")
-             + CheckType("bigv.9999", "[9999]", "@QDateTime");
+             + Check("bigv", AnyValue, "@QDateTime [10000]")
+             + Check("bigv.0", AnyValue, "[0]", "@QDateTime")
+             + Check("bigv.9999", AnyValue, "[9999]", "@QDateTime");
 */
 
     QTest::newRow("LongEvaluation2")
@@ -6113,7 +6404,7 @@ void tst_Dumpers::dumper_data()
              + BigArrayProfile()
 
              + Check("N", "1000", "int")
-             + CheckType("bigv", "int [1000]")
+             + Check("bigv", AnyValue, "int [1000]")
              + Check("bigv.0", "[0]", "0", "int")
              + Check("bigv.999", "[999]", "999", "int");
 
@@ -6148,8 +6439,8 @@ void tst_Dumpers::dumper_data()
 
                     "&x, &f, &m, &a1, &a2")
 
-             + CheckType("f", TypeDef("<function>", "func_t"))
-             + CheckType("m", TypeDef("int*", "member_t"));
+             + Check("f", AnyValue, TypeDef("<function>", "func_t"))
+             + Check("m", AnyValue, TypeDef("int*", "member_t"));
 
 
   QTest::newRow("PassByReference")
@@ -6168,7 +6459,7 @@ void tst_Dumpers::dumper_data()
                + CoreProfile()
 
                + NoCdbEngine // The Cdb has no information about references
-               + CheckType("f", "Foo &")
+               + Check("f", AnyValue, "Foo &")
                + Check("f.a", "12", "int");
 
 
@@ -6276,10 +6567,10 @@ void tst_Dumpers::dumper_data()
                + Cxx11Profile()
                + GdbVersion(80200)
 
-               + Check("i", "1", "int &&") % NoCdbEngine
-               + Check("i", "1", "int") % CdbEngine
-               + CheckType("s", "S &&") % NoCdbEngine
-               + CheckType("s", "S") % CdbEngine
+                // GDB has &&, LLDB & or &&, CDB nothing, possibly also depending
+                // on compiler. Just check the base type is there.
+               + Check("i", "1", TypePattern("int &?&?"))
+               + Check("s", AnyValue, TypePattern("S &?&?"))
                + Check("s.a", "32", "int");
 
 
@@ -6302,9 +6593,9 @@ void tst_Dumpers::dumper_data()
 
                + Profile("QMAKE_CXXFLAGS += -msse2")
 
-               + CheckType("sseA", "__m128")
+               + Check("sseA", AnyValue, "__m128")
                + Check("sseA.2", "[2]", FloatValue("4"), "float")
-               + CheckType("sseB", "__m128");
+               + Check("sseB", AnyValue, "__m128");
 
 
     QTest::newRow("BoostOptional")
@@ -6326,7 +6617,7 @@ void tst_Dumpers::dumper_data()
              + Check("i0", "<uninitialized>", "boost::optional<int>")
              + Check("i1", "1", "boost::optional<int>")
 
-             + Check("sl", "<3 items>", "boost::optional<@QStringList>");
+             + Check("sl", "<3 items>", TypePattern("boost::optional<@QList<@QString>>|boost::optional<@QStringList>"));
 
 
     QTest::newRow("BoostSharedPtr")
@@ -6336,7 +6627,7 @@ void tst_Dumpers::dumper_data()
                     "boost::shared_ptr<int> s;\n"
                     "boost::shared_ptr<int> i(new int(43));\n"
                     "boost::shared_ptr<int> j = i;\n"
-                    "boost::shared_ptr<QStringList> sl(new QStringList(QStringList() << \"HUH!\"));",
+                    "boost::shared_ptr<QList<QString>> sl(new QList<QString>(QList<QString>() << \"HUH!\"));",
 
                     "&s, &i, &j, &sl")
 
@@ -6346,7 +6637,7 @@ void tst_Dumpers::dumper_data()
              + Check("s", "(null)", "boost::shared_ptr<int>")
              + Check("i", "43", "boost::shared_ptr<int>")
              + Check("j", "43", "boost::shared_ptr<int>")
-             + Check("sl", "<1 items>", " boost::shared_ptr<@QStringList>")
+             + Check("sl", "<1 items>", " boost::shared_ptr<@QList<@QString>>")
              + Check("sl.0", "[0]", "\"HUH!\"", "@QString");
 
 
@@ -6587,13 +6878,13 @@ void tst_Dumpers::dumper_data()
         << Data("#include <QMap>\n"
                 "struct CustomStruct {\n"
                 "    int id;\n"
-                "    double dvalue;\n"
+                "    double dval;\n"
                 "};",
 
                 "QMap<int, CustomStruct> map;\n"
                 "CustomStruct cs1;\n"
                 "cs1.id = 1;\n"
-                "cs1.dvalue = 3.14;\n"
+                "cs1.dval = 3.14;\n"
                 "CustomStruct cs2 = cs1;\n"
                 "cs2.id = -1;\n"
                 "map.insert(cs1.id, cs1);\n"
@@ -6605,10 +6896,11 @@ void tst_Dumpers::dumper_data()
          + CoreProfile()
 
          + Check("map", "<2 items>", "@QMap<int, CustomStruct>")
-         + Check("map.0.key", "-1", "int")
-         + CheckType("map.0.value", "CustomStruct")
-         + Check("map.0.value.dvalue", FloatValue("3.14"), "double")
-         + Check("map.0.value.id", "-1", "int");
+         + CheckPairish("map.0.key", "-1", "int")
+         + Check("map.0.value", AnyValue, "CustomStruct") % Qt5
+         + Check("map.0.second", AnyValue, "CustomStruct") % Qt6
+         + CheckPairish("map.0.value.dval", FloatValue("3.14"), "double")
+         + CheckPairish("map.0.value.id", "-1", "int");
 
 
 #if 0
@@ -6658,7 +6950,7 @@ void tst_Dumpers::dumper_data()
            + NetworkProfile()
 
            + Check("raw", "<0 items>", "@QList<@QByteArray>")
-           + CheckType("request", "@QNetworkRequest")
+           + Check("request", AnyValue, "@QNetworkRequest")
            + Check("url", "\"http://127.0.0.1/\"", "@QUrl &") % NoCdbEngine
            + Check("url", "\"http://127.0.0.1/\"", "@QUrl") % CdbEngine;
 
@@ -6680,16 +6972,16 @@ void tst_Dumpers::dumper_data()
 
                 "&s2, &s4, &a1, &a2")
 
-             + CheckType("a1", "S1 [10]")
-             + CheckType("a2", TypeDef("S1 [10]", "Array"))
-             + CheckType("s2", "S2")
-             + CheckType("s2.@1", "[S1]", "S1")
+             + Check("a1", AnyValue, "S1 [10]")
+             + Check("a2", AnyValue, TypeDef("S1 [10]", "Array"))
+             + Check("s2", AnyValue, "S2")
+             + Check("s2.@1", "[S1]", AnyValue, "S1")
              + Check("s2.@1.m1", "5", "int")
-             + CheckType("s2.@1.m2", "int")
-             + CheckType("s4", "S4")
-             + CheckType("s4.@1", "[S3]", "S3")
+             + Check("s2.@1.m2", AnyValue, "int")
+             + Check("s4", AnyValue, "S4")
+             + Check("s4.@1", "[S3]", AnyValue, "S3")
              + Check("s4.@1.m1", "5", "int")
-             + CheckType("s4.@1.m2", "int");
+             + Check("s4.@1.m2", AnyValue, "int");
 
 
     // https://bugreports.qt.io/browse/QTCREATORBUG-6465
@@ -6702,7 +6994,7 @@ void tst_Dumpers::dumper_data()
 
                 "&foo, &bar")
 
-        + CheckType("bar", "char[20]");
+        + Check("bar", AnyValue, "char[20]");
 
 
 #ifndef Q_OS_WIN
@@ -6870,7 +7162,7 @@ void tst_Dumpers::dumper_data()
 
             + NoCdbEngine
 
-            + CheckType("obj", "Circle");
+            + Check("obj", AnyValue, "Circle");
 
 
 
@@ -6904,7 +7196,7 @@ void tst_Dumpers::dumper_data()
          + Check("m.1.second.0", "[0]", "\"1\"", "std::string")
          + Check("m.1.second.1", "[1]", "\"2\"", "std::string")
          + Check("m.1.second.2", "[2]", "\"3\"", "std::string")
-         + CheckType("it",  TypeDef("std::_Tree_const_iterator<std::_Tree_val<"
+         + Check("it", AnyValue, TypeDef("std::_Tree_const_iterator<std::_Tree_val<"
                                     "std::_Tree_simple_types<std::pair<"
                                     "std::string const ,std::list<std::string>>>>>",
                                     "std::map<std::string, std::list<std::string> >::const_iterator"))
@@ -7067,13 +7359,13 @@ void tst_Dumpers::dumper_data()
                + Check("ptrConst.@1", "[Base]", "", "Base")
                + Check("ptrConst.b", "2", "int")
                + Check("ptrToPtr", "", "Derived")
-               //+ CheckType("ptrToPtr.[vptr]", " ")
+               //+ Check("ptrToPtr.[vptr]", AnyValue, " ")
                + Check("ptrToPtr.@1.a", "1", "int")
                + Check("ref", "", "Derived &")
-               //+ CheckType("ref.[vptr]", "")
+               //+ Check("ref.[vptr]", AnyValue, "")
                + Check("ref.@1.a", "1", "int")
                + Check("refConst", "", "Derived &")
-               //+ CheckType("refConst.[vptr]", "")
+               //+ Check("refConst.[vptr]", AnyValue, "")
                + Check("refConst.@1.a", "1", "int")
                + Check("s", "", "S")
                + Check("s.ptr", "", "Derived")
@@ -7159,6 +7451,8 @@ void tst_Dumpers::dumper_data()
 
                     "QApplication app(argc, argv);\n"
                     "QGraphicsScene sc;\n"
+                    "QPolygon p0;\n"
+                    "QPolygonF p1;\n"
                     "QPolygonF pol;\n"
                     "pol.append(QPointF(1, 2));\n"
                     "pol.append(QPointF(2, 2));\n"
@@ -7171,9 +7465,132 @@ void tst_Dumpers::dumper_data()
 
                + GuiProfile()
 
+               + Check("p0", "<0 items>", "@QPolygon")
+               + Check("p1", "<0 items>", "@QPolygonF")
                + Check("pol", "<5 items>", "@QPolygonF")
                + Check("p", "<5 items>", "@QGraphicsPolygonItem");
 
+
+    QTest::newRow("QCbor")
+            << Data("#include <QString>\n"
+                    "#if QT_VERSION >= 0x050c00\n"
+                    "#include <QCborArray>\n"
+                    "#include <QCborMap>\n"
+                    "#include <QCborValue>\n"
+                    "#include <QVariantMap>\n"
+                    "#endif\n",
+
+                    "#if QT_VERSION >= 0x050c00\n"
+                    "QCborMap ob0;\n"
+                    "QCborMap ob = QCborMap::fromVariantMap({\n"
+                    "    {\"a\", 1},\n"
+                    "    {\"bb\", 2},\n"
+                    "    {\"ccc\", \"hallo\"},\n"
+                    "    {\"s\", \"ssss\"}\n"
+                    "});\n"
+                    "ob.insert(QLatin1String(\"d\"), QCborMap::fromVariantMap({{\"ddd\", 1234}}));\n"
+                    "\n"
+                    "QCborValue a0;\n"
+                    "QCborValue a1(1);\n"
+                    "QCborValue a2(\"asd\");\n"
+                    "QCborValue a3(QString::fromUtf8(\"cöder\"));\n"
+                    "QCborValue a4(1.4);\n"
+                    "QCborValue a5(true);\n"
+                    "QCborValue a6(QByteArray(\"cder\"));\n"
+                    "\n"
+                    "QCborArray aa;\n"
+                    "QCborArray a;\n"
+                    "a.append(a1);\n"
+                    "a.append(a2);\n"
+                    "a.append(a3);\n"
+                    "a.append(a4);\n"
+                    "a.append(a5);\n"
+                    "a.append(a0);\n"
+                    "a.append(ob);\n"
+                    "\n"
+                    "QCborArray b;\n"
+                    "b.append(QCborValue(1));\n"
+                    "b.append(a);\n"
+                    "b.append(QCborValue(2));\n"
+                    "\n"
+                    "QCborArray c;\n"
+                    "for (unsigned int i = 0; i < 32; ++i) {\n"
+                    "    c.append(QCborValue(qint64(1u << i) - 1));\n"
+                    "    c.append(QCborValue(qint64(1u << i)));\n"
+                    "    c.append(QCborValue(qint64(1u << i) + 1));\n"
+                    "}\n"
+                    "for (unsigned int i = 0; i < 32; ++i) {\n"
+                    "    c.append(QCborValue(-qint64(1u << i) + 1));\n"
+                    "    c.append(QCborValue(-qint64(1u << i)));\n"
+                    "    c.append(QCborValue(-qint64(1u << i) - 1));\n"
+                    "}"
+                    "unused(&b, &a, &aa);\n"
+                    "#endif\n",
+
+                    "")
+
+            + Cxx11Profile()
+            + CoreProfile()
+            + QtVersion(0x50f00)
+            + MsvcVersion(1900)
+
+            + Check("a0",         "Undefined",            "QCborValue (Undefined)")
+            + Check("a1",         "1",            "QCborValue (Integer)")
+            + Check("a2",         "\"asd\"",      "QCborValue (String)")
+            + Check("a3",         "\"cöder\"",    "QCborValue (String)")
+            + Check("a4",         "1.400000",     "QCborValue (Double)")
+            + Check("a5",         "True",         "QCborValue (True)")
+            + Check("a6",         "\"cder\"",     "QCborValue (ByteArray)")
+            + Check("aa",                 "<0 items>",  "@QCborArray")
+            + Check("a",                  "<7 items>",  "@QCborArray")
+            + Check("a.0",   "[0]",       "1",            "QCborValue (Integer)")
+            + Check("a.1",   "[1]",       "\"asd\"",      "QCborValue (String)")
+            + Check("a.2",   "[2]",       "\"cöder\"",    "QCborValue (String)")
+            + Check("a.3",   "[3]",       "1.400000",     "QCborValue (Double)")
+            + Check("a.4",   "[4]",       "True",         "QCborValue (True)")
+            + Check("a.5",   "[5]",       "Undefined",    "QCborValue (Undefined)")
+            + Check("a.6",   "[6]",       "<5 items>",    "QCborValue (Map)")
+            + Check("a.6.0",    "[0] \"a\"",     "1",            "")
+            + Check("a.6.1",    "[1] \"bb\"",    "2",            "")
+            + Check("a.6.2",    "[2] \"ccc\"",   "\"hallo\"",    "")
+            + Check("a.6.3",    "[3] \"s\"",     "\"ssss\"",     "")
+            + Check("a.6.4",    "[4] \"d\"",     "<1 items>",    "")
+            + Check("b",     "b",        "<3 items>" ,  "@QCborArray")
+            + Check("b.0",   "[0]",       "1",             "QCborValue (Integer)")
+            + Check("b.1",   "[1]",       "<7 items>",     "QCborValue (Array)")
+            + Check("b.1.0",    "[0]",       "1",             "QCborValue (Integer)")
+            + Check("b.1.1",    "[1]",       "\"asd\"",       "QCborValue (String)")
+            + Check("b.1.2",    "[2]",       "\"cöder\"",     "QCborValue (String)")
+            + Check("b.1.3",    "[3]",       "1.400000",      "QCborValue (Double)")
+            + Check("b.1.4",    "[4]",       "True",          "QCborValue (True)")
+            + Check("b.1.5",    "[5]",       "Undefined",     "QCborValue (Undefined)")
+            + Check("b.1.6",    "[6]",       "<5 items>",     "QCborValue (Map)")
+            + Check("b.2",   "[2]",       "2",             "QCborValue (Integer)")
+            + Check("c",     "c",        "<192 items>", "@QCborArray")
+            + Check("c.0",   "[0]",       "0",           "QCborValue (Integer)")
+            + Check("c.1",   "[1]",       "1",             "QCborValue (Integer)")
+            + Check("c.78",  "[78]",      "67108863",      "QCborValue (Integer)")
+            + Check("c.79",  "[79]",      "67108864",    "QCborValue (Integer)")
+            + Check("c.94",  "[94]",      "2147483648",  "QCborValue (Integer)")
+            + Check("c.95",  "[95]",      "2147483649",  "QCborValue (Integer)")
+            + Check("c.96",  "[96]",      "0",           "QCborValue (Integer)")
+            + Check("c.97",  "[97]",      "-1",            "QCborValue (Integer)")
+            + Check("c.174", "[174]",     "-67108863",     "QCborValue (Integer)")
+            + Check("c.175", "[175]",     "-67108864",     "QCborValue (Integer)")
+            + Check("ob0",  "ob0",      "<0 items>",     "@QCborMap")
+            + Check("ob",   "ob",       "<5 items>",     "@QCborMap")
+            + Check("ob.0", "[0] \"a\"",    "1",              "")
+            + Check("ob.0.key",  "key",     "\"a\"",             "QCborValue (String)")
+            + Check("ob.0.value",  "value", "1",                 "QCborValue (Integer)")
+            + Check("ob.1", "[1] \"bb\"",   "2",              "")
+            + Check("ob.2", "[2] \"ccc\"",  "\"hallo\"",      "")
+            + Check("ob.3", "[3] \"s\"",    "\"ssss\"",       "")
+            + Check("ob.4", "[4] \"d\"",    "<1 items>",      "")
+            ;
+
+
+    const QtVersion jsonv1{0, 0x50f00};
+    const QtVersion jsonv2{0x50f00, 0x60000};
 
     QTest::newRow("QJson")
             << Data("#include <QString>\n"
@@ -7185,6 +7602,7 @@ void tst_Dumpers::dumper_data()
                     "#endif\n",
 
                     "#if QT_VERSION >= 0x050000\n"
+                    "QJsonObject ob0;\n"
                     "QJsonObject ob = QJsonObject::fromVariantMap({\n"
                     "    {\"a\", 1},\n"
                     "    {\"bb\", 2},\n"
@@ -7193,6 +7611,7 @@ void tst_Dumpers::dumper_data()
                     "});\n"
                     "ob.insert(QLatin1String(\"d\"), QJsonObject::fromVariantMap({{\"ddd\", 1234}}));\n"
                     "\n"
+                    "QJsonArray aa;\n"
                     "QJsonArray a;\n"
                     "a.append(QJsonValue(1));\n"
                     "a.append(QJsonValue(\"asd\"));\n"
@@ -7217,7 +7636,7 @@ void tst_Dumpers::dumper_data()
                     "    c.append(QJsonValue(-qint64(1u << i)));\n"
                     "    c.append(QJsonValue(-qint64(1u << i) - 1));\n"
                     "}"
-                    "unused(&ob,&b,&a);\n"
+                    "unused(&ob, &b, &a, &aa);\n"
                     "#endif\n",
 
                     "")
@@ -7227,48 +7646,69 @@ void tst_Dumpers::dumper_data()
             + QtVersion(0x50000)
             + MsvcVersion(1900)
 
+            + Check("aa",                 "<0 items>",  "@QJsonArray")
             + Check("a",                  "<6 items>",  "@QJsonArray")
             + Check("a.0",   "[0]",       "1",            "QJsonValue (Number)")
             + Check("a.1",   "[1]",       "\"asd\"",      "QJsonValue (String)")
             + Check("a.2",   "[2]",       "\"cdfer\"",    "QJsonValue (String)")
-            + Check("a.3",   "[3]",       "1.4",          "QJsonValue (Number)")
-            + Check("a.4",   "[4]",       "true",         "QJsonValue (Bool)")
+            + Check("a.3",   "[3]",       "1.4",          "QJsonValue (Number)") % jsonv1
+            + Check("a.3",   "[3]",       "1.400000",     "QJsonValue (Number)") % jsonv2
+            + Check("a.4",   "[4]",       "true",         "QJsonValue (Bool)") % jsonv1
+            + Check("a.4",   "[4]",       "True",         "QJsonValue (Bool)") % jsonv2
             + Check("a.5",   "[5]",       "<5 items>",    "QJsonValue (Object)")
-            + Check("a.5.0",    "\"a\"",     "1",            "QJsonValue (Number)")
-            + Check("a.5.1",    "\"bb\"",    "2",            "QJsonValue (Number)")
-            + Check("a.5.2",    "\"ccc\"",   "\"hallo\"",    "QJsonValue (String)")
-            + Check("a.5.3",    "\"d\"",     "<1 items>",    "QJsonValue (Object)")
-            + Check("a.5.4",    "\"s\"",     "\"ssss\"",     "QJsonValue (String)")
+            + Check("a.5.0",    "\"a\"",      "1",            "QJsonValue (Number)") % jsonv1
+            + Check("a.5.0",    "[0] \"a\"",  "1",            ""                   ) % jsonv2
+            + Check("a.5.1",    "\"bb\"",     "2",            "QJsonValue (Number)") % jsonv1
+            + Check("a.5.1",    "[1] \"bb\"", "2",            ""                   ) % jsonv2
+            + Check("a.5.2",    "\"ccc\"",    "\"hallo\"",    "QJsonValue (String)") % jsonv1
+            + Check("a.5.2",    "[2] \"ccc\"","\"hallo\"",    ""                   ) % jsonv2
+            + Check("a.5.3",    "\"d\"",      "<1 items>",    "QJsonValue (Object)") % jsonv1
+            + Check("a.5.3",    "[3] \"d\"",  "<1 items>",    ""                   ) % jsonv2
+            + Check("a.5.4",    "\"s\"",      "\"ssss\"",     "QJsonValue (String)") % jsonv1
+            + Check("a.5.4",    "[4] \"s\"",  "\"ssss\"",     ""                   ) % jsonv2
             + Check("b",     "b",        "<3 items>" ,  "@QJsonArray")
             + Check("b.0",   "[0]",       "1",             "QJsonValue (Number)")
             + Check("b.1",   "[1]",       "<6 items>",     "QJsonValue (Array)")
-            + Check("b.1.0",    "[0]",       "1",             "QJsonValue (Number)")
-            + Check("b.1.1",    "[1]",       "\"asd\"",       "QJsonValue (String)")
-            + Check("b.1.2",    "[2]",       "\"cdfer\"",     "QJsonValue (String)")
-            + Check("b.1.3",    "[3]",       "1.4",           "QJsonValue (Number)")
-            + Check("b.1.4",    "[4]",       "true",          "QJsonValue (Bool)")
-            + Check("b.1.5",    "[5]",       "<5 items>",     "QJsonValue (Object)")
-            + Check("b.2",   "[2]",       "2",             "QJsonValue (Number)")
+            + Check("b.1.0",    "[0]",       "1",             "QJsonValue (Number)") % jsonv2
+            + Check("b.1.1",    "[1]",       "\"asd\"",       "QJsonValue (String)") % jsonv2
+            + Check("b.1.2",    "[2]",       "\"cdfer\"",     "QJsonValue (String)") % jsonv2
+            + Check("b.1.3",    "[3]",       "1.4",           "QJsonValue (Number)") % jsonv1
+            + Check("b.1.3",    "[3]",       "1.400000",      "QJsonValue (Number)") % jsonv2
+            + Check("b.1.4",    "[4]",       "true",          "QJsonValue (Bool)")  % jsonv1
+            + Check("b.1.5",    "[5]",       "<5 items>",     "QJsonValue (Object)") % jsonv2
+            + Check("b.2",   "[2]",       "2",             "QJsonValue (Number)") % jsonv2
             + Check("c",     "c",        "<192 items>", "@QJsonArray")
-            + Check("c.0",   "[0]",       "0.0",           "QJsonValue (Number)")
+            + Check("c.0",   "[0]",       "0.0",           "QJsonValue (Number)") % jsonv1
+            + Check("c.0",   "[0]",       "0",             "QJsonValue (Number)") % jsonv2
             + Check("c.1",   "[1]",       "1",             "QJsonValue (Number)")
             + Check("c.78",  "[78]",      "67108863",      "QJsonValue (Number)")
-            + Check("c.79",  "[79]",      "67108864.0",    "QJsonValue (Number)")
-            + Check("c.94",  "[94]",      "2147483648.0",  "QJsonValue (Number)")
-            + Check("c.95",  "[95]",      "2147483649.0",  "QJsonValue (Number)")
-            + Check("c.96",  "[96]",      "0.0",           "QJsonValue (Number)")
+            + Check("c.79",  "[79]",      "67108864.0",    "QJsonValue (Number)") % jsonv1
+            + Check("c.79",  "[79]",      "67108864",    "  QJsonValue (Number)") % jsonv2
+            + Check("c.94",  "[94]",      "2147483648.0",  "QJsonValue (Number)") % jsonv1
+            + Check("c.94",  "[94]",      "2147483648",    "QJsonValue (Number)") % jsonv2
+            + Check("c.95",  "[95]",      "2147483649.0",  "QJsonValue (Number)") % jsonv1
+            + Check("c.95",  "[95]",      "2147483649",    "QJsonValue (Number)") % jsonv2
+            + Check("c.96",  "[96]",      "0.0",           "QJsonValue (Number)") % jsonv1
+            + Check("c.96",  "[96]",      "0",             "QJsonValue (Number)") % jsonv2
             + Check("c.97",  "[97]",      "-1",            "QJsonValue (Number)")
             + Check("c.174", "[174]",     "-67108863",     "QJsonValue (Number)")
-            + Check("c.175", "[175]",     "-67108864.0",   "QJsonValue (Number)")
+            + Check("c.175", "[175]",     "-67108864.0",   "QJsonValue (Number)") % jsonv1
+            + Check("c.175", "[175]",     "-67108864",     "QJsonValue (Number)") % jsonv2
+            + Check("ob0",  "ob0",     "<0 items>",     "@QJsonObject")
             + Check("ob",   "ob",      "<5 items>",     "@QJsonObject")
-            + Check("ob.0", "\"a\"",    "1",              "QJsonValue (Number)")
-            + Check("ob.1", "\"bb\"",   "2",              "QJsonValue (Number)")
-            + Check("ob.2", "\"ccc\"",  "\"hallo\"",      "QJsonValue (String)")
-            + Check("ob.3", "\"d\"",    "<1 items>",      "QJsonValue (Object)")
-            + Check("ob.4", "\"s\"",    "\"ssss\"",       "QJsonValue (String)");
+            + Check("ob.0", "\"a\"",        "1",              "QJsonValue (Number)") % jsonv1
+            + Check("ob.0", "[0] \"a\"",    "1",              ""                   ) % jsonv2
+            + Check("ob.1", "\"bb\"",       "2",              "QJsonValue (Number)") % jsonv1
+            + Check("ob.1", "[1] \"bb\"",   "2",              ""                   ) % jsonv2
+            + Check("ob.2", "\"ccc\"",      "\"hallo\"",      "QJsonValue (String)") % jsonv1
+            + Check("ob.2", "[2] \"ccc\"",  "\"hallo\"",      ""                   ) % jsonv2
+            + Check("ob.3", "\"d\"",        "<1 items>",      "QJsonValue (Object)") % jsonv1
+            + Check("ob.3", "[3] \"d\"",    "<1 items>",      ""                   ) % jsonv2
+            + Check("ob.4", "\"s\"",        "\"ssss\"",       "QJsonValue (String)") % jsonv1
+            + Check("ob.4", "[4] \"s\"",    "\"ssss\"",       ""                   ) % jsonv2;
 
 
-    QTest::newRow("Q&qstring_literal_temp,V4")
+    QTest::newRow("QV4")
             << Data("#include <private/qv4value_p.h>\n"
                     "#include <private/qjsvalue_p.h>\n"
                     "#include <QCoreApplication>\n"
@@ -7293,6 +7733,7 @@ void tst_Dumpers::dumper_data()
                     "v18.setProperty(\"PropA\", 1);\n"
                     "v18.setProperty(\"PropB\", 2.5);\n"
                     "v18.setProperty(\"PropC\", v10);\n\n"
+                    "#if QT_VERSION < 0x60000\n"
                     "QV4::Value s11, *p11 = QJSValuePrivate::valueForData(&v11, &s11);\n"
                     "QV4::Value s12, *p12 = QJSValuePrivate::valueForData(&v12, &s12);\n"
                     "QV4::Value s13, *p13 = QJSValuePrivate::valueForData(&v13, &s13);\n"
@@ -7300,10 +7741,11 @@ void tst_Dumpers::dumper_data()
                     "QV4::Value s15, *p15 = QJSValuePrivate::valueForData(&v15, &s15);\n"
                     "QV4::Value s16, *p16 = QJSValuePrivate::valueForData(&v16, &s16);\n"
                     "QV4::Value s17, *p17 = QJSValuePrivate::valueForData(&v17, &s17);\n"
-                    "QV4::Value s18, *p18 = QJSValuePrivate::valueForData(&v18, &s18);\n",
+                    "QV4::Value s18, *p18 = QJSValuePrivate::valueForData(&v18, &s18);\n"
+                    "unused(&p11, &p12, &p13, &p14, &p15, &p16, &p17, &p18);\n"
+                    "#endif\n",
 
-                    "&v10, &v11, &v12, &v13, &v14, &v15, &v16, &v17, &v18, "
-                    "&p11, &p12, &p13, &p14, &p15, &p16, &p17, &p18")
+                    "&v10, &v11, &v12, &v13, &v14, &v15, &v16, &v17, &v18")
 
             + QmlPrivateProfile()
             + QtVersion(0x50000)
@@ -7521,7 +7963,7 @@ void tst_Dumpers::dumper_data()
                     "&f")
 
             + Check("f.a", "15", "int")
-            + Check("f.b", "<optimized out>", "") % NoCdbEngine
+            + Check("f.b", "<optimized out>", "") % GdbEngine
             + Check("f.b", "", "<Value unavailable error>") % CdbEngine;
 
 
@@ -7561,10 +8003,10 @@ void tst_Dumpers::dumper_data()
 
             + CorePrivateProfile()
             + QmlPrivateProfile()
-            + QtVersion(0x50800)
+            + QtVersion(0x50800, 0x5ffff)  // Both test cases are gone in Qt6
 
             + Check("d.Log10_2_100000", "30103", "int")
-            + Check("p.FlagBit", "<optimized out>", "") % NoCdbEngine
+            + Check("p.FlagBit", "<optimized out>", "") % GdbEngine
             + Check("p.FlagBit", "", "<Value unavailable error>", "") % CdbEngine;
 #endif
 
@@ -7652,7 +8094,7 @@ void tst_Dumpers::dumper_data()
 
 #ifdef Q_OS_LINUX
     Data f90data;
-    f90data.configTest = "which f95";
+    f90data.configTest = {"which", {"f95"}};
     f90data.allProfile =
         "CONFIG -= qt\n"
         "SOURCES += main.f90\n"
@@ -7675,7 +8117,7 @@ void tst_Dumpers::dumper_data()
         "  i8 = i8 / 0\n"
         "end program\n";
 
-    f90data.mainFile = "main.f90";
+    f90data.language = Language::Fortran90;
 
     QTest::newRow("F90")
         << f90data
@@ -7690,7 +8132,7 @@ void tst_Dumpers::dumper_data()
     //  touch qt_tst_dumpers_Nim_.../dummy.nimproject
     //  qtcreator qt_tst_dumpers_Nim_*/dummy.nimproject
     Data nimData;
-    nimData.configTest = "which nim";
+    nimData.configTest = {"which", {"nim"}};
     nimData.allProfile =
         "CONFIG -= qt\n"
         "SOURCES += main.nim\n"

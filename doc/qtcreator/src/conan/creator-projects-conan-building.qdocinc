@@ -1,0 +1,44 @@
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the Qt Creator documentation.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU Free Documentation License Usage
+** Alternatively, this file may be used under the terms of the GNU Free
+** Documentation License version 1.3 as published by the Free Software
+** Foundation and appearing in the file included in the packaging of
+** this file. Please review the following information to ensure
+** the GNU Free Documentation License version 1.3 requirements
+** will be met: https://www.gnu.org/licenses/fdl-1.3.html.
+**
+****************************************************************************/
+
+/*!
+//! [conan build steps]
+    \section1 Specifying Build Settings for Conan
+
+    To configure a project to be built using the Conan package manager, select
+    \uicontrol {Add Build Step} > \uicontrol {Run Conan Install}.
+
+    \image qtcreator-build-steps-conan-install.png "Conan Install build step"
+
+    In the \uicontrol {Conan file} field, enter the location of the
+    \e conanfile.txt file for the project.
+
+    The \uicontrol {Conan install} field displays the effective
+    build command. You can add arguments for the command in the
+    \uicontrol {Additional arguments} field.
+
+    For more information about configuring Conan, see \l{Setting Up Conan}.
+//! [conan build steps]
+*/

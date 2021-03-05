@@ -26,50 +26,46 @@
 #pragma once
 
 #include <projectexplorer/abstractprocessstep.h>
-
-#include <QRegExp>
-
-QT_BEGIN_NAMESPACE
-class QLineEdit;
-class QListWidget;
-class QListWidgetItem;
-class QRadioButton;
-QT_END_NAMESPACE
+#include <utils/treemodel.h>
 
 namespace Utils {
 class CommandLine;
+class StringAspect;
 } // Utils
-
-namespace ProjectExplorer {
-class RunConfiguration;
-} // ProjectManager
 
 namespace CMakeProjectManager {
 namespace Internal {
 
-class CMakeBuildConfiguration;
-class CMakeBuildStepFactory;
+class CMakeBuildStep;
+
+class CMakeTargetItem : public Utils::TreeItem
+{
+public:
+    CMakeTargetItem() = default;
+    CMakeTargetItem(const QString &target, CMakeBuildStep *step, bool special);
+
+private:
+    QVariant data(int column, int role) const final;
+    bool setData(int column, const QVariant &data, int role) final;
+    Qt::ItemFlags flags(int column) const final;
+
+    QString m_target;
+    CMakeBuildStep *m_step = nullptr;
+    bool m_special = false;
+};
 
 class CMakeBuildStep : public ProjectExplorer::AbstractProcessStep
 {
     Q_OBJECT
-    friend class CMakeBuildStepFactory;
 
 public:
-    CMakeBuildStep(ProjectExplorer::BuildStepList *bsl, Core::Id id);
+    CMakeBuildStep(ProjectExplorer::BuildStepList *bsl, Utils::Id id);
 
-    CMakeBuildConfiguration *cmakeBuildConfiguration() const;
+    QStringList buildTargets() const;
+    void setBuildTargets(const QStringList &target);
 
-    QString buildTarget() const;
     bool buildsBuildTarget(const QString &target) const;
-    void setBuildTarget(const QString &target);
-
-    QString toolArguments() const;
-    void setToolArguments(const QString &list);
-
-    Utils::CommandLine cmakeCommand(ProjectExplorer::RunConfiguration *rc) const;
-
-    QStringList knownBuildTargets();
+    void setBuildsBuildTarget(const QString &target, bool on);
 
     QVariantMap toMap() const override;
 
@@ -79,62 +75,40 @@ public:
     static QString testTarget();
     static QStringList specialTargets();
 
+    QString activeRunConfigTarget() const;
+
 signals:
-    void targetToBuildChanged();
     void buildTargetsChanged();
 
-protected:
-    void processStarted() override;
-    void processFinished(int exitCode, QProcess::ExitStatus status) override;
+private:
+    Utils::CommandLine cmakeCommand() const;
 
+    void processFinished(int exitCode, QProcess::ExitStatus status) override;
     bool fromMap(const QVariantMap &map) override;
 
-    // For parsing [ 76%]
-    void stdOutput(const QString &line) override;
-
-private:
-    void ctor(ProjectExplorer::BuildStepList *bsl);
-
     bool init() override;
+    void setupOutputFormatter(Utils::OutputFormatter *formatter) override;
     void doRun() override;
-    ProjectExplorer::BuildStepConfigWidget *createConfigWidget() override;
+    QWidget *createConfigWidget() override;
 
     QString defaultBuildTarget() const;
 
     void runImpl();
     void handleProjectWasParsed(bool success);
 
-    void handleBuildTargetChanges(bool success);
+    void handleBuildTargetsChanges(bool success);
+    void recreateBuildTargetsModel();
+    void updateBuildTargetsModel();
 
     QMetaObject::Connection m_runTrigger;
 
-    QRegExp m_percentProgress;
-    QRegExp m_ninjaProgress;
-    QString m_ninjaProgressString;
-    QString m_buildTarget;
-    QString m_toolArguments;
-    bool m_useNinja = false;
+    friend class CMakeBuildStepConfigWidget;
+    QStringList m_buildTargets; // Convention: Empty string member signifies "Current executable"
+    Utils::StringAspect *m_cmakeArguments = nullptr;
+    Utils::StringAspect *m_toolArguments = nullptr;
     bool m_waiting = false;
-};
 
-class CMakeBuildStepConfigWidget : public ProjectExplorer::BuildStepConfigWidget
-{
-    Q_OBJECT
-public:
-    CMakeBuildStepConfigWidget(CMakeBuildStep *buildStep);
-
-private:
-    void itemChanged(QListWidgetItem*);
-    void toolArgumentsEdited();
-    void updateDetails();
-    void buildTargetsChanged();
-    void updateBuildTarget();
-
-    QRadioButton *itemWidget(QListWidgetItem *item);
-
-    CMakeBuildStep *m_buildStep;
-    QLineEdit *m_toolArguments;
-    QListWidget *m_buildTargetsList;
+    Utils::TreeModel<Utils::TreeItem, CMakeTargetItem> m_buildTargetModel;
 };
 
 class CMakeBuildStepFactory : public ProjectExplorer::BuildStepFactory

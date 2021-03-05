@@ -26,14 +26,13 @@
 #include "debuggersourcepathmappingwidget.h"
 #include "debuggerengine.h"
 
-#include <coreplugin/variablechooser.h>
-
 #include <utils/buildablehelperlibrary.h>
 #include <utils/fancylineedit.h>
+#include <utils/hostosinfo.h>
 #include <utils/pathchooser.h>
 #include <utils/qtcassert.h>
 #include <utils/synchronousprocess.h>
-#include <utils/hostosinfo.h>
+#include <utils/variablechooser.h>
 
 #include <QStandardItemModel>
 #include <QTreeView>
@@ -146,15 +145,15 @@ bool SourcePathMappingModel::isNewPlaceHolder(const Mapping &m) const
 // Return raw, unfixed mapping
 Mapping SourcePathMappingModel::rawMappingAt(int row) const
 {
-    return Mapping(item(row, SourceColumn)->text(), item(row, TargetColumn)->text());
+    return Mapping(QDir::fromNativeSeparators(item(row, SourceColumn)->text()),
+                   QDir::fromNativeSeparators(item(row, TargetColumn)->text()));
 }
 
 // Return mapping, empty if it is the place holder.
 Mapping SourcePathMappingModel::mappingAt(int row) const
 {
     const Mapping raw = rawMappingAt(row);
-    return isNewPlaceHolder(raw) ? Mapping()
-        : Mapping(QDir::cleanPath(raw.first), QDir::cleanPath(raw.second));
+    return isNewPlaceHolder(raw) ? Mapping() : Mapping(raw.first, raw.second);
 }
 
 void SourcePathMappingModel::setSourcePathMap(const SourcePathMap &m)
@@ -276,7 +275,7 @@ DebuggerSourcePathMappingWidget::DebuggerSourcePathMappingWidget(QWidget *parent
     editLayout->addRow(editTargetLabel, m_targetChooser);
     editLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
-    auto chooser = new Core::VariableChooser(this);
+    auto chooser = new VariableChooser(this);
     chooser->addSupportedWidget(m_targetChooser->lineEdit());
 
     // Main layout

@@ -29,9 +29,10 @@
 
 #include "indenter.h"
 
+#include <utils/id.h>
+
 #include <QWidget>
 
-namespace Core { class Id; }
 namespace TextEditor {
 
 class ICodeStylePreferences;
@@ -57,7 +58,7 @@ public:
 
     virtual CodeStyleEditorWidget *createCodeStyleEditor(ICodeStylePreferences *codeStyle,
                                                          QWidget *parent = nullptr);
-    virtual Core::Id languageId() = 0;
+    virtual Utils::Id languageId() = 0;
     virtual QString displayName() = 0;
     virtual ICodeStylePreferences *createCodeStyle() const = 0;
     virtual QWidget *createEditor(ICodeStylePreferences *preferences, QWidget *parent) const = 0;

@@ -152,7 +152,7 @@ TestResultsPane::TestResultsPane(QObject *parent) :
     connect(m_treeView, &ResultsTreeView::copyShortcutTriggered, [this] () {
         onCopyItemTriggered(getTestResult(m_treeView->currentIndex()));
     });
-    connect(m_model, &TestResultModel::requestExpansion, [this] (QModelIndex idx) {
+    connect(m_model, &TestResultModel::requestExpansion, [this] (const QModelIndex &idx) {
         m_treeView->expand(m_filterModel->mapFromSource(idx));
     });
     connect(TestRunner::instance(), &TestRunner::testRunStarted,
@@ -185,6 +185,8 @@ void TestResultsPane::createToolButtons()
     m_runSelected = new QToolButton(m_treeView);
     m_runSelected->setDefaultAction(ActionManager::command(Constants::ACTION_RUN_SELECTED_ID)->action());
 
+    m_runFailed = new QToolButton(m_treeView);
+    m_runFailed->setDefaultAction(ActionManager::command(Constants::ACTION_RUN_FAILED_ID)->action());
     m_runFile = new QToolButton(m_treeView);
     m_runFile->setDefaultAction(ActionManager::command(Constants::ACTION_RUN_FILE_ID)->action());
 
@@ -271,7 +273,7 @@ static void checkAndFineTuneColors(QTextCharFormat *format)
 void TestResultsPane::addOutputLine(const QByteArray &outputLine, OutputChannel channel)
 {
     if (!QTC_GUARD(!outputLine.contains('\n'))) {
-        for (auto line : outputLine.split('\n'))
+        for (const auto &line : outputLine.split('\n'))
             addOutputLine(line, channel);
         return;
     }
@@ -304,7 +306,7 @@ QWidget *TestResultsPane::outputWidget(QWidget *parent)
 
 QList<QWidget *> TestResultsPane::toolBarWidgets() const
 {
-    return {m_expandCollapse, m_runAll, m_runSelected, m_runFile, m_stopTestRun,
+    return {m_expandCollapse, m_runAll, m_runSelected, m_runFailed, m_runFile, m_stopTestRun,
             m_outputToggleButton, m_filterButton};
 }
 
@@ -339,10 +341,6 @@ void TestResultsPane::clearContents()
     m_stdErrHandler.endFormatScope();
     m_stdOutHandler.endFormatScope();
     clearMarks();
-}
-
-void TestResultsPane::visibilityChanged(bool /*visible*/)
-{
 }
 
 void TestResultsPane::setFocus()

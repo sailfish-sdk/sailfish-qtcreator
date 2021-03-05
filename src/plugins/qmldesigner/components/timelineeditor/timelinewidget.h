@@ -25,7 +25,6 @@
 
 #pragma once
 
-#include "animationcurveeditormodel.h"
 #include "timelineutils.h"
 #include <coreplugin/icontext.h>
 
@@ -37,7 +36,6 @@ QT_FORWARD_DECLARE_CLASS(QComboBox)
 QT_FORWARD_DECLARE_CLASS(QGraphicsView)
 QT_FORWARD_DECLARE_CLASS(QLabel)
 QT_FORWARD_DECLARE_CLASS(QResizeEvent)
-QT_FORWARD_DECLARE_CLASS(QScrollBar)
 QT_FORWARD_DECLARE_CLASS(QShowEvent)
 QT_FORWARD_DECLARE_CLASS(QString)
 QT_FORWARD_DECLARE_CLASS(QPushButton)
@@ -48,6 +46,7 @@ class TimelineToolBar;
 class TimelineView;
 class TimelineGraphicsScene;
 class QmlTimeline;
+class Navigation2dScrollBar;
 
 class TimelineWidget : public QWidget
 {
@@ -70,6 +69,7 @@ public:
     void setTimelineId(const QString &id);
 
     void setTimelineActive(bool b);
+    void setFocus();
 
 public slots:
     void selectionChanged();
@@ -78,11 +78,10 @@ public slots:
     void changeScaleFactor(int factor);
     void scroll(const TimelineUtils::Side &side);
 
-    void updateAnimationCurve(DesignTools::PropertyTreeItem *item);
-
 protected:
     void showEvent(QShowEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
 
 private:
     void connectToolbar();
@@ -95,7 +94,7 @@ private:
 
     QGraphicsView *m_graphicsView = nullptr;
 
-    QScrollBar *m_scrollbar = nullptr;
+    Navigation2dScrollBar *m_scrollbar = nullptr;
 
     QLabel *m_statusBar = nullptr;
 
@@ -104,6 +103,8 @@ private:
     TimelineGraphicsScene *m_graphicsScene;
 
     QPushButton *m_addButton = nullptr;
+
+    QWidget *m_onboardingContainer = nullptr;
 };
 
 } // namespace QmlDesigner

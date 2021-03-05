@@ -87,22 +87,24 @@ QString ExamplesWelcomePage::copyToAlternativeLocation(const QFileInfo& proFileI
 {
     const QString projectDir = proFileInfo.canonicalPath();
     QSettings *settings = ICore::settings();
-    CopyToLocationDialog d(ICore::mainWindow());
+    CopyToLocationDialog d(ICore::dialogParent());
     d.setSourcePath(projectDir);
-    d.setDestinationPath(settings->value(QString::fromLatin1(C_FALLBACK_ROOT),
-                                         DocumentManager::projectsDirectory().toString()).toString());
+    d.setDestinationPath(FilePath::fromVariant(settings->value(QString::fromLatin1(C_FALLBACK_ROOT),
+                                         DocumentManager::projectsDirectory().toString())));
 
     while (QDialog::Accepted == d.exec()) {
         QString exampleDirName = proFileInfo.dir().dirName();
-        QString destBaseDir = d.destinationPath();
+        QString destBaseDir = d.destinationPath().toString();
         settings->setValue(QString::fromLatin1(C_FALLBACK_ROOT), destBaseDir);
         QDir toDirWithExamplesDir(destBaseDir);
         if (toDirWithExamplesDir.cd(exampleDirName)) {
             toDirWithExamplesDir.cdUp(); // step out, just to not be in the way
-            QMessageBox::warning(ICore::mainWindow(), tr("Cannot Use Location"),
+            QMessageBox::warning(ICore::dialogParent(),
+                                 tr("Cannot Use Location"),
                                  tr("The specified location already contains \"%1\" directory. "
                                     "Please specify a valid location.").arg(exampleDirName),
-                                 QMessageBox::Ok, QMessageBox::NoButton);
+                                 QMessageBox::Ok,
+                                 QMessageBox::NoButton);
             continue;
         } else {
             QString error;
@@ -119,7 +121,9 @@ QString ExamplesWelcomePage::copyToAlternativeLocation(const QFileInfo& proFileI
                             .pathAppended(QDir(dependency).dirName());
                     if (!FileUtils::copyRecursively(FilePath::fromString(dependency), targetFile,
                             &error)) {
-                        QMessageBox::warning(ICore::mainWindow(), tr("Cannot Copy Project"), error);
+                        QMessageBox::warning(ICore::dialogParent(),
+                                             tr("Cannot Copy Project"),
+                                             error);
                         continue;
                     }
                 }
@@ -127,7 +131,7 @@ QString ExamplesWelcomePage::copyToAlternativeLocation(const QFileInfo& proFileI
 
                 return targetDir + QLatin1Char('/') + proFileInfo.fileName();
             } else {
-                QMessageBox::warning(ICore::mainWindow(), tr("Cannot Copy Project"), error);
+                QMessageBox::warning(ICore::dialogParent(), tr("Cannot Copy Project"), error);
                 continue;
             }
 

@@ -34,7 +34,6 @@
 #include "ioutils.h"
 
 #include <qlist.h>
-#include <qlinkedlist.h>
 #include <qmap.h>
 #include <qset.h>
 #include <qstack.h>
@@ -49,6 +48,8 @@
 #ifdef PROEVALUATOR_THREAD_SAFE
 # include <qmutex.h>
 #endif
+
+#include <list>
 
 QT_BEGIN_NAMESPACE
 
@@ -90,15 +91,15 @@ public:
 #endif
 };
 
-// We use a QLinkedList based stack instead of a QVector based one (QStack), so that
+// We use a list-based stack instead of a vector-based one, so that
 // the addresses of value maps stay constant. The qmake generators rely on that.
-class QMAKE_EXPORT ProValueMapStack : public QLinkedList<ProValueMap>
+class QMAKE_EXPORT ProValueMapStack : public std::list<ProValueMap>
 {
 public:
-    inline void push(const ProValueMap &t) { append(t); }
-    inline ProValueMap pop() { return takeLast(); }
-    ProValueMap &top() { return last(); }
-    const ProValueMap &top() const { return last(); }
+    inline void push(const ProValueMap &t) { push_back(t); }
+    inline ProValueMap pop() { auto r = std::move(back()); pop_back(); return r; }
+    ProValueMap &top() { return back(); }
+    const ProValueMap &top() const { return back(); }
 };
 
 class QMAKE_EXPORT QMakeEvaluator
@@ -173,7 +174,7 @@ public:
 
     void setTemplate();
 
-    ProStringList split_value_list(const QStringRef &vals, int source = 0);
+    ProStringList split_value_list(Utils::StringView vals, int source = 0);
     VisitReturn expandVariableReferences(const ushort *&tokPtr, int sizeHint, ProStringList *ret, bool joined);
 
     QString currentFileName() const;
@@ -213,7 +214,7 @@ public:
     VisitReturn evaluateBuiltinExpand(int func_t, const ProKey &function, const ProStringList &args, ProStringList &ret);
     VisitReturn evaluateBuiltinConditional(int func_t, const ProKey &function, const ProStringList &args);
 
-    VisitReturn evaluateConditional(const QStringRef &cond, const QString &where, int line = -1);
+    VisitReturn evaluateConditional(Utils::StringView cond, const QString &where, int line = -1);
 #ifdef PROEVALUATOR_FULL
     VisitReturn checkRequirements(const ProStringList &deps);
 #endif
@@ -221,7 +222,7 @@ public:
     void updateMkspecPaths();
     void updateFeaturePaths();
 
-    bool isActiveConfig(const QStringRef &config, bool regex = false);
+    bool isActiveConfig(Utils::StringView config, bool regex = false);
 
     void populateDeps(
             const ProStringList &deps, const ProString &prefix, const ProStringList &suffixes,

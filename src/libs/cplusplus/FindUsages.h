@@ -39,13 +39,15 @@ namespace CPlusPlus {
 class CPLUSPLUS_EXPORT Usage
 {
 public:
-    Usage() = default;
-    Usage(const Utils::FilePath &path, const QString &lineText, int line, int col, int len)
-        : path(path), lineText(lineText), line(line), col(col), len(len) {}
+    enum class Type { Declaration, Initialization, Read, Write, WritableRef, Other };
 
-public:
+    Usage() = default;
+    Usage(const Utils::FilePath &path, const QString &lineText, Type t, int line, int col, int len)
+        : path(path), lineText(lineText), type(t), line(line), col(col), len(len) {}
+
     Utils::FilePath path;
     QString lineText;
+    Type type = Type::Other;
     int line = 0;
     int col = 0;
     int len = 0;
@@ -70,9 +72,8 @@ protected:
     QString matchingLine(const Token &tk) const;
 
     void reportResult(unsigned tokenIndex, const Name *name, Scope *scope = nullptr);
-    void reportResult(unsigned tokenIndex, const Identifier *id, Scope *scope = nullptr);
     void reportResult(unsigned tokenIndex, const QList<LookupItem> &candidates);
-    void reportResult(unsigned tokenIndex);
+    Usage::Type getType(int line, int column, int tokenIndex);
 
     bool checkCandidates(const QList<LookupItem> &candidates) const;
     void checkExpression(unsigned startToken, unsigned endToken, Scope *scope = nullptr);
@@ -254,6 +255,8 @@ protected:
     // SpecifierAST
     virtual bool visit(SimpleSpecifierAST *ast);
     virtual bool visit(GnuAttributeSpecifierAST *ast);
+    virtual bool visit(MsvcDeclspecSpecifierAST *ast);
+    virtual bool visit(StdAttributeSpecifierAST *ast);
     virtual bool visit(TypeofSpecifierAST *ast);
     virtual bool visit(DecltypeSpecifierAST *ast);
     virtual bool visit(ClassSpecifierAST *ast);

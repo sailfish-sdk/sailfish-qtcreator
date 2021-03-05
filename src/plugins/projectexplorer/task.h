@@ -27,11 +27,12 @@
 
 #include "projectexplorer_export.h"
 
-#include <coreplugin/id.h>
+#include <utils/id.h>
 #include <utils/fileutils.h>
 
 #include <QIcon>
 #include <QMetaType>
+#include <QStringList>
 #include <QTextLayout>
 
 namespace TextEditor {
@@ -63,27 +64,28 @@ public:
 
     Task() = default;
     Task(TaskType type, const QString &description,
-         const Utils::FilePath &file, int line, Core::Id category,
+         const Utils::FilePath &file, int line, Utils::Id category,
          const QIcon &icon = QIcon(),
          Options options = AddTextMark | FlashWorthy);
 
     static Task compilerMissingTask();
-    static Task buildConfigurationMissingTask();
 
     bool isNull() const;
     void clear();
     void setFile(const Utils::FilePath &file);
+    QString description() const;
+    QIcon icon() const;
 
     unsigned int taskId = 0;
     TaskType type = Unknown;
     Options options = AddTextMark | FlashWorthy;
-    QString description;
+    QString summary;
+    QStringList details;
     Utils::FilePath file;
     Utils::FilePaths fileCandidates;
     int line = -1;
     int movedLine = -1; // contains a line number if the line was moved in the editor
-    Core::Id category;
-    QIcon icon;
+    Utils::Id category;
 
     // Having a container of QTextLayout::FormatRange in Task isn't that great
     // It would be cleaner to split up the text into
@@ -99,6 +101,7 @@ private:
     void setMark(TextEditor::TextMark *mark);
 
     QSharedPointer<TextEditor::TextMark> m_mark;
+    mutable QIcon m_icon;
     static unsigned int s_nextId;
 
     friend class TaskHub;

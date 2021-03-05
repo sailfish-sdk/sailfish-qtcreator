@@ -37,6 +37,7 @@ Node {
                                      || planeX.dragging || planeY.dragging || planeZ.dragging
                                      || centerMouseArea.dragging
     property MouseArea3D dragHelper: null
+    property alias freeDraggerArea: centerMouseArea
 
     position: dragHelper.pivotScenePosition(targetNode)
 
@@ -169,7 +170,7 @@ Node {
         scale: Qt.vector3d(0.024, 0.024, 0.024)
         materials: DefaultMaterial {
             id: material
-            emissiveColor: highlightOnHover
+            diffuseColor: highlightOnHover
                            && (centerMouseArea.hovering || centerMouseArea.dragging)
                            ? Qt.lighter(Qt.rgba(0.5, 0.5, 0.5, 1))
                            : Qt.rgba(0.5, 0.5, 0.5, 1)
@@ -185,7 +186,7 @@ Node {
             height: 120
             rotation: view3D.camera.rotation
             grabsMouse: scaleGizmo.targetNode
-            priority: 1
+            priority: 10
             active: scaleGizmo.visible
             dragHelper: scaleGizmo.dragHelper
 

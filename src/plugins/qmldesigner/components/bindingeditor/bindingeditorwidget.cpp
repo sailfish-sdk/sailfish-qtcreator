@@ -41,8 +41,9 @@
 namespace QmlDesigner {
 
 BindingEditorWidget::BindingEditorWidget()
-    : m_context(new BindingEditorContext(this))
+    : m_context(new Core::IContext(this))
 {
+    m_context->setWidget(this);
     Core::ICore::addContextObject(m_context);
 
     const Core::Context context(BINDINGEDITOR_CONTEXT_ID);
@@ -68,9 +69,6 @@ BindingEditorWidget::BindingEditorWidget()
 BindingEditorWidget::~BindingEditorWidget()
 {
     unregisterAutoCompletion();
-
-    Core::ICore::removeContextObject(m_context);
-    delete m_context;
 }
 
 void BindingEditorWidget::unregisterAutoCompletion()
@@ -101,7 +99,7 @@ TextEditor::AssistInterface *BindingEditorWidget::createAssistInterface(
 {
     Q_UNUSED(assistKind)
     return new QmlJSEditor::QmlJSCompletionAssistInterface(
-                document(), position(), QString(),
+                document(), position(), Utils::FilePath(),
                 assistReason, qmljsdocument->semanticInfo());
 }
 
@@ -136,6 +134,7 @@ BindingEditorFactory::BindingEditorFactory()
 {
     setId(BINDINGEDITOR_CONTEXT_ID);
     setDisplayName(QCoreApplication::translate("OpenWith::Editors", QmlDesigner::BINDINGEDITOR_CONTEXT_ID));
+    setEditorActionHandlers(0);
 
     setDocumentCreator([]() { return new BindingDocument; });
     setEditorWidgetCreator([]() { return new BindingEditorWidget; });

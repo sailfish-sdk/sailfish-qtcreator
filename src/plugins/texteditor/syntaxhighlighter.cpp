@@ -475,7 +475,7 @@ void SyntaxHighlighter::formatSpaces(const QString &text, int start, int count)
 {
     Q_D(const SyntaxHighlighter);
     int offset = start;
-    const int end = std::min(start + count, text.length());
+    const int end = std::min(start + count, int(text.length()));
     while (offset < end) {
         if (text.at(offset).isSpace()) {
             int start = offset++;
@@ -503,7 +503,7 @@ void SyntaxHighlighter::setFormatWithSpaces(const QString &text, int start, int 
     QTextCharFormat visualSpaceFormat = d->whitespaceFormat;
     visualSpaceFormat.setBackground(format.background());
 
-    const int end = std::min(start + count, text.length());
+    const int end = std::min(start + count, int(text.length()));
     int index = start;
 
     while (index != end) {
@@ -768,7 +768,7 @@ FontSettings SyntaxHighlighter::fontSettings() const
     return d->fontSettings;
 }
 /*!
-    The syntax highlighter is not anymore reacting to the text document if \a noAutmatic is
+    The syntax highlighter is not anymore reacting to the text document if \a noAutomatic is
     \c true.
 */
 void SyntaxHighlighter::setNoAutomaticHighlighting(bool noAutomatic)

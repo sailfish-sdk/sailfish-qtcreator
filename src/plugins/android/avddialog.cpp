@@ -27,6 +27,7 @@
 #include "androidsdkmanager.h"
 #include "androidavdmanager.h"
 
+#include <projectexplorer/projectexplorerconstants.h>
 #include <utils/algorithm.h>
 #include <utils/tooltip/tooltip.h>
 #include <utils/utilsicons.h>
@@ -36,6 +37,7 @@
 #include <QMessageBox>
 #include <QToolTip>
 #include <QLoggingCategory>
+#include <QPushButton>
 
 using namespace Android;
 using namespace Android::Internal;
@@ -58,17 +60,22 @@ AvdDialog::AvdDialog(int minApiLevel, AndroidSdkManager *sdkManager, const QStri
     m_hideTipTimer.setSingleShot(true);
 
     if (abis.isEmpty()) {
-        m_avdDialog.abiComboBox->addItems(QStringList({"x86", "x86_64", "armeabi-v7a",
-                                                       "armeabi", "arm64-v8a"}));
+        m_avdDialog.abiComboBox->addItems(QStringList({
+                                               ProjectExplorer::Constants::ANDROID_ABI_X86,
+                                               ProjectExplorer::Constants::ANDROID_ABI_X86_64,
+                                               ProjectExplorer::Constants::ANDROID_ABI_ARMEABI_V7A,
+                                               ProjectExplorer::Constants::ANDROID_ABI_ARMEABI,
+                                               ProjectExplorer::Constants::ANDROID_ABI_ARM64_V8A}));
     } else {
         m_avdDialog.abiComboBox->addItems(abis);
     }
 
-    auto v = new QRegExpValidator(m_allowedNameChars, this);
+    auto v = new QRegularExpressionValidator(m_allowedNameChars, this);
     m_avdDialog.nameLineEdit->setValidator(v);
     m_avdDialog.nameLineEdit->installEventFilter(this);
 
     m_avdDialog.warningText->setType(Utils::InfoLabel::Warning);
+    m_avdDialog.warningText->setElideMode(Qt::ElideNone);
 
     connect(&m_hideTipTimer, &QTimer::timeout, this, []() { Utils::ToolTip::hide(); });
 
@@ -135,11 +142,10 @@ void AvdDialog::parseDeviceDefinitionsList()
 
     QStringList avdDeviceInfo;
 
-    for (QString line : output.split('\n')) {
+    for (const QString &line : output.split('\n')) {
         if (line.startsWith("---------") || line.isEmpty()) {
             DeviceDefinitionStruct deviceDefinition;
             for (const QString &line : avdDeviceInfo) {
-                QString value;
                 if (line.contains("id:")) {
                     deviceDefinition.name_id = line.split("or").at(1);
                     deviceDefinition.name_id = deviceDefinition.name_id.remove(0, 1).remove('"');
@@ -171,7 +177,7 @@ void AvdDialog::updateDeviceDefinitionComboBox()
         m_avdDialog.deviceDefinitionTypeComboBox->currentText());
 
     m_avdDialog.deviceDefinitionComboBox->clear();
-    for (auto item : m_deviceDefinitionsList) {
+    for (const DeviceDefinitionStruct &item : m_deviceDefinitionsList) {
         if (item.deviceType == curDeviceType)
             m_avdDialog.deviceDefinitionComboBox->addItem(item.name_id);
     }
@@ -227,8 +233,9 @@ void AvdDialog::updateApiLevelComboBox()
     m_avdDialog.targetApiComboBox->clear();
     for (SystemImage *image : filteredList) {
             QString imageString = "android-" % QString::number(image->apiLevel());
-            if (image->sdkStylePath().contains("playstore"))
-                imageString += " (Google PlayStore)";
+            const QStringList imageSplits = image->sdkStylePath().split(';');
+            if (imageSplits.size() == 4)
+                imageString += QStringLiteral(" (%1)").arg(imageSplits.at(2));
             m_avdDialog.targetApiComboBox->addItem(imageString,
                                                    QVariant::fromValue<SystemImage *>(image));
             m_avdDialog.targetApiComboBox->setItemData(m_avdDialog.targetApiComboBox->count() - 1,
@@ -239,17 +246,22 @@ void AvdDialog::updateApiLevelComboBox()
     if (installedSystemImages.isEmpty()) {
         m_avdDialog.targetApiComboBox->setEnabled(false);
         m_avdDialog.warningText->setVisible(true);
-        m_avdDialog.warningText->setText(tr("Cannot create a new AVD. No sufficiently recent Android SDK available.\n"
-                                            "Install an SDK of at least API version %1.")
-                                         .arg(m_minApiLevel));
+        m_avdDialog.warningText->setText(
+            tr("Cannot create a new AVD. No suitable Android system image is installed.<br/>"
+               "Install a system image of at least API version %1 from the SDK Manager tab.")
+                .arg(m_minApiLevel));
+        m_avdDialog.buttonBox->button(QDialogButtonBox::Ok)->setEnabled(false);
     } else if (filteredList.isEmpty()) {
         m_avdDialog.targetApiComboBox->setEnabled(false);
         m_avdDialog.warningText->setVisible(true);
-        m_avdDialog.warningText->setText(tr("Cannot create a AVD for ABI %1. Install an image for it.")
-                                         .arg(abi()));
+        m_avdDialog.warningText->setText(tr("Cannot create an AVD for ABI %1.<br/>Install a system "
+                                            "image for it from the SDK Manager tab first.")
+                                             .arg(abi()));
+        m_avdDialog.buttonBox->button(QDialogButtonBox::Ok)->setEnabled(false);
     } else {
         m_avdDialog.warningText->setVisible(false);
         m_avdDialog.targetApiComboBox->setEnabled(true);
+        m_avdDialog.buttonBox->button(QDialogButtonBox::Ok)->setEnabled(true);
     }
 }
 
@@ -258,7 +270,7 @@ bool AvdDialog::eventFilter(QObject *obj, QEvent *event)
     if (obj == m_avdDialog.nameLineEdit && event->type() == QEvent::KeyPress) {
         auto ke = static_cast<QKeyEvent *>(event);
         const QString key = ke->text();
-        if (!key.isEmpty() && !m_allowedNameChars.exactMatch(key)) {
+        if (!key.isEmpty() && !m_allowedNameChars.match(key).hasMatch()) {
             QPoint position = m_avdDialog.nameLineEdit->parentWidget()->mapToGlobal(m_avdDialog.nameLineEdit->geometry().bottomLeft());
             position -= Utils::ToolTip::offsetFromPosition();
             Utils::ToolTip::show(position, tr("Allowed characters are: a-z A-Z 0-9 and . _ -"), m_avdDialog.nameLineEdit);

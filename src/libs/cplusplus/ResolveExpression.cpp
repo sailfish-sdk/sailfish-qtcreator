@@ -849,22 +849,14 @@ bool ResolveExpression::visit(CallAST *ast)
                 int score = 0;
 
                 for (unsigned i = 0, argc = funTy->argumentCount(); i < argc; ++i) {
+                    if (i >= unsigned(arguments.size()))
+                        break;
+
                     const FullySpecifiedType formalTy = funTy->argumentAt(i)->type();
-
-                    FullySpecifiedType actualTy;
-                    if (i < unsigned(arguments.size())) {
-                        const QList<LookupItem> actual = arguments.at(i);
-                        if (actual.isEmpty())
-                            continue;
-
-                        actualTy = actual.first().type();
-                    } else {
-                        actualTy = formalTy;
-                        score += 2;
+                    const QList<LookupItem> actual = arguments.at(i);
+                    if (actual.isEmpty())
                         continue;
-                    }
-
-                    score += evaluateFunctionArgument(actualTy, formalTy);
+                    score += evaluateFunctionArgument(actual.first().type(), formalTy);
                 }
 
                 sortedResults.insert(LookupMap::value_type(-score, base));
@@ -888,12 +880,18 @@ bool ResolveExpression::visit(CallAST *ast)
 
         if (NamedType *namedTy = ty->asNamedType()) {
             if (ClassOrNamespace *b = _context.lookupType(namedTy->name(), scope)) {
-                foreach (const LookupItem &r, b->find(functionCallOp)) {
-                    Symbol *overload = r.declaration();
-                    if (Function *funTy = overload->type()->asFunctionType()) {
-                        if (maybeValidPrototype(funTy, actualArgumentCount)) {
-                            if (Function *proto = instantiate(namedTy->name(), funTy)->asFunctionType())
-                                addResult(proto->returnType().simplified(), scope);
+                if (b->templateId() && result.declaration() && result.declaration()->asTemplate()) {
+                    // Template class constructor
+                    addResult(ty.simplified(), scope);
+                } else {
+                    // operator()
+                    foreach (const LookupItem &r, b->find(functionCallOp)) {
+                        Symbol *overload = r.declaration();
+                        if (Function *funTy = overload->type()->asFunctionType()) {
+                            if (maybeValidPrototype(funTy, actualArgumentCount)) {
+                                if (Function *proto = instantiate(namedTy->name(), funTy)->asFunctionType())
+                                    addResult(proto->returnType().simplified(), scope);
+                            }
                         }
                     }
                 }
@@ -916,6 +914,13 @@ bool ResolveExpression::visit(CallAST *ast)
                 }
             }
         }
+    }
+
+    if (_results.size()>1){
+        // move functions with known bindings to begin of results list
+        std::stable_partition(_results.begin(), _results.end(), [](const LookupItem &item) -> bool {
+            return item.binding();
+        });
     }
 
     return false;
@@ -1080,7 +1085,12 @@ ClassOrNamespace *ResolveExpression::baseExpression(const QList<LookupItem> &bas
             qDebug() << "-  after typedef resolving:" << oo(ty);
 
         if (accessOp == T_ARROW) {
-            if (PointerType *ptrTy = ty->asPointerType()) {
+            PointerType *ptrTy = ty->asPointerType();
+            if (!ptrTy) {
+                if (Function * const func = ty->asFunctionType())
+                    ptrTy = func->returnType()->asPointerType();
+            }
+            if (ptrTy) {
                 FullySpecifiedType type = ptrTy->elementType();
                 if (ClassOrNamespace *binding
                         = findClassForTemplateParameterInExpressionScope(r.binding(),
@@ -1109,11 +1119,23 @@ ClassOrNamespace *ResolveExpression::baseExpression(const QList<LookupItem> &bas
                             continue;
                         Scope *functionScope = overload->enclosingScope();
 
-                        if (overload->type()->isFunctionType()) {
+                        FullySpecifiedType overloadType = r.type();
+                        if (! overloadType.isValid())
+                            overloadType = overload->type();
+
+                        Function *instantiatedFunction = nullptr;
+
+                        if (overloadType->isFunctionType()) {
                             FullySpecifiedType overloadTy
                                     = instantiate(binding->templateId(), overload);
-                            Function *instantiatedFunction = overloadTy->asFunctionType();
-                            Q_ASSERT(instantiatedFunction != nullptr);
+                            instantiatedFunction = overloadTy->asFunctionType();
+                        } else if (overloadType->isTemplateType()
+                                   && overloadType->asTemplateType()->declaration()
+                                   && overloadType->asTemplateType()->declaration()->isFunction()) {
+                            instantiatedFunction = overloadType->asTemplateType()->declaration()->asFunction();
+                        }
+
+                        if (instantiatedFunction != nullptr) {
 
                             FullySpecifiedType retTy
                                     = instantiatedFunction->returnType().simplified();

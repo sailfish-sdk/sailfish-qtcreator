@@ -28,8 +28,6 @@
 #include "cppmodelmanager.h"
 #include "headerpathfilter.h"
 
-#include <baremetal/baremetalconstants.h>
-
 #include <coreplugin/icore.h>
 
 #include <projectexplorer/headerpath.h>
@@ -37,9 +35,11 @@
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/projectmacro.h>
 
+#include <utils/algorithm.h>
 #include <utils/cpplanguage_details.h>
 #include <utils/fileutils.h>
 #include <utils/qtcassert.h>
+#include <utils/stringutils.h>
 
 #include <QDir>
 #include <QRegularExpression>
@@ -104,14 +104,14 @@ CompilerOptionsBuilder::CompilerOptionsBuilder(const ProjectPart &projectPart,
                                                UseLanguageDefines useLanguageDefines,
                                                UseBuildSystemWarnings useBuildSystemWarnings,
                                                const QString &clangVersion,
-                                               const QString &clangResourceDirectory)
+                                               const QString &clangIncludeDirectory)
     : m_projectPart(projectPart)
     , m_useSystemHeader(useSystemHeader)
     , m_useTweakedHeaderPaths(useTweakedHeaderPaths)
     , m_useLanguageDefines(useLanguageDefines)
     , m_useBuildSystemWarnings(useBuildSystemWarnings)
     , m_clangVersion(clangVersion)
-    , m_clangResourceDirectory(clangResourceDirectory)
+    , m_clangIncludeDirectory(clangIncludeDirectory)
 {
 }
 
@@ -138,7 +138,7 @@ QStringList CompilerOptionsBuilder::build(ProjectFile::Kind fileKind,
     addTargetTriple();
     updateFileLanguage(fileKind);
     addLanguageVersionAndExtensions();
-    enableExceptions();
+    addMsvcExceptions();
 
     addPrecompiledHeaderOptions(usePrecompiledHeaders);
     addProjectConfigFileInclude();
@@ -154,6 +154,7 @@ QStringList CompilerOptionsBuilder::build(ProjectFile::Kind fileKind,
     addExtraOptions();
 
     insertWrappedQtHeaders();
+    insertWrappedMingwHeaders();
 
     return options();
 }
@@ -273,6 +274,17 @@ void CompilerOptionsBuilder::addCompilerFlags()
     add(m_compilerFlags.flags);
 }
 
+void CompilerOptionsBuilder::addMsvcExceptions()
+{
+    if (!m_clStyle)
+        return;
+    if (Utils::anyOf(m_projectPart.toolChainMacros, [](const ProjectExplorer::Macro &macro) {
+        return macro.key == "_CPPUNWIND";
+    })) {
+        enableExceptions();
+    }
+}
+
 void CompilerOptionsBuilder::enableExceptions()
 {
     // With "--driver-mode=cl" exceptions are disabled (clang 8).
@@ -284,6 +296,17 @@ void CompilerOptionsBuilder::enableExceptions()
     add("-fexceptions");
 }
 
+void CompilerOptionsBuilder::insertWrappedQtHeaders()
+{
+    if (m_useTweakedHeaderPaths == UseTweakedHeaderPaths::Yes)
+        insertWrappedHeaders(wrappedQtHeadersIncludePath());
+}
+
+void CompilerOptionsBuilder::insertWrappedMingwHeaders()
+{
+    insertWrappedHeaders(wrappedMingwHeadersIncludePath());
+}
+
 static QString creatorResourcePath()
 {
 #ifndef UNIT_TESTS
@@ -293,19 +316,26 @@ static QString creatorResourcePath()
 #endif
 }
 
-void CompilerOptionsBuilder::insertWrappedQtHeaders()
+void CompilerOptionsBuilder::insertWrappedHeaders(const QStringList &relPaths)
 {
     if (m_useTweakedHeaderPaths == UseTweakedHeaderPaths::No)
         return;
+    if (relPaths.isEmpty())
+        return;
 
-    QStringList wrappedQtHeaders;
-    addWrappedQtHeadersIncludePath(wrappedQtHeaders);
+    QStringList args;
+    for (const QString &relPath : relPaths) {
+        static const QString baseDir = creatorResourcePath() + "/cplusplus";
+        const QString fullPath = baseDir + '/' + relPath;
+        QTC_ASSERT(QDir(fullPath).exists(), continue);
+        args << includeUserPathOption << QDir::toNativeSeparators(fullPath);
+    }
 
     const int index = m_options.indexOf(QRegularExpression("\\A-I.*\\z"));
     if (index < 0)
-        add(wrappedQtHeaders);
+        add(args);
     else
-        m_options = m_options.mid(0, index) + wrappedQtHeaders + m_options.mid(index);
+        m_options = m_options.mid(0, index) + args + m_options.mid(index);
 }
 
 void CompilerOptionsBuilder::addHeaderPathOptions()
@@ -313,7 +343,7 @@ void CompilerOptionsBuilder::addHeaderPathOptions()
     HeaderPathFilter filter{m_projectPart,
                             m_useTweakedHeaderPaths,
                             m_clangVersion,
-                            m_clangResourceDirectory};
+                            m_clangIncludeDirectory};
 
     filter.process();
 
@@ -325,7 +355,7 @@ void CompilerOptionsBuilder::addHeaderPathOptions()
     for (const HeaderPath &headerPath : filter.systemHeaderPaths)
         addIncludeDirOptionForPath(headerPath);
 
-    if (m_useTweakedHeaderPaths == UseTweakedHeaderPaths::Yes) {
+    if (m_useTweakedHeaderPaths != UseTweakedHeaderPaths::No) {
         QTC_CHECK(!m_clangVersion.isEmpty()
                   && "Clang resource directory is required with UseTweakedHeaderPaths::Yes.");
 
@@ -366,8 +396,11 @@ void CompilerOptionsBuilder::addProjectMacros()
 {
     static const int useMacros = qEnvironmentVariableIntValue("QTC_CLANG_USE_TOOLCHAIN_MACROS");
 
-    if (m_projectPart.toolchainType == BareMetal::Constants::IAREW_TOOLCHAIN_TYPEID || useMacros)
+    if (m_projectPart.toolchainType == ProjectExplorer::Constants::CUSTOM_TOOLCHAIN_TYPEID
+            || m_projectPart.toolchainType.name().contains("BareMetal")
+            || useMacros) {
         addMacros(m_projectPart.toolChainMacros);
+    }
 
     addMacros(m_projectPart.projectMacros);
 }
@@ -547,6 +580,7 @@ static QStringList languageFeatureMacros()
         "__cpp_binary_literals",
         "__cpp_capture_star_this",
         "__cpp_constexpr",
+        "__cpp_constexpr_in_decltype",
         "__cpp_decltype",
         "__cpp_decltype_auto",
         "__cpp_deduction_guides",
@@ -607,9 +641,9 @@ void CompilerOptionsBuilder::undefineCppLanguageFeatureMacrosForMsvc2015()
 void CompilerOptionsBuilder::addDefineFunctionMacrosMsvc()
 {
     if (m_projectPart.toolchainType == ProjectExplorer::Constants::MSVC_TOOLCHAIN_TYPEID) {
-        addMacros({{"__FUNCSIG__", "\"\""},
-                   {"__FUNCTION__", "\"\""},
-                   {"__FUNCDNAME__", "\"\""}});
+        addMacros({{"__FUNCSIG__", "\"void __cdecl someLegalAndLongishFunctionNameThatWorksAroundQTCREATORBUG-24580(void)\""},
+                   {"__FUNCTION__", "\"someLegalAndLongishFunctionNameThatWorksAroundQTCREATORBUG-24580\""},
+                   {"__FUNCDNAME__", "\"?someLegalAndLongishFunctionNameThatWorksAroundQTCREATORBUG-24580@@YAXXZ\""}});
     }
 }
 
@@ -685,19 +719,18 @@ bool CompilerOptionsBuilder::excludeDefineDirective(const ProjectExplorer::Macro
     return false;
 }
 
-void CompilerOptionsBuilder::addWrappedQtHeadersIncludePath(QStringList &list) const
+QStringList CompilerOptionsBuilder::wrappedQtHeadersIncludePath() const
 {
-    static const QString resourcePath = creatorResourcePath();
-    static QString wrappedQtHeadersPath = resourcePath + "/cplusplus/wrappedQtHeaders";
-    QTC_ASSERT(QDir(wrappedQtHeadersPath).exists(), return;);
+    if (m_projectPart.qtVersion == Utils::QtVersion::None)
+        return {};
+    return {"wrappedQtHeaders", "wrappedQtHeaders/QtCore"};
+}
 
-    if (m_projectPart.qtVersion != Utils::QtVersion::None) {
-        const QString wrappedQtCoreHeaderPath = wrappedQtHeadersPath + "/QtCore";
-        list.append({includeUserPathOption,
-                     QDir::toNativeSeparators(wrappedQtHeadersPath),
-                     includeUserPathOption,
-                     QDir::toNativeSeparators(wrappedQtCoreHeaderPath)});
-    }
+QStringList CompilerOptionsBuilder::wrappedMingwHeadersIncludePath() const
+{
+    if (m_projectPart.toolchainType != ProjectExplorer::Constants::MINGW_TOOLCHAIN_TYPEID)
+        return {};
+    return {"wrappedMingwHeaders"};
 }
 
 void CompilerOptionsBuilder::addProjectConfigFileInclude()
@@ -742,9 +775,9 @@ void CompilerOptionsBuilder::evaluateCompilerFlags()
 {
     static QStringList userBlackList = QString::fromLocal8Bit(
                                            qgetenv("QTC_CLANG_CMD_OPTIONS_BLACKLIST"))
-                                           .split(';', QString::SkipEmptyParts);
+                                           .split(';', Qt::SkipEmptyParts);
 
-    const Core::Id &toolChain = m_projectPart.toolchainType;
+    const Utils::Id &toolChain = m_projectPart.toolchainType;
     bool containsDriverMode = false;
     bool skipNext = false;
     const QStringList allFlags = m_projectPart.compilerFlags + m_projectPart.extraCodeModelFlags;

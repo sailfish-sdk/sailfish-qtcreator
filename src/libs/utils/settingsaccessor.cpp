@@ -31,7 +31,6 @@
 #include <QApplication>
 #include <QDebug>
 #include <QDir>
-#include <QRegExp>
 
 namespace {
 
@@ -406,7 +405,7 @@ QString VersionUpgrader::backupExtension() const
  */
 QVariantMap VersionUpgrader::renameKeys(const QList<Change> &changes, QVariantMap map) const
 {
-    foreach (const Change &change, changes) {
+    for (const Change &change : changes) {
         QVariantMap::iterator oldSetting = map.find(change.first);
         if (oldSetting != map.end()) {
             map.insert(change.second, oldSetting.value());

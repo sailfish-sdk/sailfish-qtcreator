@@ -81,7 +81,7 @@ QByteArray CodeStylePoolPrivate::generateUniqueId(const QByteArray &id) const
     }
 
     const QByteArray baseName = id.left(idx);
-    QByteArray newName = baseName.isEmpty() ? "codestyle" : baseName;
+    QByteArray newName = baseName.isEmpty() ? QByteArray("codestyle") : baseName;
     int i = 2;
     while (m_idToCodeStyle.contains(newName))
         newName = baseName + QByteArray::number(i++);
@@ -289,6 +289,6 @@ void CodeStylePool::exportCodeStyle(const Utils::FilePath &fileName, ICodeStyleP
     tmp.insert(QLatin1String(displayNameKey), codeStyle->displayName());
     tmp.insert(QLatin1String(codeStyleDataKey), map);
     Utils::PersistentSettingsWriter writer(fileName, QLatin1String(codeStyleDocKey));
-    writer.save(tmp, Core::ICore::mainWindow());
+    writer.save(tmp, Core::ICore::dialogParent());
 }
 

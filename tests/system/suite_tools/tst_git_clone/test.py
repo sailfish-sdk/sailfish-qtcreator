@@ -80,6 +80,14 @@ def verifyFiles(targetDir):
         test.verify(os.path.exists(os.path.join(targetDir, cloneDir, file)),
                     "Verify the existence of %s" % file)
 
+
+def closeProposalPopup():
+    page = waitForObject(":JsonWizard_ProjectExplorer::JsonFieldPage")
+    checkbox = waitForObjectExists(":Recursive_QCheckBox")
+    mouseClick(page, page.width / 2, (page.height + checkbox.y + checkbox.height) / 2,
+               0, Qt.LeftButton)
+
+
 def main():
     startQC()
     if not startedWithoutPluginError():
@@ -90,6 +98,7 @@ def main():
         __createProjectOrFileSelectType__("  Import Project", "Git Clone")
         replaceEditorContent(waitForObject("{name='Repo' type='QLineEdit' visible='1'}"),
                              cloneUrl)
+        closeProposalPopup()
         targetDir = tempDir()
         replaceEditorContent(waitForObject(":Working Copy_Utils::BaseValidatingLineEdit"),
                              targetDir)
@@ -130,5 +139,5 @@ def main():
                     test.fail("The checked out project was not being opened.",
                               str(waitForObject(":Cannot Open Project_QTextEdit").plainText))
                     clickButton(waitForObject(":Cannot Open Project.OK_QPushButton"))
-        verifyVersionControlView(targetDir, button == "Cancel immediately")
+        verifyVersionControlView(targetDir, button != ":Git Repository Clone.Finish_QPushButton")
     invokeMenuItem("File", "Exit")

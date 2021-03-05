@@ -26,18 +26,20 @@
 #include "profilereader.h"
 
 #include <coreplugin/icore.h>
+#include <projectexplorer/taskhub.h>
 
 #include <QCoreApplication>
 #include <QDebug>
 
+using namespace ProjectExplorer;
 using namespace QtSupport;
 
 static QString format(const QString &fileName, int lineNo, const QString &msg)
 {
     if (lineNo > 0)
         return QString::fromLatin1("%1(%2): %3").arg(fileName, QString::number(lineNo), msg);
-    else if (lineNo)
-        return QString::fromLatin1("%1: %3").arg(fileName, msg);
+    else if (!fileName.isEmpty())
+        return QString::fromLatin1("%1: %2").arg(fileName, msg);
     else
         return msg;
 }
@@ -53,7 +55,7 @@ ProMessageHandler::ProMessageHandler(bool verbose, bool exact)
 ProMessageHandler::~ProMessageHandler()
 {
     if (!m_messages.isEmpty())
-        Core::MessageManager::writeMessages(m_messages);
+        Core::MessageManager::writeMessages(m_messages, Core::MessageManager::Flash);
 }
 
 
@@ -61,14 +63,26 @@ ProMessageHandler::~ProMessageHandler()
 void ProMessageHandler::message(int type, const QString &msg, const QString &fileName, int lineNo)
 {
     if ((type & CategoryMask) == ErrorMessage && ((type & SourceMask) == SourceParser || m_verbose)) {
-        appendMessage(format(fileName, lineNo, msg));
+        // parse error in qmake files
+        if (m_exact) {
+            TaskHub::addTask(
+                BuildSystemTask(Task::Error, msg, Utils::FilePath::fromString(fileName), lineNo));
+        } else {
+            appendMessage(format(fileName, lineNo, msg));
+        }
     }
 }
 
 void ProMessageHandler::fileMessage(int type, const QString &msg)
 {
-    Q_UNUSED(type)
-    if (m_verbose)
+    // message(), warning() or error() calls in qmake files
+    if (!m_verbose)
+        return;
+    if (m_exact && type == QMakeHandler::ErrorMessage)
+        TaskHub::addTask(BuildSystemTask(Task::Error, msg));
+    else if (m_exact && type == QMakeHandler::WarningMessage)
+        TaskHub::addTask(BuildSystemTask(Task::Warning, msg));
+    else
         appendMessage(msg);
 }
 

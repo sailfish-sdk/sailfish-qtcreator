@@ -27,21 +27,24 @@
 
 #include "winrtconstants.h"
 
-#include <projectexplorer/project.h>
-#include <projectexplorer/target.h>
+#include <projectexplorer/abstractprocessstep.h>
 #include <projectexplorer/buildconfiguration.h>
 #include <projectexplorer/buildtargetinfo.h>
 #include <projectexplorer/deployablefile.h>
 #include <projectexplorer/deploymentdata.h>
 #include <projectexplorer/processparameters.h>
 #include <projectexplorer/projectexplorerconstants.h>
+#include <projectexplorer/project.h>
 #include <projectexplorer/runconfiguration.h>
+#include <projectexplorer/target.h>
 
 #include <qtsupport/qtkitinformation.h>
 
+#include <utils/aspects.h>
 #include <utils/qtcassert.h>
 #include <utils/qtcprocess.h>
 #include <utils/fancylineedit.h>
+#include <utils/layoutbuilder.h>
 
 #include <QLabel>
 #include <QLayout>
@@ -57,11 +60,62 @@ namespace Internal {
 const char ARGUMENTS_KEY[] = "WinRt.BuildStep.Deploy.Arguments";
 const char DEFAULTARGUMENTS_KEY[] = "WinRt.BuildStep.Deploy.DefaultArguments";
 
-WinRtArgumentsAspect::WinRtArgumentsAspect() = default;
+class WinRtArgumentsAspect final : public BaseAspect
+{
+    Q_DECLARE_TR_FUNCTIONS(WinRt::Internal::WinRtArgumentsAspect)
 
-WinRtArgumentsAspect::~WinRtArgumentsAspect() = default;
+public:
+    WinRtArgumentsAspect() = default;
 
-void WinRtArgumentsAspect::addToLayout(ProjectExplorer::LayoutBuilder &builder)
+    void addToLayout(LayoutBuilder &builder) final;
+
+    void fromMap(const QVariantMap &map) final;
+    void toMap(QVariantMap &map) const final;
+
+    void setValue(const QString &value);
+    QString value() const { return m_value; }
+
+    void setDefaultValue(const QString &value) { m_defaultValue = value; }
+    QString defaultValue() const { return m_defaultValue; }
+
+    void restoreDefaultValue();
+
+private:
+    FancyLineEdit *m_lineEdit = nullptr;
+    QString m_value;
+    QString m_defaultValue;
+};
+
+class WinRtPackageDeploymentStep final : public AbstractProcessStep
+{
+    Q_DECLARE_TR_FUNCTIONS(WinRt::Internal::WinRtPackageDeploymentStep)
+
+public:
+    WinRtPackageDeploymentStep(BuildStepList *bsl, Utils::Id id);
+
+    QString defaultWinDeployQtArguments() const;
+
+    void raiseError(const QString &errorMessage);
+    void raiseWarning(const QString &warningMessage);
+
+private:
+    bool init() override;
+    void doRun() override;
+    bool processSucceeded(int exitCode, QProcess::ExitStatus status) override;
+    void stdOutput(const QString &line) override;
+
+    bool parseIconsAndExecutableFromManifest(QString manifestFileName, QStringList *items, QString *executable);
+
+    WinRtArgumentsAspect *m_argsAspect = nullptr;
+    QString m_targetFilePath;
+    QString m_targetDirPath;
+    QString m_executablePathInManifest;
+    QString m_mappingFileContent;
+    QString m_manifestFileName;
+    bool m_createMappingFile = false;
+};
+
+void WinRtArgumentsAspect::addToLayout(LayoutBuilder &builder)
 {
     QTC_CHECK(!m_lineEdit);
     auto label = new QLabel(tr("Arguments:"));
@@ -109,21 +163,6 @@ void WinRtArgumentsAspect::setValue(const QString &value)
     emit changed();
 }
 
-QString WinRtArgumentsAspect::value() const
-{
-    return m_value;
-}
-
-void WinRtArgumentsAspect::setDefaultValue(const QString &value)
-{
-    m_defaultValue = value;
-}
-
-QString WinRtArgumentsAspect::defaultValue() const
-{
-    return m_defaultValue;
-}
-
 void WinRtArgumentsAspect::restoreDefaultValue()
 {
     if (m_defaultValue == m_value)
@@ -132,7 +171,7 @@ void WinRtArgumentsAspect::restoreDefaultValue()
     setValue(m_defaultValue);
 }
 
-WinRtPackageDeploymentStep::WinRtPackageDeploymentStep(BuildStepList *bsl, Core::Id id)
+WinRtPackageDeploymentStep::WinRtPackageDeploymentStep(BuildStepList *bsl, Utils::Id id)
     : AbstractProcessStep(bsl, id)
 {
     setDisplayName(tr("Run windeployqt"));
@@ -144,6 +183,9 @@ WinRtPackageDeploymentStep::WinRtPackageDeploymentStep(BuildStepList *bsl, Core:
 
 bool WinRtPackageDeploymentStep::init()
 {
+    if (!AbstractProcessStep::init())
+        return false;
+
     RunConfiguration *rc = target()->activeRunConfiguration();
     QTC_ASSERT(rc, return false);
 
@@ -165,7 +207,7 @@ bool WinRtPackageDeploymentStep::init()
     if (!m_targetDirPath.endsWith(QLatin1Char('/')))
         m_targetDirPath += QLatin1Char('/');
 
-    const QtSupport::BaseQtVersion *qt = QtSupport::QtKitAspect::qtVersion(target()->kit());
+    const QtSupport::BaseQtVersion *qt = QtSupport::QtKitAspect::qtVersion(kit());
     if (!qt)
         return false;
 
@@ -187,14 +229,16 @@ bool WinRtPackageDeploymentStep::init()
         return false;
     }
     params->setCommandLine(windeployqt);
-    params->setEnvironment(buildConfiguration()->environment());
+    params->setEnvironment(target()->activeBuildConfiguration()
+                           ? target()->activeBuildConfiguration()->environment()
+                           : Environment::systemEnvironment());
 
-    return AbstractProcessStep::init();
+    return true;
 }
 
 void WinRtPackageDeploymentStep::doRun()
 {
-    const QtSupport::BaseQtVersion *qt = QtSupport::QtKitAspect::qtVersion(target()->kit());
+    const QtSupport::BaseQtVersion *qt = QtSupport::QtKitAspect::qtVersion(kit());
     if (!qt)
         return;
 
@@ -309,14 +353,14 @@ QString WinRtPackageDeploymentStep::defaultWinDeployQtArguments() const
 
 void WinRtPackageDeploymentStep::raiseError(const QString &errorMessage)
 {
-    emit addTask(DeploymentTask(Task::Error, errorMessage), 1);
     emit addOutput(errorMessage, BuildStep::OutputFormat::ErrorMessage);
+    emit addTask(DeploymentTask(Task::Error, errorMessage), 1);
 }
 
 void WinRtPackageDeploymentStep::raiseWarning(const QString &warningMessage)
 {
-    emit addTask(DeploymentTask(Task::Warning, warningMessage), 1);
     emit addOutput(warningMessage, BuildStep::OutputFormat::NormalMessage);
+    emit addTask(DeploymentTask(Task::Warning, warningMessage), 1);
 }
 
 bool WinRtPackageDeploymentStep::parseIconsAndExecutableFromManifest(QString manifestFileName, QStringList *icons, QString *executable)
@@ -344,6 +388,20 @@ bool WinRtPackageDeploymentStep::parseIconsAndExecutableFromManifest(QString man
     *executable = match.captured(1);
 
     return true;
+}
+
+// WinRtDeployStepFactory
+
+WinRtDeployStepFactory::WinRtDeployStepFactory()
+{
+    registerStep<WinRtPackageDeploymentStep>(Constants::WINRT_BUILD_STEP_DEPLOY);
+    setDisplayName(QCoreApplication::translate("WinRt::Internal::WinRtDeployStepFactory", "Run windeployqt"));
+    setFlags(BuildStepInfo::Unclonable);
+    setSupportedStepList(ProjectExplorer::Constants::BUILDSTEPS_DEPLOY);
+    setSupportedDeviceTypes({Constants::WINRT_DEVICE_TYPE_LOCAL,
+                             Constants::WINRT_DEVICE_TYPE_EMULATOR,
+                             Constants::WINRT_DEVICE_TYPE_PHONE});
+    setRepeatable(false);
 }
 
 } // namespace Internal

@@ -27,13 +27,15 @@
 
 #include "detail/treemodel.h"
 
+#include <qmltimelinekeyframegroup.h>
+
 #include <vector>
 
 QT_BEGIN_NAMESPACE
 class QPointF;
 QT_END_NAMESPACE
 
-namespace DesignTools {
+namespace QmlDesigner {
 
 struct CurveEditorStyle;
 
@@ -46,44 +48,53 @@ class CurveEditorModel : public TreeModel
     Q_OBJECT
 
 signals:
-    void currentFrameChanged(int frame);
+    void commitCurrentFrame(int frame);
 
-    void startFrameChanged(int frame);
+    void commitStartFrame(int frame);
 
-    void endFrameChanged(int frame);
+    void commitEndFrame(int frame);
 
-    void updateStartFrame(int frame);
-
-    void updateEndFrame(int frame);
-
-    void curveChanged(PropertyTreeItem *item);
+    void curveChanged(TreeItem *item);
 
 public:
-    virtual double minimumTime() const = 0;
-
-    virtual double maximumTime() const = 0;
-
-    virtual CurveEditorStyle style() const = 0;
-
-public:
-    CurveEditorModel(double minTime, double maxTime, QObject *parent = nullptr);
+    CurveEditorModel(QObject *parent = nullptr);
 
     ~CurveEditorModel() override;
 
+    double minimumTime() const;
+
+    double maximumTime() const;
+
+    CurveEditorStyle style() const;
+
+public:
+    void setTimeline(const QmlDesigner::QmlTimeline &timeline);
+
     void setCurrentFrame(int frame);
 
-    void setMinimumTime(double time, bool internal);
+    void setMinimumTime(double time);
 
-    void setMaximumTime(double time, bool internal);
+    void setMaximumTime(double time);
 
     void setCurve(unsigned int id, const AnimationCurve &curve);
 
+    void setLocked(TreeItem *item, bool val);
+
+    void setPinned(TreeItem *item, bool val);
+
     void reset(const std::vector<TreeItem *> &items);
 
-protected:
+private:
+    TreeItem *createTopLevelItem(const QmlDesigner::QmlTimeline &timeline,
+                                 const QmlDesigner::ModelNode &node);
+
+    AnimationCurve createAnimationCurve(const QmlDesigner::QmlTimelineKeyframeGroup &group);
+
+    AnimationCurve createDoubleCurve(const QmlDesigner::QmlTimelineKeyframeGroup &group);
+
     double m_minTime = 0.;
 
     double m_maxTime = 0.;
 };
 
-} // End namespace DesignTools.
+} // End namespace QmlDesigner.

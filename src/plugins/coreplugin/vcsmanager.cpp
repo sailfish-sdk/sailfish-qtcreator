@@ -28,17 +28,17 @@
 #include "icore.h"
 #include "documentmanager.h"
 #include "idocument.h"
-#include "infobar.h"
 
 #include <coreplugin/dialogs/addtovcsdialog.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/editormanager/ieditor.h>
 
-#include <vcsbase/vcsbaseconstants.h>
 #include <extensionsystem/pluginmanager.h>
 #include <utils/algorithm.h>
+#include <utils/infobar.h>
 #include <utils/optional.h>
 #include <utils/qtcassert.h>
+#include <vcsbase/vcsbaseconstants.h>
 
 #include <QDir>
 #include <QString>
@@ -47,6 +47,8 @@
 
 #include <QFileInfo>
 #include <QMessageBox>
+
+using namespace Utils;
 
 namespace Core {
 
@@ -296,12 +298,12 @@ IVersionControl* VcsManager::findVersionControlForDirectory(const QString &input
             }
             return versionControl;
         } else {
-            InfoBar *infoBar = curDocument ? curDocument->infoBar() : nullptr;
+            Utils::InfoBar *infoBar = curDocument ? curDocument->infoBar() : nullptr;
             if (infoBar && infoBar->canInfoBeAdded(vcsWarning)) {
-                InfoBarEntry info(vcsWarning,
-                                  tr("%1 repository was detected but %1 is not configured.")
-                                  .arg(versionControl->displayName()),
-                                  InfoBarEntry::GlobalSuppression::Enabled);
+                Utils::InfoBarEntry info(vcsWarning,
+                                         tr("%1 repository was detected but %1 is not configured.")
+                                             .arg(versionControl->displayName()),
+                                         Utils::InfoBarEntry::GlobalSuppression::Enabled);
                 d->m_unconfiguredVcs = versionControl;
                 info.setCustomButtonInfo(ICore::msgShowOptionsDialog(), []() {
                     QTC_ASSERT(d->m_unconfiguredVcs, return);
@@ -333,26 +335,60 @@ QStringList VcsManager::repositories(const IVersionControl *vc)
     return result;
 }
 
-bool VcsManager::promptToDelete(const QString &fileName)
+bool VcsManager::promptToDelete(IVersionControl *versionControl, const QString &fileName)
 {
-    if (IVersionControl *vc = findVersionControlForDirectory(QFileInfo(fileName).absolutePath()))
-        return promptToDelete(vc, fileName);
-    return true;
+    return promptToDelete(versionControl, {Utils::FilePath::fromString(fileName)}).isEmpty();
 }
 
-bool VcsManager::promptToDelete(IVersionControl *vc, const QString &fileName)
+FilePaths VcsManager::promptToDelete(const FilePaths &filePaths)
 {
-    QTC_ASSERT(vc, return true);
+    // Categorize files by their parent directory, so we won't call
+    // findVersionControlForDirectory() more often than necessary.
+    QMap<FilePath, FilePaths> filesByParentDir;
+    for (const FilePath &fp : filePaths) {
+        filesByParentDir[FilePath::fromString(QDir::cleanPath(fp.toFileInfo().absolutePath()))]
+                .append(fp);
+    }
+
+    // Categorize by version control system.
+    QHash<IVersionControl *, FilePaths> filesByVersionControl;
+    for (auto it = filesByParentDir.cbegin(); it != filesByParentDir.cend(); ++it) {
+        IVersionControl * const vc = findVersionControlForDirectory(it.key().toString());
+        if (vc)
+            filesByVersionControl[vc] << it.value();
+    }
+
+    // Remove the files.
+    FilePaths failedFiles;
+    for (auto it = filesByVersionControl.cbegin(); it != filesByVersionControl.cend(); ++it)
+        failedFiles << promptToDelete(it.key(), it.value());
+
+    return failedFiles;
+}
+
+FilePaths VcsManager::promptToDelete(IVersionControl *vc, const FilePaths &filePaths)
+{
+    QTC_ASSERT(vc, return {});
     if (!vc->supportsOperation(IVersionControl::DeleteOperation))
-        return true;
+        return {};
+
+    const QString fileListForUi = "<ul><li>" + transform(filePaths, [](const FilePath &fp) {
+        return fp.toUserOutput();
+    }).join("</li><li>") + "</li></ul>";
     const QString title = tr("Version Control");
-    const QString msg = tr("Would you like to remove this file from the version control system (%1)?\n"
-                           "Note: This might remove the local file.").arg(vc->displayName());
+    const QString msg = tr("Remove the following files from from the version control system (%2)?"
+                           "%1Note: This might remove the local file.").arg(fileListForUi, vc->displayName());
     const QMessageBox::StandardButton button =
         QMessageBox::question(ICore::dialogParent(), title, msg, QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
     if (button != QMessageBox::Yes)
-        return true;
-    return vc->vcsDelete(fileName);
+        return {};
+
+    FilePaths failedFiles;
+    for (const FilePath &fp : filePaths) {
+        if (!vc->vcsDelete(fp.toString()))
+            failedFiles << fp;
+    }
+    return failedFiles;
 }
 
 QString VcsManager::msgAddToVcsTitle()
@@ -400,21 +436,22 @@ void VcsManager::promptToAdd(const QString &directory, const QStringList &fileNa
     if (!vc || !vc->supportsOperation(IVersionControl::AddOperation))
         return;
 
-    const QStringList unmanagedFiles = vc->unmanagedFiles(directory, fileNames);
+    const QStringList unmanagedFiles = vc->unmanagedFiles(fileNames);
     if (unmanagedFiles.isEmpty())
         return;
 
-    Internal::AddToVcsDialog dlg(ICore::mainWindow(), VcsManager::msgAddToVcsTitle(),
+    Internal::AddToVcsDialog dlg(ICore::dialogParent(), VcsManager::msgAddToVcsTitle(),
                                  unmanagedFiles, vc->displayName());
     if (dlg.exec() == QDialog::Accepted) {
         QStringList notAddedToVc;
         foreach (const QString &file, unmanagedFiles) {
-            if (!vc->vcsAdd(file))
+            if (!vc->vcsAdd(QDir(directory).filePath(file)))
                 notAddedToVc << file;
         }
 
         if (!notAddedToVc.isEmpty()) {
-            QMessageBox::warning(ICore::mainWindow(), VcsManager::msgAddToVcsFailedTitle(),
+            QMessageBox::warning(ICore::dialogParent(),
+                                 VcsManager::msgAddToVcsFailedTitle(),
                                  VcsManager::msgToAddToVcsFailed(notAddedToVc, vc));
         }
     }

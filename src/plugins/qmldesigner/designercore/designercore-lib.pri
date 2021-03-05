@@ -7,13 +7,14 @@ DEFINES += DESIGNER_CORE_LIBRARY
 INCLUDEPATH += $$PWD \
     $$PWD/include
 
-include (instances/instances.pri)
+include (instances/instances-lib.pri)
 include (../../../../share/qtcreator/qml/qmlpuppet/interfaces/interfaces.pri)
 include (../../../../share/qtcreator/qml/qmlpuppet/commands/commands.pri)
 include (../../../../share/qtcreator/qml/qmlpuppet/container/container.pri)
 include (../../../../share/qtcreator/qml/qmlpuppet/types/types.pri)
 
 SOURCES += $$PWD/model/abstractview.cpp \
+    $$PWD/imagecache/imagecachecollector.cpp \
     $$PWD/model/rewriterview.cpp \
     $$PWD/model/documentmessage.cpp \
     $$PWD/metainfo/metainfo.cpp \
@@ -68,6 +69,7 @@ SOURCES += $$PWD/model/abstractview.cpp \
     $$PWD/model/qmlmodelnodefacade.cpp \
     $$PWD/model/qmlobjectnode.cpp \
     $$PWD/model/qmlanchors.cpp \
+    $$PWD/model/qmlconnections.cpp \
     $$PWD/rewritertransaction.cpp \
     $$PWD/model/rewriteaction.cpp \
     $$PWD/model/modelnodepositionstorage.cpp \
@@ -83,9 +85,16 @@ SOURCES += $$PWD/model/abstractview.cpp \
     $$PWD/instances/puppetdialog.cpp \
     $$PWD/model/qmltimeline.cpp \
     $$PWD/model/qmltimelinekeyframegroup.cpp \
-    $$PWD/model/annotation.cpp
+    $$PWD/model/annotation.cpp \
+    $$PWD/model/stylesheetmerger.cpp \
+    $$PWD/imagecache/imagecache.cpp \
+    $$PWD/imagecache/imagecacheconnectionmanager.cpp \
+    $$PWD/imagecache/imagecachegenerator.cpp \
+    $$PWD/imagecache/timestampprovider.cpp
+
 
 HEADERS += $$PWD/include/qmldesignercorelib_global.h \
+    $$PWD/imagecache/imagecachecollector.h \
     $$PWD/include/abstractview.h \
     $$PWD/include/nodeinstanceview.h \
     $$PWD/include/rewriterview.h \
@@ -143,6 +152,7 @@ HEADERS += $$PWD/include/qmldesignercorelib_global.h \
     $$PWD/include/forwardview.h \
     $$PWD/include/qmlobjectnode.h \
     $$PWD/include/qmlanchors.h \
+    $$PWD/include/qmlconnections.h \
     $$PWD/rewritertransaction.h \
     $$PWD/model/rewriteaction.h \
     $$PWD/include/modelnodepositionstorage.h \
@@ -160,7 +170,18 @@ HEADERS += $$PWD/include/qmldesignercorelib_global.h \
     $$PWD/instances/puppetdialog.h \
     $$PWD/include/qmltimeline.h \
     $$PWD/include/qmltimelinekeyframegroup.h \
-    $$PWD/include/annotation.h
+    $$PWD/include/annotation.h \
+    $$PWD/include/stylesheetmerger.h \
+    $$PWD/include/imagecache.h \
+    $$PWD/imagecache/imagecachecollectorinterface.h \
+    $$PWD/imagecache/imagecacheconnectionmanager.h \
+    $$PWD/imagecache/imagecachegeneratorinterface.h \
+    $$PWD/imagecache/imagecachestorageinterface.h \
+    $$PWD/imagecache/imagecachegenerator.h \
+    $$PWD/imagecache/imagecachestorage.h \
+    $$PWD/imagecache/timestampprovider.h   \
+    $$PWD/imagecache/timestampproviderinterface.h
+
 
 FORMS += \
     $$PWD/instances/puppetdialog.ui

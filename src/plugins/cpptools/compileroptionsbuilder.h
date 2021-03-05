@@ -33,7 +33,7 @@ namespace CppTools {
 
 enum class UsePrecompiledHeaders : char { Yes, No };
 enum class UseSystemHeader : char { Yes, No };
-enum class UseTweakedHeaderPaths : char { Yes, No };
+enum class UseTweakedHeaderPaths : char { Yes, Tools, No };
 enum class UseToolchainMacros : char { Yes, No };
 enum class UseLanguageDefines : char { Yes, No };
 enum class UseBuildSystemWarnings : char { Yes, No };
@@ -45,14 +45,13 @@ CPPTOOLS_EXPORT QStringList createLanguageOptionGcc(ProjectFile::Kind fileKind, 
 class CPPTOOLS_EXPORT CompilerOptionsBuilder
 {
 public:
-    CompilerOptionsBuilder(
-        const ProjectPart &projectPart,
+    CompilerOptionsBuilder(const ProjectPart &projectPart,
         UseSystemHeader useSystemHeader = UseSystemHeader::No,
         UseTweakedHeaderPaths useTweakedHeaderPaths = UseTweakedHeaderPaths::No,
         UseLanguageDefines useLanguageDefines = UseLanguageDefines::No,
         UseBuildSystemWarnings useBuildSystemWarnings = UseBuildSystemWarnings::No,
         const QString &clangVersion = QString(),
-        const QString &clangResourceDirectory = QString());
+        const QString &clangIncludeDirectory = QString());
 
     QStringList build(ProjectFile::Kind fileKind, UsePrecompiledHeaders usePrecompiledHeaders);
     QStringList options() const { return m_options; }
@@ -69,8 +68,10 @@ public:
     void addExtraCodeModelFlags();
     void addPicIfCompilerFlagsContainsIt();
     void addCompilerFlags();
+    void addMsvcExceptions();
     void enableExceptions();
     void insertWrappedQtHeaders();
+    void insertWrappedMingwHeaders();
     void addLanguageVersionAndExtensions();
     void updateFileLanguage(ProjectFile::Kind fileKind);
 
@@ -97,7 +98,9 @@ public:
 private:
     void addIncludeDirOptionForPath(const ProjectExplorer::HeaderPath &path);
     bool excludeDefineDirective(const ProjectExplorer::Macro &macro) const;
-    void addWrappedQtHeadersIncludePath(QStringList &list) const;
+    void insertWrappedHeaders(const QStringList &paths);
+    QStringList wrappedQtHeadersIncludePath() const;
+    QStringList wrappedMingwHeadersIncludePath() const;
     QByteArray msvcVersion() const;
 
 private:
@@ -109,7 +112,7 @@ private:
     const UseBuildSystemWarnings m_useBuildSystemWarnings;
 
     const QString m_clangVersion;
-    const QString m_clangResourceDirectory;
+    const QString m_clangIncludeDirectory;
 
     struct {
         QStringList flags;

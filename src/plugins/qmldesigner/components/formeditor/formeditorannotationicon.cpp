@@ -269,7 +269,7 @@ void FormEditorAnnotationIcon::createReader()
 
         for (const Comment &comment : m_annotation.comments()) {
             QGraphicsItem *commentBubble = createCommentBubble(commentRect, comment.title(),
-                                                               comment.author(), comment.text(),
+                                                               comment.author(), comment.deescapedText(),
                                                                comment.timestampStr(), this);
             comments.push_back(commentBubble);
         }
@@ -339,7 +339,7 @@ QGraphicsItem *FormEditorAnnotationIcon::createCommentBubble(QRectF rect, const 
     authorItem->update();
 
     QGraphicsTextItem *textItem = new QGraphicsTextItem(frameItem);
-    textItem->setPlainText(text);
+    textItem->setHtml(text);
     textItem->setDefaultTextColor(textColor);
     textItem->setTextWidth(rect.width());
     textItem->setPos(authorItem->x(), authorItem->boundingRect().height() + authorItem->y() + 5);
@@ -429,7 +429,7 @@ void FormEditorAnnotationIcon::createAnnotationEditor()
                                                     m_modelNode.customId(),
                                                     m_modelNode.annotation());
 
-    connect(m_annotationEditor, &AnnotationEditorDialog::accepted,
+    connect(m_annotationEditor, &AnnotationEditorDialog::acceptedDialog,
             this, &FormEditorAnnotationIcon::annotationDialogAccepted);
     connect(m_annotationEditor, &QDialog::rejected,
             this, &FormEditorAnnotationIcon::annotationDialogRejected);
@@ -444,14 +444,15 @@ void FormEditorAnnotationIcon::removeAnnotationDialog()
     if (!m_customId.isNull()) {
         dialogTitle = m_customId;
     }
-    QMessageBox *deleteDialog = new QMessageBox(Core::ICore::dialogParent());
+    QPointer<QMessageBox> deleteDialog = new QMessageBox(Core::ICore::dialogParent());
     deleteDialog->setWindowTitle(dialogTitle);
     deleteDialog->setText(tr("Delete this annotation?"));
     deleteDialog->setStandardButtons(QMessageBox::Yes | QMessageBox::No);
     deleteDialog->setDefaultButton(QMessageBox::Yes);
 
     int result = deleteDialog->exec();
-    if (deleteDialog) deleteDialog->deleteLater();
+    if (deleteDialog)
+        deleteDialog->deleteLater();
 
     if (result == QMessageBox::Yes) {
         m_modelNode.removeCustomId();

@@ -28,8 +28,8 @@
 
 #include <coreplugin/icontext.h>
 
-#include <QWidget>
 #include <QPointer>
+#include <QWidget>
 
 QT_BEGIN_NAMESPACE
 class QActionGroup;
@@ -53,6 +53,7 @@ public:
     FormEditorWidget(FormEditorView *view);
 
     ZoomAction *zoomAction() const;
+    QAction *zoomSelectionAction() const;
     QAction *showBoundingRectAction() const;
     QAction *snappingAction() const;
     QAction *snappingAndAnchoringAction() const;
@@ -69,6 +70,7 @@ public:
     void setRootItemRect(const QRectF &rect);
     QRectF rootItemRect() const;
 
+    void initialize();
     void updateActions();
 
     void resetView();
@@ -82,21 +84,22 @@ public:
     void showWarningMessageBox(const QList<DocumentMessage> &warnings);
 
     void exportAsImage(const QRectF &boundingRect);
+    QPicture renderToPicture() const;
 
     FormEditorGraphicsView *graphicsView() const;
 
 protected:
-    void wheelEvent(QWheelEvent *event) override;
     QActionGroup *toolActionGroup() const;
     DocumentWarningWidget *errorWidget();
+    void hideEvent(QHideEvent *event) override;
+    void showEvent(QShowEvent *event) override;
 
 private:
     void changeTransformTool(bool checked);
-    void setZoomLevel(double zoomLevel);
     void changeRootItemWidth(const QString &widthText);
     void changeRootItemHeight(const QString &heightText);
     void changeBackgound(const QColor &color);
-    void registerActionAsCommand(QAction *action, Core::Id id, const QKeySequence &keysequence);
+    void registerActionAsCommand(QAction *action, Utils::Id id, const QKeySequence &keysequence);
 
     QPointer<FormEditorView> m_formEditorView;
     QPointer<FormEditorGraphicsView> m_graphicsView;
@@ -112,6 +115,10 @@ private:
     QPointer<LineEditAction> m_rootHeightAction;
     QPointer<BackgroundAction> m_backgroundAction;
     QPointer<QAction> m_resetAction;
+    QPointer<QAction> m_zoomAllAction;
+    QPointer<QAction> m_zoomSelectionAction;
+    QPointer<QAction> m_zoomInAction;
+    QPointer<QAction> m_zoomOutAction;
     QPointer<DocumentWarningWidget> m_documentErrorWidget;
     Core::IContext *m_context = nullptr;
 };

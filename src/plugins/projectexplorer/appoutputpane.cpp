@@ -60,6 +60,7 @@
 #include <QSpinBox>
 #include <QTabBar>
 #include <QTabWidget>
+#include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -81,15 +82,6 @@ static QString msgAttachDebuggerTooltip(const QString &handleDescription = QStri
     return handleDescription.isEmpty() ?
            AppOutputPane::tr("Attach debugger to this process") :
            AppOutputPane::tr("Attach debugger to %1").arg(handleDescription);
-}
-
-static void replaceAllChildWidgets(QLayout *layout, const QList<QWidget *> &newChildren)
-{
-    while (QLayoutItem *child = layout->takeAt(0))
-        delete child;
-
-    for (QWidget *widget : newChildren)
-        layout->addWidget(widget);
 }
 
 namespace {
@@ -162,8 +154,10 @@ void TabWidget::slotContextMenuRequested(const QPoint &pos)
 AppOutputPane::RunControlTab::RunControlTab(RunControl *runControl, Core::OutputWindow *w) :
     runControl(runControl), window(w)
 {
-    if (runControl && w)
-        w->setFormatter(runControl->outputFormatter());
+    if (runControl && w) {
+        w->reset();
+        runControl->setupFormatter(w->outputFormatter());
+    }
 }
 
 AppOutputPane::AppOutputPane() :
@@ -210,9 +204,9 @@ AppOutputPane::AppOutputPane() :
     connect(m_attachButton, &QToolButton::clicked,
             this, &AppOutputPane::attachToRunControl);
 
-    connect(this, &Core::IOutputPane::zoomIn, this, &AppOutputPane::zoomIn);
-    connect(this, &Core::IOutputPane::zoomOut, this, &AppOutputPane::zoomOut);
-    connect(this, &IOutputPane::resetZoom, this, &AppOutputPane::resetZoom);
+    connect(this, &IOutputPane::zoomInRequested, this, &AppOutputPane::zoomIn);
+    connect(this, &IOutputPane::zoomOutRequested, this, &AppOutputPane::zoomOut);
+    connect(this, &IOutputPane::resetZoomRequested, this, &AppOutputPane::resetZoom);
 
     m_settingsButton->setToolTip(tr("Open Settings Page"));
     m_settingsButton->setIcon(Utils::Icons::SETTINGS_TOOLBAR.icon());
@@ -347,10 +341,6 @@ void AppOutputPane::clearContents()
         currentWindow->clear();
 }
 
-void AppOutputPane::visibilityChanged(bool /* b */)
-{
-}
-
 bool AppOutputPane::hasFocus() const
 {
     QWidget *widget = m_tabWidget->currentWidget();
@@ -413,7 +403,8 @@ void AppOutputPane::createNewOutputWindow(RunControl *rc)
         if (tab.runControl)
             tab.runControl->initiateFinish();
         tab.runControl = rc;
-        tab.window->setFormatter(rc->outputFormatter());
+        tab.window->reset();
+        rc->setupFormatter(tab.window->outputFormatter());
 
         handleOldOutput(tab.window);
 
@@ -427,7 +418,7 @@ void AppOutputPane::createNewOutputWindow(RunControl *rc)
     }
     // Create new
     static int counter = 0;
-    Core::Id contextId = Core::Id(C_APP_OUTPUT).withSuffix(counter++);
+    Utils::Id contextId = Utils::Id(C_APP_OUTPUT).withSuffix(counter++);
     Core::Context context(contextId);
     Core::OutputWindow *ow = new Core::OutputWindow(context, SETTINGS_KEY, m_tabWidget);
     ow->setWindowTitle(tr("Application Output Window"));
@@ -700,10 +691,6 @@ void AppOutputPane::enableButtons(const RunControl *rc)
             m_attachButton->setToolTip(msgAttachDebuggerTooltip());
         }
         setZoomButtonsEnabled(true);
-
-        replaceAllChildWidgets(m_formatterWidget->layout(), rc->outputFormatter() ?
-                                   rc->outputFormatter()->toolbarWidgets() :
-                                   QList<QWidget *>());
     } else {
         m_reRunButton->setEnabled(false);
         m_reRunButton->setIcon(Utils::Icons::RUN_SMALL_TOOLBAR.icon());
@@ -756,8 +743,12 @@ void AppOutputPane::slotRunControlFinished()
 {
     auto *rc = qobject_cast<RunControl *>(sender());
     QTimer::singleShot(0, this, [this, rc]() { slotRunControlFinished2(rc); });
-    if (rc->outputFormatter())
-        rc->outputFormatter()->flush();
+    for (const RunControlTab &t : m_runControlTabs) {
+        if (t.runControl == rc) {
+            t.window->flush();
+            break;
+        }
+    }
 }
 
 void AppOutputPane::slotRunControlFinished2(RunControl *sender)

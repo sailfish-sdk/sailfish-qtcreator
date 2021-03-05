@@ -27,7 +27,7 @@
 
 #include <texteditor/syntaxhighlighter.h>
 
-#include <QRegExp>
+#include <QRegularExpression>
 
 namespace Git {
 namespace Internal {
@@ -42,6 +42,11 @@ enum Format {
     Format_Squash,
     Format_Fixup,
     Format_Exec,
+    Format_Break,
+    Format_Drop,
+    Format_Label,
+    Format_Reset,
+    Format_Merge,
     Format_Count
 };
 
@@ -56,7 +61,7 @@ public:
 
 private:
     enum State { None = -1, Header, Other };
-    QRegExp m_keywordPattern;
+    const QRegularExpression m_keywordPattern;
     QChar m_hashChar;
 };
 
@@ -72,12 +77,12 @@ private:
     class RebaseAction
     {
     public:
-        mutable QRegExp exp;
+        QRegularExpression exp;
         Format formatCategory;
         RebaseAction(const QString &regexp, const Format formatCategory);
     };
     const QChar m_hashChar;
-    QRegExp m_changeNumberPattern;
+    const QRegularExpression m_changeNumberPattern;
     QList<RebaseAction> m_actions;
 };
 

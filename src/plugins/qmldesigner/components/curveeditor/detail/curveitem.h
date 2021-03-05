@@ -35,7 +35,7 @@
 #include <string>
 #include <QGraphicsObject>
 
-namespace DesignTools {
+namespace QmlDesigner {
 
 class AnimationCurve;
 class KeyframeItem;
@@ -79,9 +79,17 @@ public:
 
     bool hasSelectedKeyframe() const;
 
+    bool hasEditableSegment(double time) const;
+
+    bool isFirst(const KeyframeItem *key) const;
+
+    bool isLast(const KeyframeItem *key) const;
+
+    int indexOf(const KeyframeItem *key) const;
+
     unsigned int id() const;
 
-    ValueType valueType() const;
+    PropertyTreeItem::ValueType valueType() const;
 
     PropertyTreeItem::Component component() const;
 
@@ -97,13 +105,15 @@ public:
 
     QVector<HandleItem *> handles() const;
 
+    CurveSegment segment(const KeyframeItem *keyframe, HandleItem::Slot slot) const;
+
     void restore();
 
     void setDirty(bool dirty);
 
     void setHandleVisibility(bool visible);
 
-    void setValueType(ValueType type);
+    void setValueType(PropertyTreeItem::ValueType type);
 
     void setComponent(PropertyTreeItem::Component comp);
 
@@ -130,7 +140,7 @@ private:
 
     CurveItemStyleOption m_style;
 
-    ValueType m_type;
+    PropertyTreeItem::ValueType m_type;
 
     PropertyTreeItem::Component m_component;
 
@@ -141,4 +151,4 @@ private:
     bool m_itemDirty;
 };
 
-} // End namespace DesignTools.
+} // End namespace QmlDesigner.

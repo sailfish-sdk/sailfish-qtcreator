@@ -1,6 +1,15 @@
-project     = "$IDE_DISPLAY_NAME"
+project     = qtcreator
 description = "$IDE_DISPLAY_NAME Manual"
 url         = http://doc.qt.io/$IDE_ID
+
+#Words to ignore for auto-linking
+ignorewords += \
+    macOS \
+    WebChannel \
+    WebSocket \
+    WebSockets \
+    OpenGL \
+    MinGW
 
 headerdirs =
 sourcedirs = ../src \
@@ -23,7 +32,9 @@ imagedirs = ../images \
             ../../../src/plugins/qmldesigner/components/formeditor \
             ../../../src/plugins/qmldesigner/components/navigator \
             ../../../src/plugins/qmldesigner/components/timelineeditor/images \
+            ../../../src/plugins/qmldesigner/componentsplugin/images \
             ../../../src/plugins/qmldesigner/qmlpreviewplugin/images \
+            ../../../src/plugins/qmldesigner/qtquickplugin/images \
             ../../../src/plugins/scxmleditor/common/images \
             ../../../src/plugins/texteditor/images \
             ../../../src/plugins/valgrind/images \
@@ -32,8 +43,7 @@ imagedirs = ../images \
 exampledirs = ../examples
 examples.fileextensions += *.qml *.svg
 
-HTML.extraimages         = ../../config/images/commercial.png
-qhp.QtCreator.extraFiles = ../../config/images/commercial.png
+include(../../qtcreator/images/extraimages/qtcreator-extraimages.qdocconf)
 
 depends +=    qtandroidextras\
               qtwidgets \
@@ -57,7 +67,9 @@ depends +=    qtandroidextras\
               qtsensors \
               qttestlib \
               qtuitools \
-              qtxml
+              qtxml \
+              qtlocation \
+              qtvirtualkeyboard
 
 include(../../config/macros.qdocconf)
 include(../../config/qt-cpp-ignore.qdocconf)

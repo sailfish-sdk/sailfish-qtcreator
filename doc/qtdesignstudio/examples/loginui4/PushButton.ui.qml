@@ -1,10 +1,10 @@
 
 /****************************************************************************
 **
-** Copyright (C) 2019 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
-** This file is part of the examples of the Qt Toolkit.
+** This file is part of the examples of the Qt Design Studio.
 **
 ** $QT_BEGIN_LICENSE:BSD$
 ** Commercial License Usage
@@ -48,46 +48,51 @@
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
-import QtQuick 2.10
+import QtQuick 2.15
 import QtQuick.Templates 2.1 as T
 import loginui4 1.0
 
 T.Button {
     id: control
-
-    text: qsTr("MyButton")
+    width: 100
+    height: 40
 
     font: Constants.font
     implicitWidth: Math.max(
-                       background ? background.implicitWidth : 0,
-                       contentItem.implicitWidth + leftPadding + rightPadding)
+                       buttonBackground ? buttonBackground.implicitWidth : 0,
+                       textItem.implicitWidth + leftPadding + rightPadding)
     implicitHeight: Math.max(
-                        background ? background.implicitHeight : 0,
-                        contentItem.implicitHeight + topPadding + bottomPadding)
+                        buttonBackground ? buttonBackground.implicitHeight : 0,
+                        textItem.implicitHeight + topPadding + bottomPadding)
     leftPadding: 4
     rightPadding: 4
 
-    background: Rectangle {
-        id: buttonBackground
-        color: "#41cd52"
-        radius: 6
-        implicitWidth: 100
-        implicitHeight: 40
-        opacity: enabled ? 1 : 0.3
-        border.width: 1
-        border.color: "#21be2b"
-    }
+    text: "My Button"
 
-    contentItem: Text {
+    background: buttonBackground
+
+    contentItem: textItem
+    Text {
         id: textItem
         text: control.text
 
-        font: control.font
         opacity: enabled ? 1.0 : 0.3
-        color: "white"
+        color: "#020202"
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
+        font.bold: true
         elide: Text.ElideRight
+    }
+
+    Rectangle {
+        id: buttonBackground
+        implicitWidth: 100
+        implicitHeight: 40
+        opacity: enabled ? 1 : 0.3
+        border.color: "#41cd52"
+        border.width: 1
+        anchors.fill: parent
+        radius: 20
     }
 
     states: [
@@ -103,21 +108,13 @@ T.Button {
             when: control.down
             PropertyChanges {
                 target: textItem
-                color: "white"
+                color: "#41cd52"
             }
             PropertyChanges {
                 target: buttonBackground
-                color: Qt.darker("#41cd52", 1.2)
-                border.color: Qt.darker("#21be2b", 1.2)
+                color: "#ffffff"
+                border.color: "#41cd52"
             }
         }
     ]
 }
-
-
-
-
-/*##^## Designer {
-    D{i:0;autoSize:true;height:480;width:640}
-}
- ##^##*/

@@ -63,9 +63,11 @@ using namespace Core::Internal;
 using namespace Utils;
 
 /*!
-    \ingroup mainclasses
-    \inmodule QtCreator
     \class Core::ProgressManager
+    \inheaderfile coreplugin/progressmanager/progressmanager.h
+    \inmodule QtCreator
+    \ingroup mainclasses
+
     \brief The ProgressManager class is used to show a user interface
     for running tasks in Qt Creator.
 
@@ -210,13 +212,13 @@ using namespace Utils;
 */
 
 /*!
-    \fn void Core::ProgressManager::taskStarted(Core::Id type)
+    \fn void Core::ProgressManager::taskStarted(Utils::Id type)
 
     Sent whenever a task of a given \a type is started.
 */
 
 /*!
-    \fn void Core::ProgressManager::allTasksFinished(Core::Id type)
+    \fn void Core::ProgressManager::allTasksFinished(Utils::Id type)
 
     Sent when all tasks of a \a type have finished.
 */

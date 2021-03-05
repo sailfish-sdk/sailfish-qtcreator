@@ -41,7 +41,6 @@
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/editormanager/ieditor.h>
 #include <coreplugin/messagemanager.h>
-#include <cppeditor/cppeditorconstants.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectnodes.h>
 #include <projectexplorer/projecttree.h>
@@ -61,7 +60,6 @@
 
 #include <QDir>
 #include <QFileInfo>
-#include <QFutureWatcher>
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QProcess>
@@ -99,9 +97,9 @@ public:
 
     GeneralSettings generalSettings;
 
-    ArtisticStyle::ArtisticStyle artisticStyleBeautifier;
-    ClangFormat::ClangFormat clangFormatBeautifier;
-    Uncrustify::Uncrustify uncrustifyBeautifier;
+    ArtisticStyle artisticStyleBeautifier;
+    ClangFormat clangFormatBeautifier;
+    Uncrustify uncrustifyBeautifier;
 
     BeautifierAbstractTool *m_tools[3] {
         &artisticStyleBeautifier,
@@ -217,6 +215,12 @@ QString BeautifierPlugin::msgFormatAtCursor()
 {
     //: Menu entry
     return tr("&Format at Cursor");
+}
+
+QString BeautifierPlugin::msgFormatLines()
+{
+    //: Menu entry
+    return tr("Format &Line(s)");
 }
 
 QString BeautifierPlugin::msgDisableFormattingSelectedText()

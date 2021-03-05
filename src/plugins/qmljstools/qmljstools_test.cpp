@@ -45,7 +45,7 @@ void QmlJSToolsPlugin::test_basic()
 
     const QString qmlFilePath = Core::ICore::resourcePath() + QLatin1String("/qmldesigner/itemLibraryQmlSources/ItemDelegate.qml");
     modelManager->updateSourceFiles(QStringList(qmlFilePath), false);
-    modelManager->joinAllThreads();
+    modelManager->test_joinAllThreads();
 
     Snapshot snapshot = modelManager->snapshot();
     Document::Ptr doc = snapshot.document(qmlFilePath);
@@ -55,7 +55,7 @@ void QmlJSToolsPlugin::test_basic()
     QVERIFY(context);
 
     const CppComponentValue *rectangleValue = context->valueOwner()->cppQmlTypes().objectByQualifiedName(
-                QLatin1String("QtQuick"), QLatin1String("QDeclarativeRectangle"), LanguageUtils::ComponentVersion(2, 1));
+                QLatin1String("QtQuick"), QLatin1String("QDeclarativeRectangle"), LanguageUtils::ComponentVersion(2, 15));
     QVERIFY(rectangleValue);
     QVERIFY(!rectangleValue->isWritable(QLatin1String("border")));
     QVERIFY(rectangleValue->hasProperty(QLatin1String("border")));

@@ -46,6 +46,7 @@
 #include <utils/synchronousprocess.h>
 #include <utils/parameteraction.h>
 #include <utils/qtcassert.h>
+#include <utils/stringutils.h>
 
 #include <coreplugin/icore.h>
 #include <coreplugin/coreconstants.h>
@@ -55,7 +56,6 @@
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/actionmanager/command.h>
-#include <coreplugin/id.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/locator/commandlocator.h>
 #include <coreplugin/vcsmanager.h>
@@ -183,8 +183,7 @@ public:
     QStringList arguments() const override
     {
         QStringList args;
-        args = m_settings.stringValue(CvsSettings::diffOptionsKey).split(QLatin1Char(' '),
-                                                                         QString::SkipEmptyParts);
+        args = m_settings.stringValue(CvsSettings::diffOptionsKey).split(' ', SkipEmptyParts);
         args += VcsBaseEditorConfig::arguments();
         return args;
     }
@@ -214,13 +213,13 @@ public:
         return Utils::defaultExitCodeInterpreter;
     }
 
-    Core::Id vcsEditorKind(VcsCommandTag cmd) const override
+    Utils::Id vcsEditorKind(VcsCommandTag cmd) const override
     {
         switch (cmd) {
         case DiffCommand:
             return "CVS Diff Editor"; // TODO: replace by string from cvsconstants.h
         default:
-            return Core::Id();
+            return Utils::Id();
         }
     }
 };
@@ -235,7 +234,7 @@ public:
 
     // IVersionControl
     QString displayName() const final { return QLatin1String("cvs"); }
-    Core::Id id() const final;
+    Utils::Id id() const final;
 
     bool isVcsFileOrDirectory(const Utils::FilePath &fileName) const final;
 
@@ -250,7 +249,7 @@ public:
     bool vcsDelete(const QString &filename) final;
     bool vcsMove(const QString &, const QString &) final { return false; }
     bool vcsCreateRepository(const QString &directory) final;
-    bool vcsAnnotate(const QString &file, int line) final;
+    void vcsAnnotate(const QString &file, int line) final;
 
     QString vcsOpenText() const final;
 
@@ -271,6 +270,7 @@ public:
 
     void vcsAnnotate(const QString &workingDirectory, const QString &file,
                      const QString &revision, int lineNumber);
+    void vcsDescribe(const QString &source, const QString &changeNr) final;
 
 protected:
     void updateActions(ActionState) final;
@@ -304,7 +304,7 @@ private:
 
     bool isCommitEditorOpen() const;
     Core::IEditor *showOutputInEditor(const QString& title, const QString &output,
-                                      Core::Id id, const QString &source,
+                                      Utils::Id id, const QString &source,
                                       QTextCodec *codec);
 
     CvsResponse runCvs(const QString &workingDirectory,
@@ -318,7 +318,6 @@ private:
     bool describe(const QString &source, const QString &changeNr, QString *errorMessage);
     bool describe(const QString &toplevel, const QString &source, const QString &changeNr, QString *errorMessage);
     bool describe(const QString &repository, QList<CvsLogEntry> entries, QString *errorMessage);
-    void describeHelper(const QString &source, const QString &changeNr);
     void filelog(const QString &workingDir,
                  const QString &file = QString(),
                  bool enableAnnotationContextMenu = false);
@@ -379,31 +378,31 @@ public:
     VcsEditorFactory commandLogEditorFactory {
         &commandLogEditorParameters,
         [] { return new CvsEditorWidget; },
-        std::bind(&CvsPluginPrivate::describeHelper, this, _1, _2)
+        std::bind(&CvsPluginPrivate::vcsDescribe, this, _1, _2)
     };
 
     VcsEditorFactory logEditorFactory {
         &logEditorParameters,
         [] { return new CvsEditorWidget; },
-        std::bind(&CvsPluginPrivate::describeHelper, this, _1, _2)
+        std::bind(&CvsPluginPrivate::vcsDescribe, this, _1, _2)
     };
 
     VcsEditorFactory annotateEditorFactory {
         &annotateEditorParameters,
         [] { return new CvsEditorWidget; },
-        std::bind(&CvsPluginPrivate::describeHelper, this, _1, _2)
+        std::bind(&CvsPluginPrivate::vcsDescribe, this, _1, _2)
     };
 
     VcsEditorFactory diffEditorFactory {
         &diffEditorParameters,
         [] { return new CvsEditorWidget; },
-        std::bind(&CvsPluginPrivate::describeHelper, this, _1, _2)
+        std::bind(&CvsPluginPrivate::vcsDescribe, this, _1, _2)
     };
 };
 
-Core::Id CvsPluginPrivate::id() const
+Utils::Id CvsPluginPrivate::id() const
 {
-    return Core::Id(VcsBase::Constants::VCS_ID_CVS);
+    return Utils::Id(VcsBase::Constants::VCS_ID_CVS);
 }
 
 bool CvsPluginPrivate::isVcsFileOrDirectory(const Utils::FilePath &fileName) const
@@ -468,11 +467,10 @@ bool CvsPluginPrivate::vcsCreateRepository(const QString &)
     return false;
 }
 
-bool CvsPluginPrivate::vcsAnnotate(const QString &file, int line)
+void CvsPluginPrivate::vcsAnnotate(const QString &file, int line)
 {
     const QFileInfo fi(file);
     vcsAnnotate(fi.absolutePath(), fi.fileName(), QString(), line);
-    return true;
 }
 
 QString CvsPluginPrivate::vcsOpenText() const
@@ -741,7 +739,7 @@ CvsPluginPrivate::CvsPluginPrivate()
     m_commandLocator->appendCommand(command);
 }
 
-void CvsPluginPrivate::describeHelper(const QString &source, const QString &changeNr)
+void CvsPluginPrivate::vcsDescribe(const QString &source, const QString &changeNr)
 {
     QString errorMessage;
     if (!describe(source, changeNr, &errorMessage))
@@ -1426,7 +1424,7 @@ void CvsPluginPrivate::commitFromEditor()
 {
     m_submitActionTriggered = true;
     QTC_ASSERT(submitEditor(), return);
-    EditorManager::closeDocument(submitEditor()->document());
+    EditorManager::closeDocuments({submitEditor()->document()});
 }
 
 // Run CVS. At this point, file arguments must be relative to
@@ -1472,7 +1470,7 @@ CvsResponse CvsPluginPrivate::runCvs(const QString &workingDirectory,
 }
 
 IEditor *CvsPluginPrivate::showOutputInEditor(const QString& title, const QString &output,
-                                              Core::Id id, const QString &source,
+                                              Utils::Id id, const QString &source,
                                               QTextCodec *codec)
 {
     QString s = title;

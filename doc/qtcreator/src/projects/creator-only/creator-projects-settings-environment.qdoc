@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2020 The Qt Company Ltd.
+** Copyright (C) 2021 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the Qt Creator documentation.
@@ -26,7 +26,7 @@
 /*!
     \previouspage creator-build-dependencies.html
     \page creator-project-settings-environment.html
-    \nextpage creator-sharing-project-settings.html
+    \nextpage creator-custom-output-parsers.html
 
     \title Specifying Environment Settings
 
@@ -93,66 +93,11 @@
 
     \section1 Using Environment Variables
 
-    You can use any environment variables to in build, deploy, and run
+    You can use any environment variables in build, deploy, and run
     configurations. For a list of variable names, select \uicontrol {Build
-    Settings} > \uicontrol {Build Environment} > \uicontrol  Details}.
+    Settings} > \uicontrol {Build Environment} > \uicontrol Details.
     Environment variables are referenced using the native syntax: $VARNAME
     or ${VARNAME} on Unix and %VARNAME% on Windows.
 
-    \section1 Using Qt Creator Variables
-
-    You can use \QC variables in arguments, executable paths, and working
-    directories. The variables take care of quoting their expansions, so you do
-    not need to put them in quotes. Select the \inlineimage replace.png
-    (\uicontrol {Variables}) button in a field to select from a list of
-    variables that are available in a particular context.
-
-    The following syntax enables you to use environment variables as \QC
-    variables: %{Env:VARNAME}.
-
-    \QC uses pattern substitution when expanding variable names. To replace the
-    first match of \e pattern within \e variable with \e replacement, use:
-
-    \badcode
-    %{variable/pattern/replacement}
-    \endcode
-
-    To replace all matches of \e pattern within \e variable with \e replacement,
-    use:
-
-    \badcode
-    %{variable//pattern/replacement}
-    \endcode
-
-    The pattern can be a regular expression and the replacement can contain
-    backreferences. For example, if \c %{variable} is \c my123var, then
-    \c %{variable/(..)(\d+)/\2\1} is expanded to \c {123myvar}.
-
-    Instead of the forward slash, you can also use the pound sign (\c #) as
-    the substitution character. This can be helpful if the value is supposed
-    to be a file path, in which case forward slashes might get translated
-    to backslashes on Windows hosts.
-
-    To use the default value if the variable is not set, use:
-
-    \badcode
-    %{variable:-default}
-    \endcode
-
-    \section1 Build Environment and Sailfish OS Projects
-
-    Building software for Sailfish OS is done with the help of a Sailfish OS build engine.  A
-    Sailfish OS build engine is a virtual machine running a minimal Sailfish OS installation
-    tailored specifically for building software.
-
-    Initially the build environment inside a build engine is fully isolated from that of the host
-    system, i.e., from that presented under \uicontrol Projects > \uicontrol {Build & Run}.
-    Forwarding environment variables from the host to the build engine is an explicit task,
-    supported by an environment filtering feature. Any environment variable whose name passes the
-    configured filter will be forwarded from the host environment to the build environment inside
-    the build engine.
-
-    The filter can be configured either under \uicontrol {Tools} > \uicontrol {Options} > \uicontrol
-    {Sailfish OS} > \uicontrol {General} > \uicontrol {Build Environment} or (with higher
-    precedence) by setting the \c SAILFISH_OS_SDK_ENVIRONMENT_FILTER environment variable.
+    \include qtcreator-variables.qdocinc qtcreator variables
 */

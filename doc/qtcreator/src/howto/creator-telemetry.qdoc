@@ -1,0 +1,123 @@
+/****************************************************************************
+**
+** Copyright (C) 2020 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the Qt Creator documentation.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU Free Documentation License Usage
+** Alternatively, this file may be used under the terms of the GNU Free
+** Documentation License version 1.3 as published by the Free Software
+** Foundation and appearing in the file included in the packaging of
+** this file. Please review the following information to ensure
+** the GNU Free Documentation License version 1.3 requirements
+** will be met: https://www.gnu.org/licenses/fdl-1.3.html.
+**
+****************************************************************************/
+
+/*!
+    \page creator-telemetry.html
+    \if defined(qtdesignstudio)
+    \previouspage creator-editor-external.html
+    \nextpage studio-help.html
+    \else
+    \previouspage creator-task-lists.html
+    \nextpage creator-help-overview.html
+    \endif
+
+    \title Managing Data Collection Settings
+    \if defined (qtcreator)
+    When you install \QC as a part of Qt installation, you are asked whether
+    you allow it to collect pseudonymous information about your system and \QC
+    use. If you decline, the plugin is not installed and no analytics data is
+    collected.
+
+    If you accept, all collected and transmitted data is fully transparent to
+    you. You can change the settings for collecting and transmitting data any
+    time. By default, no data is collected and you have to select a telemetry
+    mode for data collection to begin.
+    \else
+    To enable the use of the telemetry plugin, you need to select \uicontrol
+    {Enable Usage Statistics} in the splash screen that appears when you first
+    launch \QDS. If the splash screen does not appear, you can enable the
+    telemetry plugin by selecting \uicontrol Help > \uicontrol {About Plugins} >
+    \uicontrol Utilities > \uicontrol UsageStatistic.
+    \image studio-usage-statistics.png "Enabling Usage Statistics"
+    \endif
+
+    \section1 Principles of Data Collection
+
+    No personal data, such as names, IP addresses, MAC addresses, or project
+    and path names are collected. However, QUuid objects are used to identify
+    data records that belong to one user. The objects cannot be converted
+    back to the actual values from which they were generated.
+
+    For more information about Qt privacy policy, select
+    \l{https://www.qt.io/terms-conditions/#privacy}
+    {Legal Notice and Privacy Policy}.
+
+    \section1 Collecting Usage Statistics
+
+    The telemetry plugin uses the
+    \l{https://api.kde.org/frameworks/kuserfeedback/html/index.html}
+    {KUserFeedback} framework to collect the usage data. The library
+    has been designed from the user data privacy point of view and
+    \QC respects the same privacy rules.
+
+    The data is transmitted to the backend storage using an encrypted
+    connection. The storage is located in the same Heroku backend as the
+    Qt installer backend. Physically, data is stored in the Amazon cloud.
+
+    \section2 Specifying Telemetry Settings
+
+    To determine what data is transmitted to the backend storage:
+
+    \list 1
+        \li Select \uicontrol Tools > \uicontrol Options > \uicontrol Telemetry
+            > \uicontrol {Usage Statistics}.
+            \image qtcreator-telemetry-settings.png "Telemetry settings"
+        \li In the \uicontrol {Telemetry mode} list, select the mode that
+            determines what kind of data is collected.
+        \li In the \uicontrol {Data sources} list, select entries to view
+            exactly what data is collected. Deselect check boxes for data
+            that you do not want to transmit to the backend storage.
+    \endlist
+
+    \if defined(qtdesignstudio)
+    \section1 Reporting Crashes
+
+    You can enable \QDS to report crashes automatically. \QDS uses Google
+    Crashpad to collect crashes and report them to the Sentry backend storage
+    for processing. The purpose of Crashpad is to capture application state in
+    sufficient detail to allow developers to diagnose and, where possible, fix
+    the issue causing the crash. Crashpad may capture arbitrary contents from
+    the memory of a crashed process, including user sensitive information, URLs,
+    and other content provided by the users. The collected reports are used for
+    the sole purpose of fixing bugs. For more information on Crashpad, see the
+    \l {https://chromium.googlesource.com/crashpad/crashpad/+/master/doc/overview_design.md}
+    {documentation} by Google. For more information on processing and storing
+    of the collected data, see \l {https://sentry.io/security/}
+    {Security & Compliance} by Sentry.
+
+    To enable sending crash reports, select \uicontrol Tools > \uicontrol
+    Options > \uicontrol Environment > \uicontrol System
+    (\uicontrol {Qt Design Studio} > \uicontrol Preferences > \uicontrol
+    Environment > \uicontrol System on \macos), and then select
+    \uicontrol {Enable crash reporting}.
+
+    Since crash reports take up disk space, you may wish to remove them when
+    they are no longer needed. Select \uicontrol {Clear local crash reports} to
+    remove the crash report data.
+
+    \image studio-crashpad-checkbox.png "Checkbox for enabling crash reporting"
+
+    \endif
+*/

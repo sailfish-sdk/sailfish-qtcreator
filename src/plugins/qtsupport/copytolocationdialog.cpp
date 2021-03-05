@@ -51,14 +51,14 @@ QString CopyToLocationDialog::sourcePath() const
     return QDir::fromNativeSeparators(m_ui->locationLabel->text());
 }
 
-void CopyToLocationDialog::setDestinationPath(const QString& path)
+void CopyToLocationDialog::setDestinationPath(const Utils::FilePath& path)
 {
     m_ui->pathChooser->setPath(path);
 }
 
-QString CopyToLocationDialog::destinationPath() const
+Utils::FilePath CopyToLocationDialog::destinationPath() const
 {
-    return m_ui->pathChooser->path();
+    return m_ui->pathChooser->filePath();
 }
 
 }

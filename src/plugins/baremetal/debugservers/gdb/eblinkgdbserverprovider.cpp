@@ -28,11 +28,10 @@
 #include <baremetal/baremetalconstants.h>
 #include <baremetal/debugserverprovidermanager.h>
 
-#include <coreplugin/variablechooser.h>
-
 #include <utils/fileutils.h>
 #include <utils/pathchooser.h>
 #include <utils/qtcassert.h>
+#include <utils/variablechooser.h>
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -47,17 +46,17 @@ using namespace Utils;
 namespace BareMetal {
 namespace Internal {
 
-const char executableFileKeyC[] = "BareMetal.EBlinkGdbServerProvider.ExecutableFile";
-const char verboseLevelKeyC[] = "BareMetal.EBlinkGdbServerProvider.VerboseLevel";
-const char deviceScriptC[] = "BareMetal.EBlinkGdbServerProvider.DeviceScript";
-const char interfaceTypeC[] = "BareMetal.EBlinkGdbServerProvider.InterfaceType";
-const char interfaceResetOnConnectC[] = "BareMetal.EBlinkGdbServerProvider.interfaceResetOnConnect";
-const char interfaceSpeedC[] = "BareMetal.EBlinkGdbServerProvider.InterfaceSpeed";
-const char interfaceExplicidDeviceC[] = "BareMetal.EBlinkGdbServerProvider.InterfaceExplicidDevice";
-const char targetNameC[] = "BareMetal.EBlinkGdbServerProvider.TargetName";
-const char targetDisableStackC[] = "BareMetal.EBlinkGdbServerProvider.TargetDisableStack";
-const char gdbShutDownAfterDisconnectC[] = "BareMetal.EBlinkGdbServerProvider.GdbShutDownAfterDisconnect";
-const char gdbNotUseCacheC[] = "BareMetal.EBlinkGdbServerProvider.GdbNotUseCache";
+const char executableFileKeyC[] = "ExecutableFile";
+const char verboseLevelKeyC[] = "VerboseLevel";
+const char deviceScriptC[] = "DeviceScript";
+const char interfaceTypeC[] = "InterfaceType";
+const char interfaceResetOnConnectC[] = "interfaceResetOnConnect";
+const char interfaceSpeedC[] = "InterfaceSpeed";
+const char interfaceExplicidDeviceC[] = "InterfaceExplicidDevice";
+const char targetNameC[] = "TargetName";
+const char targetDisableStackC[] = "TargetDisableStack";
+const char gdbShutDownAfterDisconnectC[] = "GdbShutDownAfterDisconnect";
+const char gdbNotUseCacheC[] = "GdbNotUseCache";
 
 // EBlinkGdbServerProvider
 
@@ -67,7 +66,6 @@ EBlinkGdbServerProvider::EBlinkGdbServerProvider()
     setInitCommands(defaultInitCommands());
     setResetCommands(defaultResetCommands());
     setChannel("127.0.0.1", 2331);
-    setSettingsKeyBase("BareMetal.EBlinkGdbServerProvider");
     setTypeDisplayName(GdbServerProvider::tr("EBlink"));
     setConfigurationWidgetCreator([this] { return new EBlinkGdbServerProviderConfigWidget(this); });
 }
@@ -297,7 +295,7 @@ EBlinkGdbServerProviderConfigWidget::EBlinkGdbServerProviderConfigWidget(
     addErrorLabel();
     setFromProvider();
 
-    const auto chooser = new Core::VariableChooser(this);
+    const auto chooser = new VariableChooser(this);
     chooser->addSupportedWidget(m_initCommandsTextEdit);
     chooser->addSupportedWidget(m_resetCommandsTextEdit);
 
@@ -356,9 +354,9 @@ void EBlinkGdbServerProviderConfigWidget::setFromProvider()
     Q_ASSERT(p);
 
     m_gdbHostWidget->setChannel(p->channel());
-    m_executableFileChooser->setFileName(p->m_executableFile);
+    m_executableFileChooser->setFilePath(p->m_executableFile);
     m_verboseLevelSpinBox->setValue(p->m_verboseLevel);
-    m_scriptFileChooser->setFileName(p->m_deviceScript);
+    m_scriptFileChooser->setFilePath(p->m_deviceScript);
     m_interfaceTypeComboBox->setCurrentIndex(p->m_interfaceType);
     m_resetOnConnectCheckBox->setChecked(p->m_interfaceResetOnConnect);
     m_interfaceSpeedSpinBox->setValue(p->m_interfaceSpeed);
@@ -376,9 +374,9 @@ void EBlinkGdbServerProviderConfigWidget::apply()
     Q_ASSERT(p);
 
     p->setChannel(m_gdbHostWidget->channel());
-    p->m_executableFile = m_executableFileChooser->fileName();
+    p->m_executableFile = m_executableFileChooser->filePath();
     p->m_verboseLevel = m_verboseLevelSpinBox->value();
-    p->m_deviceScript = m_scriptFileChooser->fileName();
+    p->m_deviceScript = m_scriptFileChooser->filePath();
     p->m_interfaceType = interfaceTypeFromWidget();
     p->m_interfaceResetOnConnect = m_resetOnConnectCheckBox->isChecked();
     p->m_interfaceSpeed = m_interfaceSpeedSpinBox->value();

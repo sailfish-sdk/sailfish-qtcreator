@@ -33,13 +33,15 @@
 #include <designdocumentview.h>
 #include <nodelistproperty.h>
 #include <nodemetainfo.h>
-#include <rewritertransaction.h>
 #include <utils/algorithm.h>
 #include <utils/qtcassert.h>
 #include <variantproperty.h>
-#include <qmldesignerplugin.h>
 #include <qmlobjectnode.h>
 #include <qmltimelinekeyframegroup.h>
+
+#include <QRegularExpression>
+#include <QApplication>
+#include <QClipboard>
 
 namespace QmlDesigner {
 
@@ -252,7 +254,7 @@ std::vector<std::tuple<ModelNode, qreal>> getFramesRelative(const ModelNode &par
 
     if (!sortedByTime.empty()) {
         qreal firstTime = getTime(sortedByTime.first());
-        for (ModelNode keyframe : sortedByTime)
+        for (const ModelNode &keyframe : sortedByTime)
             result.emplace_back(keyframe, getTime(keyframe) - firstTime);
     }
 
@@ -291,30 +293,8 @@ void TimelineActions::pasteKeyframes(AbstractView *timelineView, const QmlTimeli
 
 bool TimelineActions::clipboardContainsKeyframes()
 {
-    QScopedPointer<Model> pasteModel(DesignDocumentView::pasteToModel());
-
-    if (!pasteModel)
-        return false;
-
-    DesignDocumentView view;
-    pasteModel->attachView(&view);
-
-    if (!view.rootModelNode().isValid())
-        return false;
-
-    ModelNode rootNode = view.rootModelNode();
-
-    if (!rootNode.hasAnySubModelNodes())
-        return false;
-
-    //Sanity check
-    if (!QmlTimelineKeyframeGroup::checkKeyframesType(rootNode)) {
-        for (const ModelNode &node : rootNode.directSubModelNodes())
-            if (!QmlTimelineKeyframeGroup::checkKeyframesType(node))
-                return false;
-    }
-
-    return true;
+    QRegularExpression rxp("\\bKeyframe\\s*{.*}", QRegularExpression::DotMatchesEverythingOption);
+    return rxp.match(QApplication::clipboard()->text()).hasMatch();
 }
 
 } // namespace QmlDesigner

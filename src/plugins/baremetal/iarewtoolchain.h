@@ -30,6 +30,7 @@
 #include <projectexplorer/toolchainconfigwidget.h>
 
 QT_BEGIN_NAMESPACE
+class QLineEdit;
 class QPlainTextEdit;
 class QPushButton;
 class QTextEdit;
@@ -58,17 +59,13 @@ public:
     bool isValid() const final;
 
     MacroInspectionRunner createMacroInspectionRunner() const final;
-    ProjectExplorer::Macros predefinedMacros(const QStringList &cxxflags) const final;
 
     Utils::LanguageExtensions languageExtensions(const QStringList &cxxflags) const final;
     Utils::WarningFlags warningFlags(const QStringList &cxxflags) const final;
 
     BuiltInHeaderPathsRunner createBuiltInHeaderPathsRunner(const Utils::Environment &) const final;
-    ProjectExplorer::HeaderPaths builtInHeaderPaths(const QStringList &cxxFlags,
-                                                    const Utils::FilePath &,
-                                                    const Utils::Environment &env) const final;
     void addToEnvironment(Utils::Environment &env) const final;
-    ProjectExplorer::IOutputParser *outputParser() const final;
+    QList<Utils::OutputLineParser *> createOutputParsers() const final;
 
     QVariantMap toMap() const final;
     bool fromMap(const QVariantMap &data) final;
@@ -80,6 +77,9 @@ public:
     void setCompilerCommand(const Utils::FilePath &file);
     Utils::FilePath compilerCommand() const final;
 
+    void setExtraCodeModelFlags(const QStringList &flags);
+    QStringList extraCodeModelFlags() const final;
+
     Utils::FilePath makeCommand(const Utils::Environment &env) const final;
 
 private:
@@ -87,6 +87,7 @@ private:
 
     ProjectExplorer::Abi m_targetAbi;
     Utils::FilePath m_compilerCommand;
+    QStringList m_extraCodeModelFlags;
 
     friend class IarToolChainFactory;
     friend class IarToolChainConfigWidget;
@@ -96,8 +97,6 @@ private:
 
 class IarToolChainFactory final : public ProjectExplorer::ToolChainFactory
 {
-    Q_OBJECT
-
 public:
     IarToolChainFactory();
 
@@ -108,7 +107,7 @@ private:
     QList<ProjectExplorer::ToolChain *> autoDetectToolchains(const Candidates &candidates,
             const QList<ProjectExplorer::ToolChain *> &alreadyKnown) const;
     QList<ProjectExplorer::ToolChain *> autoDetectToolchain(
-            const Candidate &candidate, Core::Id languageId) const;
+            const Candidate &candidate, Utils::Id languageId) const;
 };
 
 // IarToolChainConfigWidget
@@ -128,9 +127,11 @@ private:
 
     void setFromToolchain();
     void handleCompilerCommandChange();
+    void handlePlatformCodeGenFlagsChange();
 
     Utils::PathChooser *m_compilerCommand = nullptr;
     ProjectExplorer::AbiWidget *m_abiWidget = nullptr;
+    QLineEdit *m_platformCodeGenFlagsLineEdit = nullptr;
     ProjectExplorer::Macros m_macros;
 };
 

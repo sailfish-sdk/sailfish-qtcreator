@@ -28,10 +28,9 @@
 #include "projectexplorer_export.h"
 
 #include <utils/fancymainwindow.h>
+#include <utils/id.h>
 
 #include <memory>
-
-namespace Core { class Id; }
 
 namespace ProjectExplorer {
 namespace Internal {
@@ -62,9 +61,15 @@ public:
     ProjectWindow();
     ~ProjectWindow() override;
 
-    void activateProjectPanel(Core::Id panelId);
+    void activateProjectPanel(Utils::Id panelId);
 
 private:
+    void hideEvent(QHideEvent *event) override;
+    void showEvent(QShowEvent *event) override;
+
+    void savePersistentSettings() const;
+    void loadPersistentSettings();
+
     const std::unique_ptr<ProjectWindowPrivate> d;
 };
 

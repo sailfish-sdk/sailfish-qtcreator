@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.14)
 
 project(%{ProjectName} LANGUAGES CXX)
 
@@ -12,8 +12,8 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # QtCreator supports the following variables for Android, which are identical to qmake Android variables.
-# Check http://doc.qt.io/qt-5/deployment-android.html for more information.
-# They need to be set before the find_package(Qt5 ...) call.
+# Check https://doc.qt.io/qt/deployment-android.html for more information.
+# They need to be set before the find_package(...) calls below.
 
 #if(ANDROID)
 #    set(ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
@@ -25,36 +25,48 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 #endif()
 
 @if %{HasTranslation}
-find_package(Qt5 COMPONENTS Core Quick LinguistTools REQUIRED)
+find_package(QT NAMES Qt6 Qt5 COMPONENTS Core Quick LinguistTools REQUIRED)
+find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Core Quick LinguistTools REQUIRED)
 
 set(TS_FILES %{TsFileName})
 @else
-find_package(Qt5 COMPONENTS Core Quick REQUIRED)
+find_package(QT NAMES Qt6 Qt5 COMPONENTS Core Quick REQUIRED)
+find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Core Quick REQUIRED)
 @endif
 
-if(ANDROID)
-    add_library(%{ProjectName} SHARED
-      %{MainCppFileName}
-      qml.qrc
-@if %{HasTranslation}
-      ${TS_FILES}
-@endif
+set(PROJECT_SOURCES
+        %{MainCppFileName}
+        qml.qrc
+    @if %{HasTranslation}
+        ${TS_FILES}
+    @endif
+)
+
+if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
+    qt_add_executable(%{ProjectName}
+        ${PROJECT_SOURCES}
     )
+@if %{HasTranslation}
+
+    qt_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
+@endif
 else()
-    add_executable(%{ProjectName}
-      %{MainCppFileName}
-      qml.qrc
+    if(ANDROID)
+        add_library(%{ProjectName} SHARED
+            ${PROJECT_SOURCES}
+        )
+    else()
+        add_executable(%{ProjectName}
+          ${PROJECT_SOURCES}
+        )
+    endif()
 @if %{HasTranslation}
-      ${TS_FILES}
+
+    qt5_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
 @endif
-    )
 endif()
 
 target_compile_definitions(%{ProjectName}
   PRIVATE $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:QT_QML_DEBUG>)
 target_link_libraries(%{ProjectName}
-  PRIVATE Qt5::Core Qt5::Quick)
-@if %{HasTranslation}
-
-qt5_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
-@endif
+  PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Quick)

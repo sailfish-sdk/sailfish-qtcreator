@@ -40,7 +40,6 @@
 #include <coreplugin/documentmanager.h>
 #include <coreplugin/icontext.h>
 #include <coreplugin/icore.h>
-#include <coreplugin/id.h>
 #include <coreplugin/iversioncontrol.h>
 #include <coreplugin/messagemanager.h>
 #include <coreplugin/progressmanager/progressmanager.h>
@@ -49,8 +48,6 @@
 #include <cpptools/cppprojectupdater.h>
 #include <cpptools/cpptoolsconstants.h>
 #include <cpptools/generatedcodemodelsupport.h>
-#include <extensionsystem/pluginmanager.h>
-#include <projectexplorer/buildenvironmentwidget.h>
 #include <projectexplorer/buildinfo.h>
 #include <projectexplorer/buildmanager.h>
 #include <projectexplorer/buildtargetinfo.h>
@@ -79,6 +76,7 @@
 #include <QJsonArray>
 #include <QMessageBox>
 #include <QSet>
+#include <QTimer>
 #include <QVariantMap>
 
 #include <algorithm>
@@ -140,10 +138,14 @@ ProjectImporter *QbsProject::projectImporter() const
     return m_importer;
 }
 
-void QbsProject::configureAsExampleProject()
+void QbsProject::configureAsExampleProject(Kit *kit)
 {
     QList<BuildInfo> infoList;
-    const QList<Kit *> kits = KitManager::kits();
+    QList<Kit *> kits;
+    if (kit)
+        kits.append(kit);
+    else
+        kits = KitManager::kits();
     for (Kit *k : kits) {
         if (QtSupport::QtKitAspect::qtVersion(k) != nullptr) {
             if (auto factory = BuildConfigurationFactory::find(k, projectFilePath()))
@@ -203,7 +205,6 @@ QbsBuildSystem::QbsBuildSystem(QbsBuildConfiguration *bc)
     });
     connect(m_session, &QbsSession::fileListUpdated, this, &QbsBuildSystem::delayParsing);
 
-    m_parsingDelay.setInterval(1000); // delay parsing by 1s.
     delayParsing();
 
     connect(bc->project(), &Project::activeTargetChanged,
@@ -211,8 +212,6 @@ QbsBuildSystem::QbsBuildSystem(QbsBuildConfiguration *bc)
 
     connect(bc->target(), &Target::activeBuildConfigurationChanged,
             this, &QbsBuildSystem::delayParsing);
-
-    connect(&m_parsingDelay, &QTimer::timeout, this, &QbsBuildSystem::triggerParsing);
 
     connect(bc->project(), &Project::projectFileIsDirty, this, &QbsBuildSystem::delayParsing);
     updateProjectNodes({});
@@ -349,7 +348,7 @@ bool QbsBuildSystem::ensureWriteableQbsFile(const QString &file)
         if (!versionControl || !versionControl->vcsOpen(file)) {
             bool makeWritable = QFile::setPermissions(file, fi.permissions() | QFile::WriteUser);
             if (!makeWritable) {
-                QMessageBox::warning(ICore::mainWindow(),
+                QMessageBox::warning(ICore::dialogParent(),
                                      tr("Failed"),
                                      tr("Could not write project file %1.").arg(file));
                 return false;
@@ -597,7 +596,7 @@ void QbsBuildSystem::triggerParsing()
 void QbsBuildSystem::delayParsing()
 {
     if (m_buildConfiguration->isActive())
-        m_parsingDelay.start();
+        requestDelayedParse();
 }
 
 void QbsBuildSystem::parseCurrentBuildConfiguration()
@@ -635,7 +634,7 @@ void QbsBuildSystem::parseCurrentBuildConfiguration()
 
     prepareForParsing();
 
-    m_parsingDelay.stop();
+    cancelDelayedParseRequest();
 
     QTC_ASSERT(!m_qbsProjectParser, return);
     m_qbsProjectParser = new QbsProjectParser(this, m_qbsUpdateFutureInterface);
@@ -787,7 +786,9 @@ static void getExpandedCompilerFlags(QStringList &cFlags, QStringList &cxxFlags,
         cFlags = cxxFlags = commonFlags;
 
         const auto cxxLanguageVersion = arrayToStringList(getCppProp("cxxLanguageVersion"));
-        if (cxxLanguageVersion.contains("c++17"))
+        if (cxxLanguageVersion.contains("c++20"))
+            cxxFlags << "-std=c++20";
+        else if (cxxLanguageVersion.contains("c++17"))
             cxxFlags << "-std=c++17";
         else if (cxxLanguageVersion.contains("c++14"))
             cxxFlags << "-std=c++14";
@@ -806,7 +807,11 @@ static void getExpandedCompilerFlags(QStringList &cFlags, QStringList &cxxFlags,
             cxxFlags << QLatin1String(enableRtti.toBool() ? "-frtti" : "-fno-rtti");
 
         const auto cLanguageVersion = arrayToStringList(getCppProp("cLanguageVersion"));
-        if (cLanguageVersion.contains("c11"))
+        if (cLanguageVersion.contains("c18"))
+            cFlags << "-cstd=c18";
+        else if (cLanguageVersion.contains("c17"))
+            cFlags << "-std=c17";
+        else if (cLanguageVersion.contains("c11"))
             cFlags << "-std=c11";
         else if (cLanguageVersion.contains("c99"))
             cFlags << "-std=c99";
@@ -902,7 +907,8 @@ static RawProjectParts generateProjectParts(
             list.removeDuplicates();
             for (const QString &p : qAsConst(list))
                 grpHeaderPaths += {FilePath::fromUserInput(p).toString(),  HeaderPathType::User};
-            list = arrayToStringList(props.value("cpp.systemIncludePaths"));
+            list = arrayToStringList(props.value("cpp.distributionIncludePaths"))
+                    + arrayToStringList(props.value("cpp.systemIncludePaths"));
             list.removeDuplicates();
             for (const QString &p : qAsConst(list))
                 grpHeaderPaths += {FilePath::fromUserInput(p).toString(),  HeaderPathType::System};
@@ -920,9 +926,17 @@ static RawProjectParts generateProjectParts(
                                        location.value("line").toInt(),
                                        location.value("column").toInt());
             rpp.setBuildSystemTarget(QbsProductNode::getBuildKey(prd));
-            rpp.setBuildTargetType(prd.value("is-runnable").toBool()
-                                   ? BuildTargetType::Executable
-                                   : BuildTargetType::Library);
+            if (prd.value("is-runnable").toBool()) {
+                rpp.setBuildTargetType(BuildTargetType::Executable);
+            } else {
+                const QJsonArray pType = prd.value("type").toArray();
+                if (pType.contains("staticlibrary") || pType.contains("dynamiclibrary")
+                        || pType.contains("loadablemodule")) {
+                    rpp.setBuildTargetType(BuildTargetType::Library);
+                } else {
+                    rpp.setBuildTargetType(BuildTargetType::Unknown);
+                }
+            }
             rpp.setSelectedForBuilding(grp.value("is-enabled").toBool());
 
             QHash<QString, QJsonObject> filePathToSourceArtifact;
@@ -1113,13 +1127,13 @@ void QbsBuildSystem::updateApplicationTargets()
             if (result.error().hasError()) {
                 Core::MessageManager::write(tr("Error retrieving run environment: %1")
                                             .arg(result.error().toString()));
-            } else {
-                QProcessEnvironment fullEnv = result.environment();
-                QTC_ASSERT(!fullEnv.isEmpty(), fullEnv = procEnv);
-                env = Utils::Environment();
-                for (const QString &key : fullEnv.keys())
-                    env.set(key, fullEnv.value(key));
+                return;
             }
+            QProcessEnvironment fullEnv = result.environment();
+            QTC_ASSERT(!fullEnv.isEmpty(), fullEnv = procEnv);
+            env = Utils::Environment();
+            for (const QString &key : fullEnv.keys())
+                env.set(key, fullEnv.value(key));
             m_envCache.insert(key, env);
         };
 

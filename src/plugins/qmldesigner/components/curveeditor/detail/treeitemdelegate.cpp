@@ -24,12 +24,14 @@
 ****************************************************************************/
 #include "treeitemdelegate.h"
 #include "treeitem.h"
+#include "treemodel.h"
 
+#include <QApplication>
 #include <QEvent>
 #include <QMouseEvent>
 #include <QPainter>
 
-namespace DesignTools {
+namespace QmlDesigner {
 
 TreeItemDelegate::TreeItemDelegate(const CurveEditorStyle &style, QObject *parent)
     : QStyledItemDelegate(parent)
@@ -41,90 +43,74 @@ QSize TreeItemDelegate::sizeHint(const QStyleOptionViewItem &option, const QMode
     return QStyledItemDelegate::sizeHint(option, index);
 }
 
+QRect makeSquare(const QRect &rect)
+{
+    int size = rect.width() > rect.height() ? rect.height() : rect.width();
+    QRect r(QPoint(0, 0), QSize(size, size));
+    r.moveCenter(rect.center());
+    return r;
+}
+
 void TreeItemDelegate::paint(QPainter *painter,
                              const QStyleOptionViewItem &option,
                              const QModelIndex &index) const
 {
-    if (index.column() == 1 || index.column() == 2) {
+    QStyleOptionViewItem opt = option;
+    initStyleOption(&opt, index);
 
-        int height = option.rect.size().height();
-        QRect iconRect(QPoint(0, 0), QSize(height, height));
-        iconRect.moveCenter(option.rect.center());
+    QColor high = Theme::getColor(Theme::Color::QmlDesigner_HighlightColor);
+    opt.palette.setColor(QPalette::Active, QPalette::Highlight, high);
+    opt.palette.setColor(QPalette::Inactive, QPalette::Highlight, high);
 
-        auto *treeItem = static_cast<TreeItem *>(index.internalPointer());
-        if (option.state & QStyle::State_MouseOver && iconRect.contains(m_mousePos)) {
+    QStyle *style = opt.widget ? opt.widget->style() : QApplication::style();
+    style->drawPrimitive(QStyle::PE_PanelItemViewItem, &opt, painter, opt.widget);
 
-            painter->fillRect(option.rect, option.backgroundBrush);
+    auto *treeItem = static_cast<TreeItem *>(index.internalPointer());
 
-            if (index.column() == 1) {
+    bool textColumn = TreeModel::isTextColumn(index);
+    bool lockedColumn = TreeModel::isLockedColumn(index);
+    bool pinnedColumn = TreeModel::isPinnedColumn(index);
 
-                if (treeItem->locked()) {
+    QPixmap pixmap;
+    QRect iconRect = makeSquare(option.rect);
 
-                    QPixmap pixmap = pixmapFromIcon(
-                        m_style.treeItemStyle.unlockedIcon,
-                        iconRect.size(),
-                        m_style.fontColor);
-
-                    painter->drawPixmap(iconRect, pixmap);
-
-                } else {
-
-                    QPixmap pixmap = pixmapFromIcon(
-                        m_style.treeItemStyle.lockedIcon,
-                        iconRect.size(),
-                        m_style.fontColor);
-
-                    painter->drawPixmap(iconRect, pixmap);
-                }
-
-            } else if (index.column() == 2) {
-
-                if (treeItem->pinned()) {
-
-                    QPixmap pixmap = pixmapFromIcon(
-                        m_style.treeItemStyle.unpinnedIcon,
-                        iconRect.size(),
-                        m_style.fontColor);
-
-                    painter->drawPixmap(iconRect, pixmap);
-
-                } else {
-
-                    QPixmap pixmap = pixmapFromIcon(
-                        m_style.treeItemStyle.pinnedIcon,
-                        iconRect.size(),
-                        m_style.fontColor);
-
-                    painter->drawPixmap(iconRect, pixmap);
-
-                }
-            }
-
-        } else {
-
-            if (treeItem->locked() && index.column() == 1) {
-
-                QPixmap pixmap = pixmapFromIcon(
-                    m_style.treeItemStyle.lockedIcon,
-                    iconRect.size(),
-                    m_style.fontColor);
-
-                painter->drawPixmap(iconRect, pixmap);
-
-            } else if (treeItem->pinned() && index.column() == 2) {
-
-                QPixmap pixmap = pixmapFromIcon(
-                    m_style.treeItemStyle.pinnedIcon,
-                    iconRect.size(),
-                    m_style.fontColor);
-
-                painter->drawPixmap(iconRect, pixmap);
-
+    if (lockedColumn) {
+        if (treeItem->locked()) {
+            pixmap = m_style.treeItemStyle.lockedIcon.pixmap(iconRect.size());
+        } else if (treeItem->asNodeItem() != nullptr && treeItem->implicitlyLocked()) {
+            pixmap = m_style.treeItemStyle.implicitlyLockedIcon.pixmap(iconRect.size());
+        } else if (option.state.testFlag(QStyle::State_MouseOver)) {
+            if (treeItem->implicitlyLocked()) {
+                pixmap = m_style.treeItemStyle.implicitlyLockedIcon.pixmap(iconRect.size());
+            } else {
+                pixmap = m_style.treeItemStyle.unlockedIcon.pixmap(iconRect.size());
             }
         }
+
+    } else if (pinnedColumn) {
+        if (treeItem->pinned()) {
+            pixmap = m_style.treeItemStyle.pinnedIcon.pixmap(iconRect.size());
+        } else if (treeItem->asNodeItem() != nullptr && treeItem->implicitlyPinned()) {
+            pixmap = m_style.treeItemStyle.implicitlyPinnedIcon.pixmap(iconRect.size());
+        } else if (option.state.testFlag(QStyle::State_MouseOver)) {
+            if (treeItem->implicitlyPinned()) {
+                pixmap = m_style.treeItemStyle.implicitlyPinnedIcon.pixmap(iconRect.size());
+            } else {
+                pixmap = m_style.treeItemStyle.unpinnedIcon.pixmap(iconRect.size());
+            }
+        }
+
     } else {
-        QStyledItemDelegate::paint(painter, option, index);
+        if (textColumn && (treeItem->locked() || treeItem->implicitlyLocked())) {
+            QColor col = opt.palette.color(QPalette::Disabled, QPalette::Text).darker();
+            opt.palette.setColor(QPalette::Active, QPalette::Text, col);
+            opt.palette.setColor(QPalette::Inactive, QPalette::Text, col);
+        }
+        QStyledItemDelegate::paint(painter, opt, index);
     }
+
+    if (!pixmap.isNull())
+        painter->drawPixmap(iconRect, pixmap);
 }
 
 void TreeItemDelegate::setStyle(const CurveEditorStyle &style)
@@ -143,4 +129,4 @@ bool TreeItemDelegate::editorEvent(QEvent *event,
     return QStyledItemDelegate::editorEvent(event, model, option, index);
 }
 
-} // End namespace DesignTools.
+} // End namespace QmlDesigner.

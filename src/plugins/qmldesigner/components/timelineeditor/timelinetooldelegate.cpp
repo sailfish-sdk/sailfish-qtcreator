@@ -38,7 +38,7 @@
 
 namespace QmlDesigner {
 
-TimelineToolDelegate::TimelineToolDelegate(TimelineGraphicsScene *scene)
+TimelineToolDelegate::TimelineToolDelegate(AbstractScrollGraphicsScene *scene)
     : m_scene(scene)
     , m_start()
     , m_moveTool(new TimelineMoveTool(scene, this))
@@ -59,13 +59,20 @@ void TimelineToolDelegate::mousePressEvent(TimelineMovableAbstractItem *item,
                                            QGraphicsSceneMouseEvent *event)
 {
     if (event->buttons() == Qt::LeftButton && hitCanvas(event)) {
-        m_start = event->scenePos();
 
+        m_start = event->scenePos();
         if (item) {
             setItem(item, event->modifiers());
             m_currentTool = m_moveTool.get();
         } else
             m_currentTool = m_selectTool.get();
+
+    } else if (event->buttons() == Qt::RightButton && event->modifiers() == Qt::NoModifier
+               && hitCanvas(event) && item) {
+
+        setItem(item, Qt::NoModifier);
+        reset();
+
     } else
         m_currentTool = nullptr;
 

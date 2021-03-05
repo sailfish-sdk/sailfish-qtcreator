@@ -299,10 +299,10 @@ FolderNavigationWidget::FolderNavigationWidget(QWidget *parent) : QWidget(parent
     m_crumbContainer(new QWidget(this)),
     m_crumbLabel(new DelayedFileCrumbLabel(this))
 {
-    m_context = new Core::IContext(this);
-    m_context->setContext(Core::Context(C_FOLDERNAVIGATIONWIDGET));
-    m_context->setWidget(this);
-    Core::ICore::addContextObject(m_context);
+    auto context = new Core::IContext(this);
+    context->setContext(Core::Context(C_FOLDERNAVIGATIONWIDGET));
+    context->setWidget(this);
+    Core::ICore::addContextObject(context);
 
     setBackgroundRole(QPalette::Base);
     setAutoFillBackground(true);
@@ -388,10 +388,8 @@ FolderNavigationWidget::FolderNavigationWidget(QWidget *parent) : QWidget(parent
                 // QTimer::singleShot only posts directly onto the event loop if you use the SLOT("...")
                 // notation, so using a singleShot with a lambda would flicker
                 // QTimer::singleShot(0, this, [this, filePath]() { setCrumblePath(filePath); });
-                QMetaObject::invokeMethod(this,
-                                          "setCrumblePath",
-                                          Qt::QueuedConnection,
-                                          Q_ARG(Utils::FilePath, filePath));
+                QMetaObject::invokeMethod(this, [this, filePath] { setCrumblePath(filePath); },
+                                          Qt::QueuedConnection);
             });
     connect(m_crumbLabel, &Utils::FileCrumbLabel::pathClicked, [this](const Utils::FilePath &path) {
         const QModelIndex rootIndex = m_sortProxyModel->mapToSource(m_listView->rootIndex());
@@ -433,11 +431,6 @@ FolderNavigationWidget::FolderNavigationWidget(QWidget *parent) : QWidget(parent
 
     setAutoSynchronization(true);
     setRootAutoSynchronization(true);
-}
-
-FolderNavigationWidget::~FolderNavigationWidget()
-{
-    Core::ICore::removeContextObject(m_context);
 }
 
 void FolderNavigationWidget::toggleAutoSynchronization()

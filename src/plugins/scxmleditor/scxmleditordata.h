@@ -40,7 +40,6 @@ namespace Internal {
 class ScxmlTextEditorFactory;
 class ScxmlEditorWidget;
 class ScxmlEditorStack;
-class ScxmlContext;
 
 class ScxmlEditorData : public QObject
 {
@@ -57,7 +56,6 @@ private:
     QWidget *createModeWidget();
     EditorToolBar *createMainToolBar();
 
-    ScxmlContext *m_context = nullptr;
     Context m_contexts;
     QWidget *m_modeWidget = nullptr;
     ScxmlEditorStack *m_widgetStack = nullptr;

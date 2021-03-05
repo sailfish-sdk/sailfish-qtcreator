@@ -65,6 +65,7 @@ public:
     ~ConsoleProcess() override;
 
     void setCommand(const Utils::CommandLine &command);
+    Utils::CommandLine command() const;
     void setAbortOnMetaChars(bool abort);
 
     void setWorkingDirectory(const QString &dir);
@@ -106,7 +107,7 @@ public:
                                       const Utils::Environment &env);
 
 signals:
-    void error(QProcess::ProcessError error);
+    void errorOccurred(QProcess::ProcessError error);
     void processError(const QString &errorString);
 
     // These reflect the state of the actual client process

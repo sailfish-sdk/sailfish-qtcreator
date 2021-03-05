@@ -42,6 +42,7 @@ namespace Core {
 namespace QmlDesigner {
 
 class QmlDesignerPluginPrivate;
+class ImageCache;
 
 namespace Internal { class DesignModeWidget; }
 
@@ -81,6 +82,17 @@ public:
     void emitCurrentTextEditorChanged(Core::IEditor *editor);
 
     static double formEditorDevicePixelRatio();
+
+    static void emitUsageStatistics(const QString &identifier);
+    static void emitUsageStatisticsContextAction(const QString &identifier);
+    static void emitUsageStatisticsTime(const QString &identifier, int elapsed);
+
+    static ImageCache &imageCache();
+
+signals:
+    void usageStatisticsNotifier(const QString &identifier);
+    void usageStatisticsUsageTimer(const QString &identifier, int elapsed);
+
 
 private: // functions
     void integrateIntoQtCreator(QWidget *modeWidget);

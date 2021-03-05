@@ -452,6 +452,7 @@ CallgrindToolPrivate::CallgrindToolPrivate()
     m_perspective.addToolBarAction(m_goNext);
     m_perspective.addToolbarSeparator();
     m_perspective.addToolBarWidget(m_eventCombo);
+    m_perspective.registerNextPrevShortcuts(m_goNext, m_goBack);
 
     // Cost formatting
     {
@@ -554,7 +555,7 @@ void CallgrindToolPrivate::doClear(bool clearParseData)
     m_proxyModel.setFilterBaseDir(QString());
     if (m_searchFilter)
         m_searchFilter->clear();
-    m_proxyModel.setFilterFixedString(QString());
+    m_proxyModel.setFilterRegularExpression(QRegularExpression());
 }
 
 void CallgrindToolPrivate::setBusyCursor(bool busy)
@@ -609,7 +610,7 @@ void CallgrindToolPrivate::stackBrowserChanged()
 
 void CallgrindToolPrivate::updateFilterString()
 {
-    m_proxyModel.setFilterFixedString(m_searchFilter->text());
+    m_proxyModel.setFilterRegularExpression(QRegularExpression::escape(m_searchFilter->text()));
 }
 
 void CallgrindToolPrivate::setCostFormat(CostDelegate::CostFormat format)
@@ -908,7 +909,7 @@ void CallgrindToolPrivate::slotRequestDump()
 void CallgrindToolPrivate::loadExternalLogFile()
 {
     const QString filePath = QFileDialog::getOpenFileName(
-                ICore::mainWindow(),
+                ICore::dialogParent(),
                 CallgrindTool::tr("Open Callgrind Log File"),
                 QString(),
                 CallgrindTool::tr("Callgrind Output (callgrind.out*);;All Files (*)"));

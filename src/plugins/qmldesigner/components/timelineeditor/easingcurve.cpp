@@ -67,8 +67,10 @@ void EasingCurve::registerStreamOperators()
 {
     qRegisterMetaType<QmlDesigner::EasingCurve>("QmlDesigner::EasingCurve");
     qRegisterMetaType<QmlDesigner::NamedEasingCurve>("QmlDesigner::NamedEasingCurve");
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     qRegisterMetaTypeStreamOperators<QmlDesigner::EasingCurve>("QmlDesigner::EasingCurve");
     qRegisterMetaTypeStreamOperators<QmlDesigner::NamedEasingCurve>("QmlDesigner::NamedEasingCurve");
+#endif
 }
 
 int EasingCurve::count() const
@@ -149,8 +151,7 @@ QString EasingCurve::toString() const
 bool EasingCurve::fromString(const QString &code)
 {
     if (code.startsWith(QLatin1Char('[')) && code.endsWith(QLatin1Char(']'))) {
-        const QStringRef cleanCode(&code, 1, code.size() - 2);
-        const auto stringList = cleanCode.split(QLatin1Char(','), QString::SkipEmptyParts);
+        const auto stringList = code.mid(1, code.size() - 2).split(QLatin1Char(','), Qt::SkipEmptyParts);
 
         if (stringList.count() >= 6 && (stringList.count() % 6 == 0)) {
             bool checkX, checkY;
@@ -191,7 +192,7 @@ QPointF EasingCurve::start() const
 
 QPointF EasingCurve::end() const
 {
-    return toCubicSpline().last();
+    return toCubicSpline().constLast();
 }
 
 QPainterPath EasingCurve::path() const
@@ -431,6 +432,31 @@ QDebug &operator<<(QDebug &stream, const EasingCurve &curve)
     stream << static_cast<QEasingCurve>(curve);
     stream << "\"active:" << curve.m_active << "\"";
     stream << "\"smooth ids:" << curve.m_smoothIds << "\"";
+    return stream;
+}
+
+QDataStream &operator<<(QDataStream &stream, const std::vector<int> &vec)
+{
+    stream << static_cast<quint64>(vec.size());
+    for (const auto &elem : vec)
+        stream << elem;
+
+    return stream;
+}
+
+QDataStream &operator>>(QDataStream &stream, std::vector<int> &vec)
+{
+    quint64 s;
+    stream >> s;
+
+    vec.clear();
+    vec.reserve(s);
+
+    int val;
+    for (quint64 i = 0; i < s; ++i) {
+        stream >> val;
+        vec.push_back(val);
+    }
     return stream;
 }
 

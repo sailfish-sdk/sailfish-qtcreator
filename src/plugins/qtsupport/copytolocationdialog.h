@@ -32,6 +32,8 @@
 
 #include <QDialog>
 
+#include <utils/fileutils.h>
+
 namespace QtSupport {
 namespace Internal {
 
@@ -48,8 +50,8 @@ public:
     explicit CopyToLocationDialog(QWidget *parent = 0);
     void setSourcePath(const QString& path);
     QString sourcePath() const;
-    void setDestinationPath(const QString& path);
-    QString destinationPath() const;
+    void setDestinationPath(const Utils::FilePath& path);
+    Utils::FilePath destinationPath() const;
 private:
     Ui::CopyToLocationDialog *m_ui;
 };

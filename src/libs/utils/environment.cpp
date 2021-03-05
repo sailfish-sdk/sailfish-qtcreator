@@ -27,6 +27,7 @@
 
 #include "algorithm.h"
 #include "qtcassert.h"
+#include "stringutils.h"
 
 #include <QDebug>
 #include <QDir>
@@ -302,8 +303,8 @@ FilePaths Environment::path() const
 
 FilePaths Environment::pathListValue(const QString &varName) const
 {
-    const QStringList pathComponents = expandedValueForKey(varName)
-            .split(OsSpecificAspects::pathListSeparator(m_osType), QString::SkipEmptyParts);
+    const QStringList pathComponents = expandedValueForKey(varName).split(
+        OsSpecificAspects::pathListSeparator(m_osType), SkipEmptyParts);
     return transform(pathComponents, &FilePath::fromUserInput);
 }
 

@@ -24,23 +24,21 @@
 ****************************************************************************/
 
 #include "cmaketool.h"
+
 #include "cmaketoolmanager.h"
 
 #include <utils/algorithm.h>
 #include <utils/environment.h>
-#include <utils/hostosinfo.h>
 #include <utils/qtcassert.h>
 
 #include <QDir>
-#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QProcess>
 #include <QRegularExpression>
 #include <QSet>
-#include <QTextDocument>
 #include <QUuid>
-#include <QVariantMap>
+
+#include <memory>
 
 namespace CMakeProjectManager {
 
@@ -61,38 +59,24 @@ bool CMakeTool::Generator::matches(const QString &n, const QString &ex) const
 
 namespace Internal {
 
-const char READER_TYPE_TEALEAF[] = "tealeaf";
-const char READER_TYPE_SERVERMODE[] = "servermode";
 const char READER_TYPE_FILEAPI[] = "fileapi";
-
-static bool ignoreFileApi()
-{
-    static bool s_ignoreFileApi = qEnvironmentVariableIsSet("QTC_CMAKE_IGNORE_FILEAPI");
-    return s_ignoreFileApi;
-}
 
 static Utils::optional<CMakeTool::ReaderType> readerTypeFromString(const QString &input)
 {
-    if (input == READER_TYPE_TEALEAF)
-        return CMakeTool::TeaLeaf;
-    if (input == READER_TYPE_SERVERMODE)
-        return CMakeTool::ServerMode;
+    // Do not try to be clever here, just use whatever is in the string!
     if (input == READER_TYPE_FILEAPI)
-        return ignoreFileApi() ? CMakeTool::ServerMode : CMakeTool::FileApi;
+        return CMakeTool::FileApi;
     return {};
 }
 
 static QString readerTypeToString(const CMakeTool::ReaderType &type)
 {
     switch (type) {
-    case CMakeTool::TeaLeaf:
-        return QString(READER_TYPE_TEALEAF);
-    case CMakeTool::ServerMode:
-        return QString(READER_TYPE_SERVERMODE);
     case CMakeTool::FileApi:
         return QString(READER_TYPE_FILEAPI);
+    default:
+        return QString();
     }
-    return QString();
 }
 
 // --------------------------------------------------------------------
@@ -110,10 +94,6 @@ class IntrospectionData
 public:
     bool m_didAttemptToRun = false;
     bool m_didRun = true;
-    bool m_hasServerMode = false;
-
-    bool m_queriedServerMode = false;
-    bool m_triedCapabilities = false;
 
     QList<CMakeTool::Generator> m_generators;
     QMap<QString, QStringList> m_functionArgs;
@@ -128,17 +108,18 @@ public:
 ///////////////////////////
 // CMakeTool
 ///////////////////////////
-CMakeTool::CMakeTool(Detection d, const Core::Id &id) :
-    m_id(id), m_isAutoDetected(d & AutoDetection),
-    m_isAutoDetectedByPlugin(d == AutoDetectionByPlugin),
-    m_introspection(std::make_unique<Internal::IntrospectionData>())
+CMakeTool::CMakeTool(Detection d, const Utils::Id &id)
+    : m_id(id)
+    , m_isAutoDetected(d & AutoDetection)
+    , m_isAutoDetectedByPlugin(d == AutoDetectionByPlugin)
+    , m_introspection(std::make_unique<Internal::IntrospectionData>())
 {
-    QTC_ASSERT(m_id.isValid(), m_id = Core::Id::fromString(QUuid::createUuid().toString()));
+    QTC_ASSERT(m_id.isValid(), m_id = Utils::Id::fromString(QUuid::createUuid().toString()));
 }
 
 CMakeTool::CMakeTool(const QVariantMap &map, bool fromSdk) :
     CMakeTool(fromSdk ? CMakeTool::AutoDetection : CMakeTool::ManualDetection,
-              Core::Id::fromSetting(map.value(CMAKE_INFORMATION_ID)))
+              Utils::Id::fromSetting(map.value(CMAKE_INFORMATION_ID)))
 {
     m_displayName = map.value(CMAKE_INFORMATION_DISPLAYNAME).toString();
     m_isAutoRun = map.value(CMAKE_INFORMATION_AUTORUN, true).toBool();
@@ -162,9 +143,9 @@ CMakeTool::CMakeTool(const QVariantMap &map, bool fromSdk) :
 
 CMakeTool::~CMakeTool() = default;
 
-Core::Id CMakeTool::createId()
+Utils::Id CMakeTool::createId()
 {
-    return Core::Id::fromString(QUuid::createUuid().toString());
+    return Utils::Id::fromString(QUuid::createUuid().toString());
 }
 
 void CMakeTool::setFilePath(const Utils::FilePath &executable)
@@ -203,13 +184,13 @@ void CMakeTool::setAutoCreateBuildDirectory(bool autoBuildDir)
 
 bool CMakeTool::isValid() const
 {
-    if (!m_id.isValid())
+    if (!m_id.isValid() || !m_introspection)
         return false;
 
     if (!m_introspection->m_didAttemptToRun)
-        supportedGenerators();
+        readInformation();
 
-    return m_introspection->m_didRun;
+    return m_introspection->m_didRun && !m_introspection->m_fileApis.isEmpty();
 }
 
 Utils::SynchronousProcessResponse CMakeTool::run(const QStringList &args, int timeoutS) const
@@ -234,7 +215,7 @@ QVariantMap CMakeTool::toMap() const
     data.insert(CMAKE_INFORMATION_QCH_FILE_PATH, m_qchFilePath.toString());
     data.insert(CMAKE_INFORMATION_AUTORUN, m_isAutoRun);
     data.insert(CMAKE_INFORMATION_AUTO_CREATE_BUILD_DIRECTORY, m_autoCreateBuildDirectory);
-    if (m_readerType.has_value())
+    if (m_readerType)
         data.insert(CMAKE_INFORMATION_READERTYPE,
                     Internal::readerTypeToString(m_readerType.value()));
     data.insert(CMAKE_INFORMATION_AUTODETECTED, m_isAutoDetected);
@@ -295,12 +276,14 @@ bool CMakeTool::autoCreateBuildDirectory() const
 
 QList<CMakeTool::Generator> CMakeTool::supportedGenerators() const
 {
-    readInformation(QueryType::GENERATORS);
-    return m_introspection->m_generators;
+    return isValid() ? m_introspection->m_generators : QList<CMakeTool::Generator>();
 }
 
 TextEditor::Keywords CMakeTool::keywords()
 {
+    if (!isValid())
+        return {};
+
     if (m_introspection->m_functions.isEmpty() && m_introspection->m_didRun) {
         Utils::SynchronousProcessResponse response;
         response = run({"--help-command-list"}, 5);
@@ -328,28 +311,19 @@ TextEditor::Keywords CMakeTool::keywords()
                                 m_introspection->m_functionArgs);
 }
 
-bool CMakeTool::hasServerMode() const
-{
-    readInformation(QueryType::SERVER_MODE);
-    return m_introspection->m_hasServerMode;
-}
-
 bool CMakeTool::hasFileApi() const
 {
-    readInformation(QueryType::SERVER_MODE);
-    return !m_introspection->m_fileApis.isEmpty();
+    return isValid() ? !m_introspection->m_fileApis.isEmpty() : false;
 }
 
-QVector<std::pair<QString, int> > CMakeTool::supportedFileApiObjects() const
+QVector<std::pair<QString, int>> CMakeTool::supportedFileApiObjects() const
 {
-    readInformation(QueryType::SERVER_MODE);
-    return Utils::transform(m_introspection->m_fileApis, [](const Internal::FileApi &api) { return std::make_pair(api.kind, api.version.first); });
+    return isValid() ? Utils::transform(m_introspection->m_fileApis, [](const Internal::FileApi &api) { return std::make_pair(api.kind, api.version.first); }) : QVector<std::pair<QString, int>>();
 }
 
 CMakeTool::Version CMakeTool::version() const
 {
-    readInformation(QueryType::VERSION);
-    return m_introspection->m_version;
+    return m_introspection ? m_introspection->m_version : CMakeTool::Version();
 }
 
 bool CMakeTool::isAutoDetected() const
@@ -385,20 +359,15 @@ CMakeTool::PathMapper CMakeTool::pathMapper() const
     return [](const Utils::FilePath &fn) { return fn; };
 }
 
-CMakeTool::ReaderType CMakeTool::readerType() const
+Utils::optional<CMakeTool::ReaderType> CMakeTool::readerType() const
 {
-    if (!m_readerType.has_value()) {
-        // Find best possible reader type:
-        if (hasFileApi()) {
-            if (hasServerMode() && Internal::ignoreFileApi())
-                return ServerMode; // We were asked to fall back to server mode
-            return FileApi;
-        }
-        if (hasServerMode())
-            return ServerMode;
-        return TeaLeaf;
-    }
-    return m_readerType.value();
+    if (m_readerType)
+        return m_readerType; // Allow overriding the auto-detected value via .user files
+
+    // Find best possible reader type:
+    if (hasFileApi())
+        return FileApi;
+    return {};
 }
 
 Utils::FilePath CMakeTool::searchQchFile(const Utils::FilePath &executable)
@@ -423,33 +392,15 @@ Utils::FilePath CMakeTool::searchQchFile(const Utils::FilePath &executable)
     return {};
 }
 
-void CMakeTool::readInformation(CMakeTool::QueryType type) const
+void CMakeTool::readInformation() const
 {
+    QTC_ASSERT(m_introspection, return );
     if (!m_introspection->m_didRun && m_introspection->m_didAttemptToRun)
         return;
 
     m_introspection->m_didAttemptToRun = true;
 
-    if (!m_introspection->m_triedCapabilities) {
-        fetchFromCapabilities();
-        m_introspection->m_triedCapabilities = true;
-        m_introspection->m_queriedServerMode = true; // Got added after "-E capabilities" support!
-    } else {
-        if ((type == QueryType::GENERATORS && !m_introspection->m_generators.isEmpty())
-            || (type == QueryType::SERVER_MODE && m_introspection->m_queriedServerMode)
-            || (type == QueryType::VERSION && !m_introspection->m_version.fullVersion.isEmpty()))
-            return;
-
-        if (type == QueryType::GENERATORS) {
-            fetchGeneratorsFromHelp();
-        } else if (type == QueryType::SERVER_MODE) {
-            // Nothing to do...
-        } else if (type == QueryType::VERSION) {
-            fetchVersionFromVersionOutput();
-        } else {
-            QTC_ASSERT(false, return );
-        }
-    }
+    fetchFromCapabilities();
 }
 
 static QStringList parseDefinition(const QString &definition)
@@ -543,96 +494,16 @@ QStringList CMakeTool::parseVariableOutput(const QString &output)
     return result;
 }
 
-void CMakeTool::fetchGeneratorsFromHelp() const
-{
-    Utils::SynchronousProcessResponse response = run({"--help"});
-    m_introspection->m_didRun = m_introspection->m_didRun
-                                && response.result == Utils::SynchronousProcessResponse::Finished;
-
-    if (response.result == Utils::SynchronousProcessResponse::Finished)
-        parseGeneratorsFromHelp(response.stdOut().split('\n'));
-}
-
-void CMakeTool::parseGeneratorsFromHelp(const QStringList &lines) const
-{
-    bool inGeneratorSection = false;
-    QHash<QString, QStringList> generatorInfo;
-    foreach (const QString &line, lines) {
-        if (line.isEmpty())
-            continue;
-        if (line == "Generators") {
-            inGeneratorSection = true;
-            continue;
-        }
-        if (!inGeneratorSection)
-            continue;
-
-        if (line.startsWith("  ") && line.at(3) != ' ') {
-            int pos = line.indexOf('=');
-            if (pos < 0)
-                pos = line.length();
-            if (pos >= 0) {
-                --pos;
-                while (pos > 2 && line.at(pos).isSpace())
-                    --pos;
-            }
-            if (pos > 2) {
-                const QString fullName = line.mid(2, pos - 1);
-                const int dashPos = fullName.indexOf(" - ");
-                QString generator;
-                QString extra;
-                if (dashPos < 0) {
-                    generator = fullName;
-                } else {
-                    extra = fullName.mid(0, dashPos);
-                    generator = fullName.mid(dashPos + 3);
-                }
-                QStringList value = generatorInfo.value(generator);
-                if (!extra.isEmpty())
-                    value.append(extra);
-                generatorInfo.insert(generator, value);
-            }
-        }
-    }
-
-    // Populate genertor list:
-    for (auto it = generatorInfo.constBegin(); it != generatorInfo.constEnd(); ++it)
-        m_introspection->m_generators.append(Generator(it.key(), it.value()));
-}
-
-void CMakeTool::fetchVersionFromVersionOutput() const
-{
-    Utils::SynchronousProcessResponse response = run({"--version"});
-
-    m_introspection->m_didRun = m_introspection->m_didRun
-                                && response.result == Utils::SynchronousProcessResponse::Finished;
-
-    if (response.result == Utils::SynchronousProcessResponse::Finished)
-        parseVersionFormVersionOutput(response.stdOut().split('\n'));
-}
-
-void CMakeTool::parseVersionFormVersionOutput(const QStringList &lines) const
-{
-    QRegularExpression versionLine("^cmake.* version ((\\d+).(\\d+).(\\d+).*)$");
-    for (const QString &line : lines) {
-        QRegularExpressionMatch match = versionLine.match(line);
-        if (!match.hasMatch())
-            continue;
-
-        m_introspection->m_version.major = match.captured(2).toInt();
-        m_introspection->m_version.minor = match.captured(3).toInt();
-        m_introspection->m_version.patch = match.captured(4).toInt();
-        m_introspection->m_version.fullVersion = match.captured(1).toUtf8();
-        break;
-    }
-}
-
 void CMakeTool::fetchFromCapabilities() const
 {
     Utils::SynchronousProcessResponse response = run({"-E", "capabilities"});
 
-    if (response.result == Utils::SynchronousProcessResponse::Finished)
+    if (response.result == Utils::SynchronousProcessResponse::Finished) {
+        m_introspection->m_didRun = true;
         parseFromCapabilities(response.stdOut());
+    } else {
+        m_introspection->m_didRun = false;
+    }
 }
 
 static int getVersion(const QVariantMap &obj, const QString value)
@@ -651,7 +522,6 @@ void CMakeTool::parseFromCapabilities(const QString &input) const
         return;
 
     const QVariantMap data = doc.object().toVariantMap();
-    m_introspection->m_hasServerMode = data.value("serverMode").toBool();
     const QVariantList generatorList = data.value("generators").toList();
     for (const QVariant &v : generatorList) {
         const QVariantMap gen = v.toMap();

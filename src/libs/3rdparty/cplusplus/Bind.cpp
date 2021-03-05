@@ -135,6 +135,8 @@ void Bind::setDeclSpecifiers(Symbol *symbol, const FullySpecifiedType &declSpeci
     if (Function *funTy = symbol->asFunction()) {
         if (declSpecifiers.isVirtual())
             funTy->setVirtual(true);
+        if (declSpecifiers.isStatic())
+            funTy->setStatic(true);
     }
 
     if (declSpecifiers.isDeprecated())
@@ -918,6 +920,19 @@ void Bind::parameterDeclarationClause(ParameterDeclarationClauseAST *ast, int lp
 
     for (ParameterDeclarationListAST *it = ast->parameter_declaration_list; it; it = it->next) {
         this->declaration(it->value);
+
+        // Check for '...' in last parameter declarator for variadic template
+        // (i.e. template<class ... T> void foo(T ... args);)
+        // those last dots are part of parameter declarator, not the parameter declaration clause
+        if (! it->next
+            && it->value->declarator != nullptr
+            && it->value->declarator->core_declarator != nullptr){
+            DeclaratorIdAST* declId = it->value->declarator->core_declarator->asDeclaratorId();
+            if (declId && declId->dot_dot_dot_token != 0){
+                fun->setVariadic(true);
+                fun->setVariadicTemplate(true);
+            }
+        }
     }
 
     if (ast->dot_dot_dot_token)
@@ -2239,6 +2254,19 @@ bool Bind::visit(FunctionDefinitionAST *ast)
     Function *fun = type->asFunctionType();
     ast->symbol = fun;
 
+    if (!fun && ast->declarator && ast->declarator->initializer)
+        if (ExpressionListParenAST *exprAst = ast->declarator->initializer->asExpressionListParen()) {
+            // this could be non-expanded function like macro, because
+            // for find usages we parse without expanding them
+            // So we create dummy function type here for findUsages to see function body
+            fun = control()->newFunction(0, nullptr);
+            fun->setStartOffset(tokenAt(exprAst->firstToken()).utf16charsBegin());
+            fun->setEndOffset(tokenAt(exprAst->lastToken() - 1).utf16charsEnd());
+
+            type = fun;
+            ast->symbol = fun;
+        }
+
     if (fun) {
         setDeclSpecifiers(fun, declSpecifiers);
         fun->setEndOffset(tokenAt(ast->lastToken() - 1).utf16charsEnd());
@@ -2767,10 +2795,27 @@ bool Bind::visit(DestructorNameAST *ast)
 bool Bind::visit(TemplateIdAST *ast)
 {
     // collect the template parameters
-    std::vector<FullySpecifiedType> templateArguments;
+    std::vector<TemplateArgument> templateArguments;
     for (ExpressionListAST *it = ast->template_argument_list; it; it = it->next) {
         ExpressionTy value = this->expression(it->value);
-        templateArguments.push_back(value);
+        if (value.isValid()) {
+            templateArguments.emplace_back(value);
+        } else {
+            // special case for numeric values
+            if (it->value->asNumericLiteral()) {
+                templateArguments
+                    .emplace_back(value,
+                                  tokenAt(it->value->asNumericLiteral()->literal_token).number);
+            } else if (it->value->asBoolLiteral()) {
+                templateArguments
+                    .emplace_back(value, tokenAt(it->value->asBoolLiteral()->literal_token).number);
+            } else {
+                // fall back to non-valid type in templateArguments
+                // for ast->template_argument_list and templateArguments sizes match
+                // TODO support other literals/expressions as default arguments
+                templateArguments.emplace_back(value);
+            }
+        }
     }
 
     const Identifier *id = identifier(ast->identifier_token);
@@ -3014,6 +3059,22 @@ bool Bind::visit(GnuAttributeSpecifierAST *ast)
     return false;
 }
 
+bool Bind::visit(MsvcDeclspecSpecifierAST *ast)
+{
+    for (GnuAttributeListAST *it = ast->attribute_list; it; it = it->next) {
+        this->attribute(it->value);
+    }
+    return false;
+}
+
+bool Bind::visit(StdAttributeSpecifierAST *ast)
+{
+    for (GnuAttributeListAST *it = ast->attribute_list; it; it = it->next) {
+        this->attribute(it->value);
+    }
+    return false;
+}
+
 bool Bind::visit(TypeofSpecifierAST *ast)
 {
     ExpressionTy expression = this->expression(ast->expression);
@@ -3130,6 +3191,10 @@ bool Bind::visit(EnumSpecifierAST *ast)
     }
 
     (void) switchScope(previousScope);
+    if (ast->name)
+        _type.setType(control()->namedType(this->name(ast->name)));
+    else
+        _type.setType(ast->symbol);
     return false;
 }
 

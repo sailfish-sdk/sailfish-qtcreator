@@ -35,13 +35,15 @@
 #ifndef QMLDESIGNER_TEST
 #include <qmldesignerplugin.h>
 #include <viewmanager.h>
+#include <nodeabstractproperty.h>
 #endif
 
 #include <coreplugin/helpmanager.h>
 #include <utils/qtcassert.h>
 #include <utils/algorithm.h>
 
-#include <QRegExp>
+#include <QRegularExpression>
+#include <QWidget>
 #include <QtGui/qimage.h>
 
 namespace QmlDesigner {
@@ -168,6 +170,9 @@ The default implementation is setting the reference of the model to the view.
 void AbstractView::modelAttached(Model *model)
 {
     setModel(model);
+
+    if (model)
+        model->d->updateEnabledViews();
 }
 
 /*!
@@ -381,6 +386,10 @@ void AbstractView::updateActiveScene3D(const QVariantMap & /*sceneState*/)
 {
 }
 
+void AbstractView::modelNodePreviewPixmapChanged(const ModelNode & /*node*/, const QPixmap & /*pixmap*/)
+{
+}
+
 QList<ModelNode> AbstractView::toModelNodeList(const QList<Internal::InternalNode::Pointer> &nodeList) const
 {
     return QmlDesigner::toModelNodeList(nodeList, const_cast<AbstractView*>(this));
@@ -389,7 +398,7 @@ QList<ModelNode> AbstractView::toModelNodeList(const QList<Internal::InternalNod
 QList<ModelNode> toModelNodeList(const QList<Internal::InternalNode::Pointer> &nodeList, AbstractView *view)
 {
     QList<ModelNode> newNodeList;
-    foreach (const Internal::InternalNode::Pointer &node, nodeList)
+    for (const Internal::InternalNode::Pointer &node : nodeList)
         newNodeList.append(ModelNode(node, view->model(), view));
 
     return newNodeList;
@@ -398,7 +407,7 @@ QList<ModelNode> toModelNodeList(const QList<Internal::InternalNode::Pointer> &n
 QList<Internal::InternalNode::Pointer> toInternalNodeList(const QList<ModelNode> &nodeList)
 {
     QList<Internal::InternalNode::Pointer> newNodeList;
-    foreach (const ModelNode &node, nodeList)
+    for (const ModelNode &node : nodeList)
         newNodeList.append(node.internalNode());
 
     return newNodeList;
@@ -406,15 +415,26 @@ QList<Internal::InternalNode::Pointer> toInternalNodeList(const QList<ModelNode>
 
 /*!
     Sets the list of nodes to the actual selected nodes specified by
-    \a selectedNodeList.
+    \a selectedNodeList if the node or its ancestors are not locked.
 */
 void AbstractView::setSelectedModelNodes(const QList<ModelNode> &selectedNodeList)
 {
-    model()->d->setSelectedNodes(toInternalNodeList(selectedNodeList));
+    QList<ModelNode> unlockedNodes;
+
+    for (const auto &modelNode : selectedNodeList) {
+        if (!ModelNode::isThisOrAncestorLocked(modelNode))
+            unlockedNodes.push_back(modelNode);
+    }
+
+    model()->d->setSelectedNodes(toInternalNodeList(unlockedNodes));
 }
 
 void AbstractView::setSelectedModelNode(const ModelNode &modelNode)
 {
+    if (ModelNode::isThisOrAncestorLocked(modelNode)) {
+        clearSelectedModelNodes();
+        return;
+    }
     setSelectedModelNodes({modelNode});
 }
 
@@ -445,7 +465,7 @@ bool AbstractView::isSelectedModelNode(const ModelNode &modelNode) const
     Sets the list of nodes to the actual selected nodes. Returns a list of the
     selected nodes.
 */
-QList<ModelNode> AbstractView::selectedModelNodes() const
+const QList<ModelNode> AbstractView::selectedModelNodes() const
 {
     return toModelNodeList(model()->d->selectedNodes());
 }
@@ -503,31 +523,39 @@ QString firstCharToLower(const QString &string)
     return resultString;
 }
 
-QString AbstractView::generateNewId(const QString &prefixName) const
+QString AbstractView::generateNewId(const QString &prefixName, const QString &fallbackPrefix) const
 {
-    QString fixedPrefix = firstCharToLower(prefixName);
-    fixedPrefix.remove(' ');
-    if (!ModelNode::isValidId(fixedPrefix))
-        return generateNewId("element");
-    int counter = 1;
+    // First try just the prefixName without number as postfix, then continue with 2 and further
+    // as postfix until id does not already exist.
+    // Properties of the root node are not allowed for ids, because they are available in the
+    // complete context without qualification.
 
-    /* First try just the prefixName without number as postfix, then continue with 2 and further as postfix
-     * until id does not already exist.
-     * Properties of the root node are not allowed for ids, because they are available in the complete context
-     * without qualification.
-     * The id "item" is explicitly not allowed, because it is too likely to clash.
-    */
+    int counter = 0;
 
-    QString newId = QString(QStringLiteral("%1")).arg(firstCharToLower(prefixName));
-    newId.remove(QRegExp(QStringLiteral("[^a-zA-Z0-9_]")));
+    QString newBaseId = QString(QStringLiteral("%1")).arg(firstCharToLower(prefixName));
+    newBaseId.remove(QRegularExpression(QStringLiteral("[^a-zA-Z0-9_]")));
 
-    while (!ModelNode::isValidId(newId) || hasId(newId) || rootModelNode().hasProperty(newId.toUtf8()) || newId == "item") {
-        counter += 1;
-        newId = QString(QStringLiteral("%1%2")).arg(firstCharToLower(prefixName)).arg(counter - 1);
-        newId.remove(QRegExp(QStringLiteral("[^a-zA-Z0-9_]")));
+    if (!newBaseId.isEmpty()) {
+        QChar firstChar = newBaseId.at(0);
+        if (firstChar.isDigit())
+            newBaseId.prepend('_');
+    } else {
+        newBaseId = fallbackPrefix;
+    }
+
+    QString newId = newBaseId;
+
+    while (!ModelNode::isValidId(newId) || hasId(newId) || rootModelNode().hasProperty(newId.toUtf8())) {
+        ++counter;
+        newId = QString(QStringLiteral("%1%2")).arg(firstCharToLower(newBaseId)).arg(counter);
     }
 
     return newId;
+}
+
+QString AbstractView::generateNewId(const QString &prefixName) const
+{
+    return generateNewId(prefixName, QStringLiteral("element"));
 }
 
 ModelNode AbstractView::modelNodeForInternalId(qint32 internalId) const
@@ -647,6 +675,19 @@ bool AbstractView::executeInTransaction(const QByteArray &identifier, const Abst
     return true;
 }
 
+bool AbstractView::isEnabled() const
+{
+    return m_enabled;
+}
+
+void AbstractView::setEnabled(bool b)
+{
+    m_enabled = b;
+
+    if (model())
+        model()->d->updateEnabledViews();
+}
+
 QList<ModelNode> AbstractView::allModelNodes() const
 {
     return toModelNodeList(model()->d->allNodes());
@@ -757,6 +798,12 @@ void AbstractView::emitUpdateActiveScene3D(const QVariantMap &sceneState)
         model()->d->notifyUpdateActiveScene3D(sceneState);
 }
 
+void AbstractView::emitModelNodelPreviewPixmapChanged(const ModelNode &node, const QPixmap &pixmap)
+{
+    if (model())
+        model()->d->notifyModelNodePreviewPixmapChanged(node, pixmap);
+}
+
 void AbstractView::emitRewriterEndTransaction()
 {
     if (model())
@@ -833,8 +880,10 @@ static int getMajorVersionFromImport(const Model *model)
 static int getMajorVersionFromNode(const ModelNode &modelNode)
 {
     if (modelNode.metaInfo().isValid()) {
-        foreach (const NodeMetaInfo &info,  modelNode.metaInfo().classHierarchy()) {
-            if (info.typeName() == "QtQuick.QtObject" || info.typeName() == "QtQuick.Item")
+        for (const NodeMetaInfo &info :  modelNode.metaInfo().classHierarchy()) {
+            if (info.typeName() == "QtQml.QtObject"
+                    || info.typeName() == "QtQuick.QtObject"
+                    || info.typeName() == "QtQuick.Item")
                 return info.majorVersion();
         }
     }

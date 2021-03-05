@@ -39,7 +39,12 @@
 #include <QPointer>
 #include <QRectF>
 #include <QTime>
+#include <QTimer>
 #include <QtGui/qevent.h>
+
+#include <memory>
+
+QT_FORWARD_DECLARE_CLASS(QFileSystemWatcher)
 
 namespace ProjectExplorer {
 class Target;
@@ -62,6 +67,7 @@ class RemovePropertiesCommand;
 class CompleteComponentCommand;
 class InformationContainer;
 class TokenCommand;
+class ConnectionManagerInterface;
 
 class QMLDESIGNERCORE_EXPORT NodeInstanceView : public AbstractView, public NodeInstanceClientInterface
 {
@@ -72,7 +78,7 @@ class QMLDESIGNERCORE_EXPORT NodeInstanceView : public AbstractView, public Node
 public:
     using Pointer = QWeakPointer<NodeInstanceView>;
 
-    explicit NodeInstanceView(QObject *parent = nullptr, NodeInstanceServerInterface::RunModus runModus = NodeInstanceServerInterface::NormalModus);
+    explicit NodeInstanceView(ConnectionManagerInterface &connectionManager);
     ~NodeInstanceView() override;
 
     void modelAttached(Model *model) override;
@@ -94,8 +100,9 @@ public:
     void auxiliaryDataChanged(const ModelNode &node, const PropertyName &name, const QVariant &data) override;
     void customNotification(const AbstractView *view, const QString &identifier, const QList<ModelNode> &nodeList, const QList<QVariant> &data) override;
     void nodeSourceChanged(const ModelNode &modelNode, const QString &newNodeSource) override;
-
+    void capturedData(const CapturedDataCommand &capturedData) override;
     void currentStateChanged(const ModelNode &node) override;
+    void sceneCreated(const SceneCreatedCommand &command) override;
 
     QList<NodeInstance> instances() const;
     NodeInstance instanceForModelNode(const ModelNode &node) const ;
@@ -134,14 +141,24 @@ public:
 
     void sendInputEvent(QInputEvent *e) const;
     void view3DAction(const View3DActionCommand &command);
+    void requestModelNodePreviewImage(const ModelNode &node, const ModelNode &renderNode);
     void edit3DViewResized(const QSize &size) const;
 
     void handlePuppetToCreatorCommand(const PuppetToCreatorCommand &command) override;
+
+    QVariant previewImageDataForGenericNode(const ModelNode &modelNode, const ModelNode &renderNode);
+    QVariant previewImageDataForImageNode(const ModelNode &modelNode);
+
+    void setCrashCallback(std::function<void()> crashCallback)
+    {
+        m_crashCallback = std::move(crashCallback);
+    }
 
 protected:
     void timerEvent(QTimerEvent *event) override;
 
 private: // functions
+    std::unique_ptr<NodeInstanceServerProxy> createNodeInstanceServerProxy();
     void activateState(const NodeInstance &instance);
     void activateBaseState();
 
@@ -161,9 +178,8 @@ private: // functions
     void setStateInstance(const NodeInstance &stateInstance);
     void clearStateInstance();
 
-    NodeInstanceServerInterface *nodeInstanceServer() const;
-    QMultiHash<ModelNode, InformationName> informationChanged(const QVector<InformationContainer> &containerVector);
-
+    QMultiHash<ModelNode, InformationName> informationChanged(
+        const QVector<InformationContainer> &containerVector);
 
     CreateSceneCommand createCreateSceneCommand();
     ClearSceneCommand createClearSceneCommand() const;
@@ -196,22 +212,45 @@ private: // functions
     // puppet to creator command handlers
     void handlePuppetKeyPress(int key, Qt::KeyboardModifiers modifiers);
 
+    struct ModelNodePreviewImageData {
+        QDateTime time;
+        QPixmap pixmap;
+        QString type;
+        QString id;
+        QString info;
+    };
+    QVariant modelNodePreviewImageDataToVariant(const ModelNodePreviewImageData &imageData);
+    void updatePreviewImageForNode(const ModelNode &modelNode, const QImage &image);
+
+    void updateWatcher(const QString &path);
+
+private:
+    QHash<QString, ModelNodePreviewImageData> m_imageDataMap;
+
     NodeInstance m_rootNodeInstance;
     NodeInstance m_activeStateInstance;
-
     QHash<ModelNode, NodeInstance> m_nodeInstanceHash;
     QHash<ModelNode, QImage> m_statePreviewImage;
-
-    QPointer<NodeInstanceServerProxy> m_nodeInstanceServer;
+    ConnectionManagerInterface &m_connectionManager;
+    std::unique_ptr<NodeInstanceServerProxy> m_nodeInstanceServer;
     QImage m_baseStatePreviewImage;
     QElapsedTimer m_lastCrashTime;
-    NodeInstanceServerInterface::RunModus m_runModus;
     ProjectExplorer::Target *m_currentTarget = nullptr;
     int m_restartProcessTimerId;
     RewriterTransaction m_puppetTransaction;
 
     // key: fileUrl value: (key: instance qml id, value: related tool states)
     QHash<QUrl, QHash<QString, QVariantMap>> m_edit3DToolStates;
+
+    std::function<void()> m_crashCallback{[this] { handleCrash(); }};
+
+    // We use QFileSystemWatcher directly instead of Utils::FileSystemWatcher as we want
+    // shader changes to be applied immediately rather than requiring reactivation of
+    // the creator application.
+    QFileSystemWatcher *m_fileSystemWatcher;
+    QTimer m_resetTimer;
+    QTimer m_updateWatcherTimer;
+    QSet<QString> m_pendingUpdateDirs;
 };
 
 } // namespace ProxyNodeInstanceView

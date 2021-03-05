@@ -26,6 +26,8 @@
 #include <coreplugin/iversioncontrol.h>
 #include <coreplugin/vcsmanager.h>
 
+#include <utils/qtcassert.h>
+
 #include <QDesktopServices>
 #include <QMenu>
 #include <QPlainTextEdit>
@@ -34,7 +36,7 @@
 
 namespace VcsBase {
 
-VcsOutputFormatter::VcsOutputFormatter() :
+VcsOutputLineParser::VcsOutputLineParser() :
     m_regexp(
         "(https?://\\S*)"                             // https://codereview.org/c/1234
         "|(v[0-9]+\\.[0-9]+\\.[0-9]+[\\-A-Za-z0-9]*)" // v0.1.2-beta3
@@ -43,40 +45,43 @@ VcsOutputFormatter::VcsOutputFormatter() :
 {
 }
 
-void VcsOutputFormatter::appendMessage(const QString &text, Utils::OutputFormat format)
+Utils::OutputLineParser::Result VcsOutputLineParser::handleLine(const QString &text,
+                                                                Utils::OutputFormat format)
 {
+    Q_UNUSED(format);
     QRegularExpressionMatchIterator it = m_regexp.globalMatch(text);
-    int begin = 0;
+    if (!it.hasNext())
+        return Status::NotHandled;
+    LinkSpecs linkSpecs;
     while (it.hasNext()) {
         const QRegularExpressionMatch match = it.next();
-        const QTextCharFormat normalFormat = charFormat(format);
-        OutputFormatter::appendMessage(text.mid(begin, match.capturedStart() - begin), format);
-        QTextCursor tc = plainTextEdit()->textCursor();
+        const int startPos = match.capturedStart();
         QStringView url = match.capturedView();
-        begin = match.capturedEnd();
-        while (url.rbegin()->isPunct()) {
+        while (url.rbegin()->isPunct())
             url.chop(1);
-            --begin;
-        }
-        tc.movePosition(QTextCursor::End);
-        tc.insertText(url.toString(), linkFormat(normalFormat, url.toString()));
-        tc.movePosition(QTextCursor::End);
+        linkSpecs << LinkSpec(startPos, url.length(), url.toString());
     }
-    OutputFormatter::appendMessage(text.mid(begin), format);
+    return {Status::Done, linkSpecs};
 }
 
-void VcsOutputFormatter::handleLink(const QString &href)
+bool VcsOutputLineParser::handleVcsLink(const QString &workingDirectory, const QString &href)
 {
-    if (href.startsWith("http://") || href.startsWith("https://"))
+    using namespace Core;
+    QTC_ASSERT(!href.isEmpty(), return false);
+    if (href.startsWith("http://") || href.startsWith("https://")) {
         QDesktopServices::openUrl(QUrl(href));
-    else if (!href.isEmpty())
-        emit referenceClicked(href);
+        return true;
+    }
+    if (IVersionControl *vcs = VcsManager::findVersionControlForDirectory(workingDirectory))
+        return vcs->handleLink(workingDirectory, href);
+    return false;
 }
 
-void VcsOutputFormatter::fillLinkContextMenu(
+void VcsOutputLineParser::fillLinkContextMenu(
         QMenu *menu, const QString &workingDirectory, const QString &href)
 {
-    if (href.isEmpty() || href.startsWith("http://") || href.startsWith("https://")) {
+    QTC_ASSERT(!href.isEmpty(), return);
+    if (href.startsWith("http://") || href.startsWith("https://")) {
         QAction *action = menu->addAction(
                     tr("&Open \"%1\"").arg(href),
                     [href] { QDesktopServices::openUrl(QUrl(href)); });

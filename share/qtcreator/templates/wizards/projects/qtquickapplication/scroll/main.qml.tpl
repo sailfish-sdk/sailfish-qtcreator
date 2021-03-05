@@ -8,20 +8,21 @@ ApplicationWindow {
 @if %{UseVirtualKeyboard}
     id: window
 @endif
-    visible: true
     width: 640
     height: 480
+    visible: true
     title: qsTr("Scroll")
 
     ScrollView {
         anchors.fill: parent
 
         ListView {
+            id: listView
             width: parent.width
             model: 20
             delegate: ItemDelegate {
                 text: "Item " + (index + 1)
-                width: parent.width
+                width: listView.width
             }
         }
     }

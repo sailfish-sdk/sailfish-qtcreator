@@ -21,10 +21,6 @@ QtcPlugin {
     files: [
         "builddirparameters.cpp",
         "builddirparameters.h",
-        "builddirmanager.cpp",
-        "builddirmanager.h",
-        "builddirreader.cpp",
-        "builddirreader.h",
         "cmake_global.h",
         "cmakebuildconfiguration.cpp",
         "cmakebuildconfiguration.h",
@@ -35,8 +31,6 @@ QtcPlugin {
         "cmakebuildsystem.cpp",
         "cmakebuildsystem.h",
         "cmakebuildtarget.h",
-        "cmakecbpparser.cpp",
-        "cmakecbpparser.h",
         "cmakeconfigitem.cpp",
         "cmakeconfigitem.h",
         "cmakeeditor.cpp",
@@ -91,12 +85,6 @@ QtcPlugin {
         "fileapireader.cpp",
         "fileapireader.h",
         "projecttreehelper.cpp",
-        "projecttreehelper.h",
-        "servermode.cpp",
-        "servermode.h",
-        "servermodereader.cpp",
-        "servermodereader.h",
-        "tealeafreader.cpp",
-        "tealeafreader.h"
+        "projecttreehelper.h"
     ]
 }

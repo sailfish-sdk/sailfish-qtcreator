@@ -58,7 +58,7 @@ Column {
             SecondColumnLayout {
                 ComboBox {
                     scope: "Image"
-                    model: ["Stretch", "PreserveAspectFit", "PreserveAspectCrop", "Tile", "TileVertically", "TileHorizontally"]
+                    model: ["Stretch", "PreserveAspectFit", "PreserveAspectCrop", "Tile", "TileVertically", "TileHorizontally", "Pad"]
                     backendValue: backendValues.fillMode
                     implicitWidth: 180
                     Layout.fillWidth: true
@@ -70,12 +70,14 @@ Column {
 
             Label {
                 text: qsTr("Source size")
+                disabledState: !backendValues.sourceSize.isAvailable
             }
 
             SecondColumnLayout {
                 Label {
                     text: "W"
                     width: 12
+                    disabledStateSoft: !backendValues.sourceSize_width.isAvailable
                 }
 
                 SpinBox {
@@ -83,6 +85,7 @@ Column {
                     minimumValue: 0
                     maximumValue: 8192
                     decimals: 0
+                    enabled: backendValue.isAvailable
                 }
 
                 Item {
@@ -93,6 +96,7 @@ Column {
                 Label {
                     text: "H"
                     width: 12
+                    disabledStateSoft: !backendValues.sourceSize_height.isAvailable
                 }
 
                 SpinBox {
@@ -100,10 +104,141 @@ Column {
                     minimumValue: 0
                     maximumValue: 8192
                     decimals: 0
+                    enabled: backendValue.isAvailable
                 }
 
                 ExpandingSpacer {
                 }
+            }
+
+            Label {
+                text: qsTr("Horizontal alignment")
+            }
+
+            SecondColumnLayout {
+                ComboBox {
+                    scope: "Image"
+                    model: ["AlignLeft", "AlignRight", "AlignHCenter"]
+                    backendValue: backendValues.horizontalAlignment
+                    implicitWidth: 180
+                    Layout.fillWidth: true
+                }
+
+                ExpandingSpacer {
+                }
+            }
+
+            Label {
+                text: qsTr("Vertical alignment")
+            }
+
+            SecondColumnLayout {
+                ComboBox {
+                    scope: "Image"
+                    model: ["AlignTop", "AlignBottom", "AlignVCenter"]
+                    backendValue: backendValues.verticalAlignment
+                    implicitWidth: 180
+                    Layout.fillWidth: true
+                }
+
+                ExpandingSpacer {
+                }
+            }
+
+            Label {
+                text: qsTr("Asynchronous")
+                tooltip: qsTr("Loads images on the local filesystem asynchronously in a separate thread.")
+                disabledState: !backendValues.asynchronous.isAvailable
+            }
+
+            SecondColumnLayout {
+                CheckBox {
+                    enabled: backendValues.asynchronous.isAvailable
+                    text: backendValues.asynchronous.valueToString
+                    backendValue: backendValues.asynchronous
+                    implicitWidth: 180
+                }
+                ExpandingSpacer {}
+            }
+
+            Label {
+                text: qsTr("Auto transform")
+                tooltip: qsTr("Automatically applies image transformation metadata such as EXIF orientation.")
+                disabledState: !backendValues.autoTransform.isAvailable
+            }
+
+            SecondColumnLayout {
+                CheckBox {
+                    enabled: backendValues.autoTransform.isAvailable
+                    text: backendValues.autoTransform.valueToString
+                    backendValue: backendValues.autoTransform
+                    implicitWidth: 180
+                }
+                ExpandingSpacer {}
+            }
+
+            Label {
+                text: qsTr("Cache")
+                tooltip: qsTr("Caches the image.")
+                disabledState: !backendValues.cache.isAvailable
+            }
+
+            SecondColumnLayout {
+                CheckBox {
+                    enabled: backendValues.cache.isAvailable
+                    text: backendValues.cache.valueToString
+                    backendValue: backendValues.cache
+                    implicitWidth: 180
+                }
+                ExpandingSpacer {}
+            }
+
+            Label {
+                text: qsTr("Mipmap")
+                tooltip: qsTr("Uses mipmap filtering when the image is scaled or transformed.")
+                disabledState: !backendValues.mipmap.isAvailable
+            }
+
+            SecondColumnLayout {
+                CheckBox {
+                    enabled: backendValues.mipmap.isAvailable
+                    text: backendValues.mipmap.valueToString
+                    backendValue: backendValues.mipmap
+                    implicitWidth: 180
+                }
+                ExpandingSpacer {}
+            }
+
+            Label {
+                text: qsTr("Mirror")
+                tooltip: qsTr("Inverts the image horizontally.")
+                disabledState: !backendValues.mirror.isAvailable
+            }
+
+            SecondColumnLayout {
+                CheckBox {
+                    enabled: backendValues.mirror.isAvailable
+                    text: backendValues.mirror.valueToString
+                    backendValue: backendValues.mirror
+                    implicitWidth: 180
+                }
+                ExpandingSpacer {}
+            }
+
+            Label {
+                text: qsTr("Smooth")
+                tooltip: qsTr("Smoothly filters the image when it is scaled or transformed.")
+                disabledState: !backendValues.smooth.isAvailable
+            }
+
+            SecondColumnLayout {
+                CheckBox {
+                    enabled: backendValues.smooth.isAvailable
+                    text: backendValues.smooth.valueToString
+                    backendValue: backendValues.smooth
+                    implicitWidth: 180
+                }
+                ExpandingSpacer {}
             }
         }
     }

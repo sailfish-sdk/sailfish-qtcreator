@@ -40,6 +40,7 @@
 
 #include "quickitemnodeinstance.h"
 #include "quick3dnodeinstance.h"
+#include "quick3dtexturenodeinstance.h"
 
 #include "nodeinstanceserver.h"
 #include "instancecontainer.h"
@@ -119,6 +120,11 @@ QImage ServerNodeInstance::renderPreviewImage(const QSize &previewImageSize) con
     return m_nodeInstance->renderPreviewImage(previewImageSize);
 }
 
+QSharedPointer<QQuickItemGrabResult> ServerNodeInstance::createGrabResult() const
+{
+    return m_nodeInstance->createGrabResult();
+}
+
 bool ServerNodeInstance::isRootNodeInstance() const
 {
     return isValid() && m_nodeInstance->isRootNodeInstance();
@@ -176,6 +182,8 @@ Internal::ObjectNodeInstance::Pointer ServerNodeInstance::createInstance(QObject
         instance = Internal::LayoutNodeInstance::create(objectToBeWrapped);
     else if (isSubclassOf(objectToBeWrapped, "QQuickItem"))
         instance = Internal::QuickItemNodeInstance::create(objectToBeWrapped);
+    else if (isSubclassOf(objectToBeWrapped, "QQuick3DTexture"))
+        instance = Internal::Quick3DTextureNodeInstance::create(objectToBeWrapped);
     else if (isSubclassOf(objectToBeWrapped, "QQuick3DNode"))
         instance = Internal::Quick3DNodeInstance::create(objectToBeWrapped);
     else if (isSubclassOf(objectToBeWrapped, "QQmlComponent"))
@@ -228,9 +236,12 @@ ServerNodeInstance ServerNodeInstance::create(NodeInstanceServer *nodeInstanceSe
     } else if (!instanceContainer.componentPath().isEmpty()) {
         object = Internal::ObjectNodeInstance::createComponent(instanceContainer.componentPath(), nodeInstanceServer->context());
         if (object == nullptr) {
-            const QString errors = getErrorString(nodeInstanceServer->engine(), instanceContainer.componentPath());
-            const QString message = QString("Component with path %1 could not be created.\n\n").arg(instanceContainer.componentPath());
-            nodeInstanceServer->sendDebugOutput(DebugOutputCommand::ErrorType, message + errors, instanceContainer.instanceId());
+            object = Internal::ObjectNodeInstance::createPrimitive(QString::fromUtf8(instanceContainer.type()), instanceContainer.majorNumber(), instanceContainer.minorNumber(), nodeInstanceServer->context());
+            if (object == nullptr) {
+                const QString errors = getErrorString(nodeInstanceServer->engine(), instanceContainer.componentPath());
+                const QString message = QString("Component with path %1 could not be created.\n\n").arg(instanceContainer.componentPath());
+                nodeInstanceServer->sendDebugOutput(DebugOutputCommand::ErrorType, message + errors, instanceContainer.instanceId());
+            }
         }
     } else {
         object = Internal::ObjectNodeInstance::createPrimitive(QString::fromUtf8(instanceContainer.type()), instanceContainer.majorNumber(), instanceContainer.minorNumber(), nodeInstanceServer->context());
@@ -258,6 +269,9 @@ ServerNodeInstance ServerNodeInstance::create(NodeInstanceServer *nodeInstanceSe
     instance.internalInstance()->setInstanceId(instanceContainer.instanceId());
 
     instance.internalInstance()->initialize(instance.m_nodeInstance, instanceContainer.metaFlags());
+
+    // Handle hidden state to initialize pickable state
+    nodeInstanceServer->handleInstanceHidden(instance, false, false);
 
     return instance;
 }
@@ -335,9 +349,16 @@ void ServerNodeInstance::setPropertyBinding(const PropertyName &name, const QStr
     m_nodeInstance->setPropertyBinding(name, expression);
 }
 
-void ServerNodeInstance::setHideInEditor(bool b)
+void ServerNodeInstance::setHiddenInEditor(bool b)
 {
-    m_nodeInstance->setHideInEditor(b);
+    m_nodeInstance->setHiddenInEditor(b);
+    m_nodeInstance->nodeInstanceServer()->handleInstanceHidden(*this, b, true);
+}
+
+void ServerNodeInstance::setLockedInEditor(bool b)
+{
+    m_nodeInstance->setLockedInEditor(b);
+    m_nodeInstance->nodeInstanceServer()->handleInstanceLocked(*this, b, true);
 }
 
 void ServerNodeInstance::resetProperty(const PropertyName &name)

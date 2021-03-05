@@ -37,67 +37,50 @@
 #include <projectexplorer/kit.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/target.h>
+
+#include <utils/layoutbuilder.h>
 #include <utils/qtcassert.h>
 
-#include <QCheckBox>
-#include <QFileInfo>
-#include <QFormLayout>
 #include <QJsonObject>
 #include <QLabel>
 #include <QPlainTextEdit>
-#include <QSpacerItem>
 
 using namespace ProjectExplorer;
+using namespace Utils;
+
+namespace QbsProjectManager {
+namespace Internal {
 
 // --------------------------------------------------------------------
 // Constants:
 // --------------------------------------------------------------------
 
-static const char QBS_REMOVE_FIRST[] = "Qbs.RemoveFirst";
-static const char QBS_DRY_RUN[] = "Qbs.DryRun";
-static const char QBS_KEEP_GOING[] = "Qbs.DryKeepGoing";
-
-namespace QbsProjectManager {
-namespace Internal {
-
-class QbsInstallStepConfigWidget : public ProjectExplorer::BuildStepConfigWidget
-{
-public:
-    QbsInstallStepConfigWidget(QbsInstallStep *step);
-
-private:
-    void updateState();
-
-    void changeRemoveFirst(bool rf) { m_step->setRemoveFirst(rf); }
-    void changeDryRun(bool dr) { m_step->setDryRun(dr); }
-    void changeKeepGoing(bool kg) { m_step->setKeepGoing(kg); }
-
-private:
-    QbsInstallStep *m_step;
-    bool m_ignoreChange;
-
-    QCheckBox *m_dryRunCheckBox;
-    QCheckBox *m_keepGoingCheckBox;
-    QCheckBox *m_removeFirstCheckBox;
-    QPlainTextEdit *m_commandLineTextEdit;
-    QLabel *m_installRootValueLabel;
-};
+const char QBS_REMOVE_FIRST[] = "Qbs.RemoveFirst";
+const char QBS_DRY_RUN[] = "Qbs.DryRun";
+const char QBS_KEEP_GOING[] = "Qbs.DryKeepGoing";
 
 // --------------------------------------------------------------------
 // QbsInstallStep:
 // --------------------------------------------------------------------
 
-QbsInstallStep::QbsInstallStep(BuildStepList *bsl, Core::Id id)
+QbsInstallStep::QbsInstallStep(BuildStepList *bsl, Utils::Id id)
     : BuildStep(bsl, id)
 {
     setDisplayName(tr("Qbs Install"));
+    setSummaryText(tr("<b>Qbs:</b> %1").arg("install"));
 
-    const QbsBuildConfiguration * const bc = buildConfig();
-    connect(bc, &QbsBuildConfiguration::qbsConfigurationChanged, this, &QbsInstallStep::changed);
-    if (bc->qbsStep()) {
-        connect(bc->qbsStep(), &QbsBuildStep::qbsBuildOptionsChanged,
-                this, &QbsInstallStep::changed);
-    }
+    const auto labelPlacement = BoolAspect::LabelPlacement::AtCheckBoxWithoutDummyLabel;
+    m_dryRun = addAspect<BoolAspect>();
+    m_dryRun->setSettingsKey(QBS_DRY_RUN);
+    m_dryRun->setLabel(tr("Dry run"), labelPlacement);
+
+    m_keepGoing = addAspect<BoolAspect>();
+    m_keepGoing->setSettingsKey(QBS_KEEP_GOING);
+    m_keepGoing->setLabel(tr("Keep going"), labelPlacement);
+
+    m_cleanInstallRoot = addAspect<BoolAspect>();
+    m_cleanInstallRoot->setSettingsKey(QBS_REMOVE_FIRST);
+    m_cleanInstallRoot->setLabel(tr("Remove first"), labelPlacement);
 }
 
 QbsInstallStep::~QbsInstallStep()
@@ -109,20 +92,20 @@ QbsInstallStep::~QbsInstallStep()
 
 bool QbsInstallStep::init()
 {
-    QTC_ASSERT(!buildConfiguration()->buildSystem()->isParsing() && !m_session, return false);
+    QTC_ASSERT(!target()->buildSystem()->isParsing() && !m_session, return false);
     return true;
 }
 
 void QbsInstallStep::doRun()
 {
-    m_session = static_cast<QbsBuildSystem *>(buildSystem())->session();
+    m_session = static_cast<QbsBuildSystem *>(target()->buildSystem())->session();
 
     QJsonObject request;
-    request.insert("type", "install");
+    request.insert("type", "install-project");
     request.insert("install-root", installRoot());
-    request.insert("clean-install-root", m_cleanInstallRoot);
-    request.insert("keep-going", m_keepGoing);
-    request.insert("dry-run", m_dryRun);
+    request.insert("clean-install-root", m_cleanInstallRoot->value());
+    request.insert("keep-going", m_keepGoing->value());
+    request.insert("dry-run", m_dryRun->value());
     m_session->sendRequest(request);
 
     m_maxProgress = 0;
@@ -132,11 +115,6 @@ void QbsInstallStep::doRun()
     connect(m_session, &QbsSession::errorOccurred, this, [this] {
         installDone(ErrorInfo(tr("Installing canceled: Qbs session failed.")));
     });
-}
-
-ProjectExplorer::BuildStepConfigWidget *QbsInstallStep::createConfigWidget()
-{
-    return new QbsInstallStepConfigWidget(this);
 }
 
 void QbsInstallStep::doCancel()
@@ -153,27 +131,7 @@ QString QbsInstallStep::installRoot() const
 
 const QbsBuildConfiguration *QbsInstallStep::buildConfig() const
 {
-    return static_cast<QbsBuildConfiguration *>(buildConfiguration());
-}
-
-bool QbsInstallStep::fromMap(const QVariantMap &map)
-{
-    if (!ProjectExplorer::BuildStep::fromMap(map))
-        return false;
-
-    m_cleanInstallRoot = map.value(QBS_REMOVE_FIRST, false).toBool();
-    m_dryRun = map.value(QBS_DRY_RUN, false).toBool();
-    m_keepGoing = map.value(QBS_KEEP_GOING, false).toBool();
-    return true;
-}
-
-QVariantMap QbsInstallStep::toMap() const
-{
-    QVariantMap map = ProjectExplorer::BuildStep::toMap();
-    map.insert(QBS_REMOVE_FIRST, m_cleanInstallRoot);
-    map.insert(QBS_DRY_RUN, m_dryRun);
-    map.insert(QBS_KEEP_GOING, m_keepGoing);
-    return map;
+    return static_cast<QbsBuildConfiguration *>(target()->activeBuildConfiguration());
 }
 
 void QbsInstallStep::installDone(const ErrorInfo &error)
@@ -202,143 +160,68 @@ void QbsInstallStep::handleProgress(int value)
 void QbsInstallStep::createTaskAndOutput(Task::TaskType type, const QString &message,
                                          const Utils::FilePath &file, int line)
 {
-    const CompileTask task(type, message, file, line);
-    emit addTask(task, 1);
     emit addOutput(message, OutputFormat::Stdout);
-}
-
-void QbsInstallStep::setRemoveFirst(bool rf)
-{
-    if (m_cleanInstallRoot == rf)
-        return;
-    m_cleanInstallRoot = rf;
-    emit changed();
-}
-
-void QbsInstallStep::setDryRun(bool dr)
-{
-    if (m_dryRun == dr)
-        return;
-    m_dryRun = dr;
-    emit changed();
-}
-
-void QbsInstallStep::setKeepGoing(bool kg)
-{
-    if (m_keepGoing == kg)
-        return;
-    m_keepGoing = kg;
-    emit changed();
+    emit addTask(CompileTask(type, message, file, line), 1);
 }
 
 QbsBuildStepData QbsInstallStep::stepData() const
 {
     QbsBuildStepData data;
     data.command = "install";
-    data.dryRun = dryRun();
-    data.keepGoing = keepGoing();
+    data.dryRun = m_dryRun->value();
+    data.keepGoing = m_keepGoing->value();
     data.noBuild = true;
-    data.cleanInstallRoot = removeFirst();
+    data.cleanInstallRoot = m_cleanInstallRoot->value();
     data.isInstallStep = true;
     auto bs = static_cast<QbsBuildConfiguration *>(target()->activeBuildConfiguration())->qbsStep();
     if (bs)
         data.installRoot = bs->installRoot();
     return data;
-};
-
-// --------------------------------------------------------------------
-// QbsInstallStepConfigWidget:
-// --------------------------------------------------------------------
-
-QbsInstallStepConfigWidget::QbsInstallStepConfigWidget(QbsInstallStep *step) :
-    BuildStepConfigWidget(step), m_step(step), m_ignoreChange(false)
-{
-    connect(m_step, &ProjectExplorer::ProjectConfiguration::displayNameChanged,
-            this, &QbsInstallStepConfigWidget::updateState);
-    connect(m_step, &QbsInstallStep::changed,
-            this, &QbsInstallStepConfigWidget::updateState);
-
-    setContentsMargins(0, 0, 0, 0);
-
-    auto installRootLabel = new QLabel(this);
-
-    auto flagsLabel = new QLabel(this);
-
-    m_dryRunCheckBox = new QCheckBox(this);
-    m_keepGoingCheckBox = new QCheckBox(this);
-    m_removeFirstCheckBox = new QCheckBox(this);
-
-    auto horizontalLayout = new QHBoxLayout();
-    horizontalLayout->addWidget(m_dryRunCheckBox);
-    horizontalLayout->addWidget(m_keepGoingCheckBox);
-    horizontalLayout->addWidget(m_removeFirstCheckBox);
-    horizontalLayout->addStretch(1);
-
-    auto commandLineKeyLabel = new QLabel(this);
-    QSizePolicy sizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
-    sizePolicy.setHorizontalStretch(0);
-    sizePolicy.setVerticalStretch(0);
-    sizePolicy.setHeightForWidth(commandLineKeyLabel->sizePolicy().hasHeightForWidth());
-    commandLineKeyLabel->setSizePolicy(sizePolicy);
-    commandLineKeyLabel->setAlignment(Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop);
-
-    m_commandLineTextEdit = new QPlainTextEdit(this);
-    QSizePolicy sizePolicy1(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    sizePolicy1.setHorizontalStretch(0);
-    sizePolicy1.setVerticalStretch(0);
-    sizePolicy1.setHeightForWidth(m_commandLineTextEdit->sizePolicy().hasHeightForWidth());
-    m_commandLineTextEdit->setSizePolicy(sizePolicy1);
-    m_commandLineTextEdit->setReadOnly(true);
-    m_commandLineTextEdit->setTextInteractionFlags(Qt::TextSelectableByKeyboard|Qt::TextSelectableByMouse);
-
-    m_installRootValueLabel = new QLabel(this);
-
-    auto formLayout = new QFormLayout(this);
-    formLayout->setWidget(0, QFormLayout::LabelRole, installRootLabel);
-    formLayout->setWidget(0, QFormLayout::FieldRole, m_installRootValueLabel);
-    formLayout->setWidget(1, QFormLayout::LabelRole, flagsLabel);
-    formLayout->setLayout(1, QFormLayout::FieldRole, horizontalLayout);
-    formLayout->setWidget(2, QFormLayout::LabelRole, commandLineKeyLabel);
-    formLayout->setWidget(2, QFormLayout::FieldRole, m_commandLineTextEdit);
-
-    QWidget::setTabOrder(m_dryRunCheckBox, m_keepGoingCheckBox);
-    QWidget::setTabOrder(m_keepGoingCheckBox, m_removeFirstCheckBox);
-    QWidget::setTabOrder(m_removeFirstCheckBox, m_commandLineTextEdit);
-
-    installRootLabel->setText(QbsInstallStep::tr("Install root:"));
-    flagsLabel->setText(QbsInstallStep::tr("Flags:"));
-    m_dryRunCheckBox->setText(QbsInstallStep::tr("Dry run"));
-    m_keepGoingCheckBox->setText(QbsInstallStep::tr("Keep going"));
-    m_removeFirstCheckBox->setText(QbsInstallStep::tr("Remove first"));
-    commandLineKeyLabel->setText(QbsInstallStep::tr("Equivalent command line:"));
-    m_installRootValueLabel->setText(QString());
-
-    connect(m_removeFirstCheckBox, &QAbstractButton::toggled,
-            this, &QbsInstallStepConfigWidget::changeRemoveFirst);
-    connect(m_dryRunCheckBox, &QAbstractButton::toggled,
-            this, &QbsInstallStepConfigWidget::changeDryRun);
-    connect(m_keepGoingCheckBox, &QAbstractButton::toggled,
-            this, &QbsInstallStepConfigWidget::changeKeepGoing);
-
-    connect(m_step->target(), &Target::parsingFinished,
-            this, &QbsInstallStepConfigWidget::updateState);
-
-    updateState();
-    setSummaryText(QbsInstallStep::tr("<b>Qbs:</b> %1").arg("install"));
 }
 
-void QbsInstallStepConfigWidget::updateState()
+QWidget *QbsInstallStep::createConfigWidget()
 {
-    if (!m_ignoreChange) {
-        m_installRootValueLabel->setText(m_step->installRoot());
-        m_removeFirstCheckBox->setChecked(m_step->removeFirst());
-        m_dryRunCheckBox->setChecked(m_step->dryRun());
-        m_keepGoingCheckBox->setChecked(m_step->keepGoing());
-    }
+    auto widget = new QWidget;
 
-    QString command = m_step->buildConfig()->equivalentCommandLine(m_step->stepData());
+    auto installRootValueLabel = new QLabel(installRoot());
 
-    m_commandLineTextEdit->setPlainText(command);
+    auto commandLineKeyLabel = new QLabel(tr("Equivalent command line:"));
+    commandLineKeyLabel->setAlignment(Qt::AlignTop);
+
+    auto commandLineTextEdit = new QPlainTextEdit(widget);
+    commandLineTextEdit->setReadOnly(true);
+    commandLineTextEdit->setTextInteractionFlags(Qt::TextSelectableByKeyboard|Qt::TextSelectableByMouse);
+    commandLineTextEdit->setMinimumHeight(QFontMetrics(widget->font()).height() * 8);
+
+    LayoutBuilder builder(widget);
+    builder.addRow({tr("Install root:"), installRootValueLabel});
+    builder.addRow(tr("Flags:"));
+    m_dryRun->addToLayout(builder);
+    m_keepGoing->addToLayout(builder);
+    m_cleanInstallRoot->addToLayout(builder);
+
+    builder.addRow({commandLineKeyLabel, commandLineTextEdit});
+
+    const auto updateState = [this, commandLineTextEdit, installRootValueLabel] {
+        installRootValueLabel->setText(installRoot());
+        commandLineTextEdit->setPlainText(buildConfig()->equivalentCommandLine(stepData()));
+    };
+
+    connect(target(), &Target::parsingFinished, this, updateState);
+    connect(this, &ProjectConfiguration::displayNameChanged, this, updateState);
+
+    connect(m_dryRun, &BoolAspect::changed, this, updateState);
+    connect(m_keepGoing, &BoolAspect::changed, this, updateState);
+    connect(m_cleanInstallRoot, &BoolAspect::changed, this, updateState);
+
+    const QbsBuildConfiguration * const bc = buildConfig();
+    connect(bc, &QbsBuildConfiguration::qbsConfigurationChanged, this, updateState);
+    if (bc->qbsStep())
+        connect(bc->qbsStep(), &QbsBuildStep::qbsBuildOptionsChanged, this, updateState);
+
+    updateState();
+
+    return widget;
 }
 
 // --------------------------------------------------------------------

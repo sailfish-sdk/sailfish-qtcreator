@@ -42,11 +42,10 @@ def main():
     if not testRenameMacroAfterSourceModification():
         return
     headerName = "anothertestfile.h"
-    addCPlusPlusFile(headerName, "C++ Header File", "testfiles.pro",
+    addCPlusPlusFile(headerName, "C/C++ Header File", "testfiles.pro",
                      expectedHeaderName=headerName)
     if not testRenameMacroAfterSourceMoving():
         return
-    invokeMenuItem("File", "Save All")
     invokeMenuItem("File", "Exit")
 
 def testRenameMacroAfterSourceModification():

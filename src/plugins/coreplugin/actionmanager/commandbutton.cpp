@@ -26,14 +26,16 @@
 #include "commandbutton.h"
 #include "actionmanager.h"
 #include "command.h"
-#include "../id.h"
+
 
 #include <utils/proxyaction.h>
 
 using namespace Core;
+using namespace Utils;
 
 /*!
     \class Core::CommandButton
+    \inheaderfile coreplugin/actionmanager/commandbutton.h
     \inmodule QtCreator
 
     \brief The CommandButton class is a tool button associated with one of

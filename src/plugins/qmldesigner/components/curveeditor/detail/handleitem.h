@@ -28,9 +28,10 @@
 #include "curveeditorstyle.h"
 #include "selectableitem.h"
 
-namespace DesignTools {
+namespace QmlDesigner {
 
 class KeyframeItem;
+class CurveSegment;
 
 class HandleItem : public SelectableItem
 {
@@ -57,6 +58,8 @@ public:
 
     bool keyframeSelected() const;
 
+    CurveSegment segment() const;
+
     KeyframeItem *keyframe() const;
 
     Slot slot() const;
@@ -70,6 +73,8 @@ private:
     Slot m_slot;
 
     HandleItemStyleOption m_style;
+
+    QPointF m_validPos;
 };
 
-} // End namespace DesignTools.
+} // End namespace QmlDesigner.

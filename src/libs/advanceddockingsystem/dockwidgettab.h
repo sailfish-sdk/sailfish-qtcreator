@@ -59,19 +59,20 @@ private:
     DockWidgetTabPrivate *d; ///< private data (pimpl)
     friend class DockWidgetTabPrivate;
     friend class DockWidget;
+    friend class DockManager;
     void onDockWidgetFeaturesChanged();
     void detachDockWidget();
 
 protected:
-    virtual void mousePressEvent(QMouseEvent *event) override;
-    virtual void mouseReleaseEvent(QMouseEvent *event) override;
-    virtual void mouseMoveEvent(QMouseEvent *event) override;
-    virtual void contextMenuEvent(QContextMenuEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void contextMenuEvent(QContextMenuEvent *event) override;
 
     /**
      * Double clicking the tab widget makes the assigned dock widget floating
      */
-    virtual void mouseDoubleClickEvent(QMouseEvent *event) override;
+    void mouseDoubleClickEvent(QMouseEvent *event) override;
 
 public:
     using Super = QFrame;
@@ -85,7 +86,7 @@ public:
     /**
      * Virtual Destructor
      */
-    virtual ~DockWidgetTab() override;
+    ~DockWidgetTab() override;
 
     /**
      * Returns true, if this is the active tab
@@ -148,9 +149,19 @@ public:
     /**
      * Track event ToolTipChange and set child ToolTip
      */
-    virtual bool event(QEvent *event) override;
+    bool event(QEvent *event) override;
 
-    virtual void setVisible(bool visible) override;
+    /**
+     * Sets the text elide mode
+     */
+    void setElideMode(Qt::TextElideMode mode);
+
+    /**
+     * Update stylesheet style if a property changes
+     */
+    void updateStyle();
+
+    void setVisible(bool visible) override;
 
 signals:
     void activeTabChanged();

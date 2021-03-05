@@ -106,7 +106,7 @@ BranchView::BranchView() :
     auto filterEdit = new Utils::FancyLineEdit(this);
     filterEdit->setFiltering(true);
     connect(filterEdit, &Utils::FancyLineEdit::textChanged,
-            m_filterModel, QOverload<const QString &>::of(&BranchFilterModel::setFilterRegExp));
+            m_filterModel, QOverload<const QString &>::of(&BranchFilterModel::setFilterRegularExpression));
     auto layout = new QVBoxLayout(this);
     layout->addWidget(filterEdit);
     layout->addWidget(m_repositoryLabel);
@@ -164,6 +164,11 @@ void BranchView::refresh(const QString &repository, bool force)
         m_addButton->setToolTip(tr("Add Branch..."));
         m_branchView->setEnabled(true);
     }
+
+    // Do not refresh the model when the view is hidden
+    if (!isVisible())
+        return;
+
     QString errorMessage;
     if (!m_model->refresh(m_repository, &errorMessage))
         VcsBase::VcsOutputWindow::appendError(errorMessage);
@@ -172,6 +177,11 @@ void BranchView::refresh(const QString &repository, bool force)
 void BranchView::refreshCurrentBranch()
 {
     m_model->refreshCurrentBranch();
+}
+
+void BranchView::showEvent(QShowEvent *)
+{
+    refreshCurrentRepository();
 }
 
 QToolButton *BranchView::addButton() const
@@ -262,10 +272,12 @@ void BranchView::slotCustomContextMenu(const QPoint &point)
             contextMenu.addSeparator();
             contextMenu.addAction(tr("Cherry &Pick"), this, &BranchView::cherryPick);
         }
-        if (currentLocal && !currentSelected && !isTag) {
-            contextMenu.addAction(tr("&Track"), this, [this] {
-                m_model->setRemoteTracking(selectedIndex());
-            });
+        if (!currentSelected && !isTag) {
+            if (currentLocal) {
+                contextMenu.addAction(tr("&Track"), this, [this] {
+                    m_model->setRemoteTracking(selectedIndex());
+                });
+            }
             if (!isLocal) {
                 contextMenu.addSeparator();
                 contextMenu.addAction(tr("&Push"), this, &BranchView::push);
@@ -319,18 +331,11 @@ bool BranchView::add()
 
     const QStringList localNames = m_model->localBranchNames();
 
-    QString suggestedName;
-    if (isTracked) {
-        const QString suggestedNameBase = trackedBranch.mid(trackedBranch.lastIndexOf('/') + 1);
-        suggestedName = suggestedNameBase;
-        int i = 2;
-        while (localNames.contains(suggestedName)) {
-            suggestedName = suggestedNameBase + QString::number(i);
-            ++i;
-        }
-    }
-
     BranchAddDialog branchAddDialog(localNames, BranchAddDialog::Type::AddBranch, this);
+
+    const QString suggestedName = GitClient::suggestedLocalBranchName(
+                m_repository, localNames, trackedBranch,
+                isTracked ? GitClient::BranchTargetType::Remote : GitClient::BranchTargetType::Commit);
     branchAddDialog.setBranchName(suggestedName);
     branchAddDialog.setTrackedBranchName(isTracked ? trackedBranch : QString(), !isLocal);
     branchAddDialog.setCheckoutVisible(true);
@@ -498,7 +503,7 @@ bool BranchView::reset(const QByteArray &resetType)
         return false;
 
     if (QMessageBox::question(this, tr("Git Reset"), tr("Reset branch \"%1\" to \"%2\"?")
-                              .arg(currentName).arg(branchName),
+                              .arg(currentName, branchName),
                               QMessageBox::Yes, QMessageBox::No) == QMessageBox::Yes) {
         GitClient::instance()->reset(m_repository, QLatin1String("--" + resetType), branchName);
         return true;

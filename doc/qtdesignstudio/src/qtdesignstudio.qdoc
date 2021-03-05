@@ -36,17 +36,20 @@
 
     \table
         \row
+            \li {4,1} \b {\l{All Topics}}
+        \row
             \li \inlineimage front-gs.png
             \li \inlineimage front-projects.png
             \li \inlineimage front-ui.png
             \li \inlineimage studio-animation.png
         \row
-        \li \l{Getting Started}
+        \li \b {\l{Getting Started}}
             \list
-                \li \l{Exporting Artwork from Design Tools}
+                \li \l{Exporting from Design Tools}
                 \li \l{User Interface}
                 \li \l{Editing QML Files in Design Mode}
                 \li \l{Tutorials}
+                \li \l{Qt Quick Best Practices}
             \endlist
             \li \b {\l{Managing Projects}}
                 \list
@@ -54,13 +57,15 @@
                     \li \l{Using Git}
                     \li \l{Importing Designs}
                     \li \l{Converting UI Projects to Applications}
+                    \li \l{Exporting QML}
                 \endlist
             \li \b {\l{Creating UIs}}
                 \list
+                    \li \l{Designing Application Flows}
                     \li \l{Creating Components}
                     \li \l{Managing Item Hierarchy}
                     \li \l{Specifying Item Properties}
-                    \li \l{Using Custom Fonts}
+                    \li \l{Positioning Items}
                     \li \l{Annotating Designs}
                 \endlist
         \li \b {\l{Adding Dynamics}}
@@ -68,7 +73,6 @@
                 \li \l{Creating Animations}
                 \li \l{Adding Connections}
                 \li \l{Adding States}
-                \li \l{Editing PathView Properties}
             \endlist
         \row
             \li \inlineimage studio-3d-scenes.png
@@ -94,7 +98,7 @@
                     \li \l{Supported Platforms}
                     \li \l{Keyboard Shortcuts}
                     \li \l{Coding}
-                    \li \l{Simulating Application Logic}
+                    \li \l{Simulating Data Input}
                     \li \l{Debugging and Profiling}
                 \endlist
             \li \b {\l{Help}}
@@ -104,8 +108,6 @@
                     \li \l{Frequently Asked Questions}
                     \li \l{Concepts and Terms}
                 \endlist
-        \row
-            \li {4,1} \l{All Topics}
         \row
             \li {4,1} \note To report bugs and suggestions to the
                 \l{https://bugreports.qt.io/}{Qt Project Bug Tracker},

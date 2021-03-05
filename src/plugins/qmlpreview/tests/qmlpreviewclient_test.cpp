@@ -91,24 +91,6 @@ void QmlPreviewClientTest::testZoom()
     QVERIFY(packet.atEnd());
 }
 
-void QmlPreviewClientTest::testLanguate()
-{
-    TestableQmlPreviewClient client;
-    QUrl url("file:///some/file.qml");
-    QString locale("qt_QT");
-    client.language(url, locale);
-    QCOMPARE(client.messages.count(), 1);
-    QmlDebug::QPacket packet(client.dataStreamVersion(), client.messages.takeFirst());
-    qint8 command;
-    QUrl resultUrl;
-    QString resultLocale;
-    packet >> command >> resultUrl >> resultLocale;
-    QCOMPARE(static_cast<QmlPreviewClient::Command>(command), QmlPreviewClient::Language);
-    QCOMPARE(resultUrl, url);
-    QCOMPARE(resultLocale, locale);
-    QVERIFY(packet.atEnd());
-}
-
 void QmlPreviewClientTest::testMessageReceived()
 {
     TestableQmlPreviewClient client;
@@ -147,8 +129,9 @@ void QmlPreviewClientTest::testMessageReceived()
     {
         QmlDebug::QPacket packet(client.dataStreamVersion());
         quint16 frames = 58;
-        packet << static_cast<qint8>(QmlPreviewClient::Fps) << frames << 6 << 7 << 8
-               << frames << 1 << 2 << 3;
+        quint16 one = 1, two = 2, three = 3, six = 6, seven = 7, eight = 8;
+        packet << static_cast<qint8>(QmlPreviewClient::Fps) << frames << six << seven << eight
+               << frames << one << two << three;
         client.messageReceived(packet.data());
         QCOMPARE(numRequests, 1);
         QCOMPARE(numErrors, 1);

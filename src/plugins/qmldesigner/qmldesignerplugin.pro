@@ -10,6 +10,7 @@ include(../../qtcreatorplugin.pri)
 
 include(qmldesignerplugin.pri)
 include(designercore/designercore-lib.pri)
+include(designercore/instances/instances.pri)
 include(components/componentcore/componentcore.pri)
 include(components/integration/integration.pri)
 include(components/propertyeditor/propertyeditor.pri)
@@ -31,7 +32,10 @@ include(components/connectioneditor/connectioneditor.pri)
 include(components/curveeditor/curveeditor.pri)
 include(components/bindingeditor/bindingeditor.pri)
 include(components/annotationeditor/annotationeditor.pri)
-
+include(components/richtexteditor/richtexteditor.pri)
+include(components/transitioneditor/transitioneditor.pri)
+include(components/listmodeleditor/listmodeleditor.pri)
+include(components/previewtooltip/previewtooltipbackend.pri)
 
 BUILD_PUPPET_IN_CREATOR_BINPATH = $$(BUILD_PUPPET_IN_CREATOR_BINPATH)
 !isEmpty(BUILD_PUPPET_IN_CREATOR_BINPATH) {

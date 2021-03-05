@@ -24,14 +24,16 @@
 ****************************************************************************/
 
 #include "winrtplugin.h"
+
 #include "winrtconstants.h"
-#include "winrtdevice.h"
+#include "winrtdebugsupport.h"
 #include "winrtdeployconfiguration.h"
-#include "winrtqtversion.h"
+#include "winrtdevice.h"
+#include "winrtpackagedeploymentstep.h"
 #include "winrtphoneqtversion.h"
+#include "winrtqtversion.h"
 #include "winrtrunconfiguration.h"
 #include "winrtruncontrol.h"
-#include "winrtdebugsupport.h"
 
 #include <projectexplorer/devicesupport/devicemanager.h>
 #include <projectexplorer/devicesupport/idevice.h>
@@ -60,13 +62,13 @@ public:
     RunWorkerFactory runWorkerFactory{
         RunWorkerFactory::make<WinRtRunner>(),
         {ProjectExplorer::Constants::NORMAL_RUN_MODE},
-        {runConfigFactory.id()}
+        {runConfigFactory.runConfigurationId()}
     };
 
     RunWorkerFactory debugWorkerFactory{
         RunWorkerFactory::make<WinRtDebugSupport>(),
         {ProjectExplorer::Constants::DEBUG_RUN_MODE},
-        {runConfigFactory.id()},
+        {runConfigFactory.runConfigurationId()},
         {Internal::Constants::WINRT_DEVICE_TYPE_LOCAL}
     };
 };

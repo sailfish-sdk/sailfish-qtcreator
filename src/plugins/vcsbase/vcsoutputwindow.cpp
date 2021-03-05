@@ -31,7 +31,6 @@
 #include <coreplugin/find/basetextfind.h>
 #include <coreplugin/outputwindow.h>
 #include <utils/fileutils.h>
-#include <utils/outputformatter.h>
 #include <utils/qtcprocess.h>
 #include <texteditor/behaviorsettings.h>
 #include <texteditor/fontsettings.h>
@@ -47,7 +46,7 @@
 #include <QPlainTextEdit>
 #include <QPoint>
 #include <QPointer>
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QTextBlock>
 #include <QTextBlockUserData>
 #include <QTextCharFormat>
@@ -97,22 +96,22 @@ class OutputWindowPlainTextEdit : public Core::OutputWindow
 {
 public:
     explicit OutputWindowPlainTextEdit(QWidget *parent = nullptr);
-    ~OutputWindowPlainTextEdit() override;
 
     void appendLines(const QString &s, const QString &repository = QString());
     void appendLinesWithStyle(const QString &s, VcsOutputWindow::MessageStyle style,
                               const QString &repository = QString());
-    VcsOutputFormatter *formatter();
+    VcsOutputLineParser *parser();
 
 protected:
     void contextMenuEvent(QContextMenuEvent *event) override;
+    void handleLink(const QPoint &pos) override;
 
 private:
     void setFormat(VcsOutputWindow::MessageStyle style);
     QString identifierUnderCursor(const QPoint &pos, QString *repository = nullptr) const;
 
     Utils::OutputFormat m_format;
-    VcsOutputFormatter *m_formatter = nullptr;
+    VcsOutputLineParser *m_parser = nullptr;
 };
 
 OutputWindowPlainTextEdit::OutputWindowPlainTextEdit(QWidget *parent) :
@@ -121,17 +120,12 @@ OutputWindowPlainTextEdit::OutputWindowPlainTextEdit(QWidget *parent) :
     setReadOnly(true);
     setUndoRedoEnabled(false);
     setFrameStyle(QFrame::NoFrame);
-    m_formatter = new VcsOutputFormatter;
-    m_formatter->setBoldFontEnabled(false);
-    setFormatter(m_formatter);
+    outputFormatter()->setBoldFontEnabled(false);
+    m_parser = new VcsOutputLineParser;
+    setLineParsers({m_parser});
     auto agg = new Aggregation::Aggregate;
     agg->add(this);
     agg->add(new Core::BaseTextFind(this));
-}
-
-OutputWindowPlainTextEdit::~OutputWindowPlainTextEdit()
-{
-    delete m_formatter;
 }
 
 // Search back for beginning of word
@@ -181,9 +175,9 @@ void OutputWindowPlainTextEdit::contextMenuEvent(QContextMenuEvent *event)
     QString repository;
     const QString token = identifierUnderCursor(event->pos(), &repository);
     if (!repository.isEmpty()) {
-        if (VcsOutputFormatter *f = formatter()) {
+        if (VcsOutputLineParser * const p = parser()) {
             if (!href.isEmpty())
-                f->fillLinkContextMenu(menu, repository, href);
+                p->fillLinkContextMenu(menu, repository, href);
         }
     }
     QAction *openAction = nullptr;
@@ -221,6 +215,23 @@ void OutputWindowPlainTextEdit::contextMenuEvent(QContextMenuEvent *event)
     delete menu;
 }
 
+void OutputWindowPlainTextEdit::handleLink(const QPoint &pos)
+{
+    const QString href = anchorAt(pos);
+    if (href.isEmpty())
+        return;
+    QString repository;
+    identifierUnderCursor(pos, &repository);
+    if (repository.isEmpty()) {
+        OutputWindow::handleLink(pos);
+        return;
+    }
+    if (outputFormatter()->handleFileLink(href))
+        return;
+    if (VcsOutputLineParser * const p = parser())
+        p->handleVcsLink(repository, href);
+}
+
 void OutputWindowPlainTextEdit::appendLines(const QString &s, const QString &repository)
 {
     if (s.isEmpty())
@@ -228,10 +239,7 @@ void OutputWindowPlainTextEdit::appendLines(const QString &s, const QString &rep
 
     const int previousLineCount = document()->lineCount();
 
-    const QChar newLine('\n');
-    const QChar lastChar = s.at(s.size() - 1);
-    const bool appendNewline = (lastChar != '\r' && lastChar != newLine);
-    m_formatter->appendMessage(appendNewline ? s + newLine : s, m_format);
+    outputFormatter()->appendMessage(s, m_format);
 
     // Scroll down
     moveCursor(QTextCursor::End);
@@ -258,24 +266,24 @@ void OutputWindowPlainTextEdit::appendLinesWithStyle(const QString &s,
     }
 }
 
-VcsOutputFormatter *OutputWindowPlainTextEdit::formatter()
+VcsOutputLineParser *OutputWindowPlainTextEdit::parser()
 {
-    return m_formatter;
+    return m_parser;
 }
 
 void OutputWindowPlainTextEdit::setFormat(VcsOutputWindow::MessageStyle style)
 {
-    m_formatter->setBoldFontEnabled(style == VcsOutputWindow::Command);
+    outputFormatter()->setBoldFontEnabled(style == VcsOutputWindow::Command);
 
     switch (style) {
     case VcsOutputWindow::Warning:
         m_format = LogMessageFormat;
         break;
     case VcsOutputWindow::Error:
-        m_format = ErrorMessageFormat;
+        m_format = StdErrFormat;
         break;
     case VcsOutputWindow::Message:
-        m_format = NormalMessageFormat;
+        m_format = StdOutFormat;
         break;
     case VcsOutputWindow::Command:
         m_format = NormalMessageFormat;
@@ -295,7 +303,7 @@ class VcsOutputWindowPrivate
 public:
     Internal::OutputWindowPlainTextEdit widget;
     QString repository;
-    QRegExp passwordRegExp;
+    const QRegularExpression passwordRegExp = QRegularExpression("://([^@:]+):([^@]+)@");
 };
 
 static VcsOutputWindow *m_instance = nullptr;
@@ -304,7 +312,6 @@ static VcsOutputWindowPrivate *d = nullptr;
 VcsOutputWindow::VcsOutputWindow()
 {
     d = new VcsOutputWindowPrivate;
-    d->passwordRegExp = QRegExp("://([^@:]+):([^@]+)@");
     Q_ASSERT(d->passwordRegExp.isValid());
     m_instance = this;
 
@@ -316,27 +323,16 @@ VcsOutputWindow::VcsOutputWindow()
     updateBehaviorSettings();
     setupContext(Internal::C_VCS_OUTPUT_PANE, &d->widget);
 
-    connect(this, &IOutputPane::zoomIn, &d->widget, &Core::OutputWindow::zoomIn);
-    connect(this, &IOutputPane::zoomOut, &d->widget, &Core::OutputWindow::zoomOut);
-    connect(this, &IOutputPane::resetZoom, &d->widget, &Core::OutputWindow::resetZoom);
+    connect(this, &IOutputPane::zoomInRequested, &d->widget, &Core::OutputWindow::zoomIn);
+    connect(this, &IOutputPane::zoomOutRequested, &d->widget, &Core::OutputWindow::zoomOut);
+    connect(this, &IOutputPane::resetZoomRequested, &d->widget, &Core::OutputWindow::resetZoom);
     connect(TextEditor::TextEditorSettings::instance(), &TextEditor::TextEditorSettings::behaviorSettingsChanged,
             this, updateBehaviorSettings);
-    connect(d->widget.formatter(), &VcsOutputFormatter::referenceClicked,
-            VcsOutputWindow::instance(), &VcsOutputWindow::referenceClicked);
 }
 
-static QString filterPasswordFromUrls(const QString &input)
+static QString filterPasswordFromUrls(QString input)
 {
-    int pos = 0;
-    QString result = input;
-    while ((pos = d->passwordRegExp.indexIn(result, pos)) >= 0) {
-        QString tmp = result.left(pos + 3) + d->passwordRegExp.cap(1) + ":***@";
-        int newStart = tmp.count();
-        tmp += result.midRef(pos + d->passwordRegExp.matchedLength());
-        result = tmp;
-        pos = newStart;
-    }
-    return result;
+    return input.replace(d->passwordRegExp, "://\\1:***@");
 }
 
 VcsOutputWindow::~VcsOutputWindow()
@@ -365,12 +361,6 @@ int VcsOutputWindow::priorityInStatusBar() const
 void VcsOutputWindow::clearContents()
 {
     d->widget.clear();
-}
-
-void VcsOutputWindow::visibilityChanged(bool visible)
-{
-    if (visible)
-        d->widget.setFocus();
 }
 
 void VcsOutputWindow::setFocus()

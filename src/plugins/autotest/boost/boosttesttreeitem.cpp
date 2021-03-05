@@ -40,7 +40,7 @@ namespace Internal {
 
 TestTreeItem *BoostTestTreeItem::copyWithoutChildren()
 {
-    BoostTestTreeItem *copied = new BoostTestTreeItem;
+    BoostTestTreeItem *copied = new BoostTestTreeItem(framework());
     copied->copyBasicDataFrom(this);
     copied->m_state = m_state;
     copied->m_fullName = m_fullName;
@@ -74,7 +74,7 @@ TestTreeItem *BoostTestTreeItem::find(const TestParseResult *result)
 
     switch (type()) {
     case Root:
-        if (TestFrameworkManager::instance()->groupingEnabled(result->frameworkId)) {
+        if (result->framework->grouping()) {
             const QFileInfo fileInfo(bResult->fileName);
             const QFileInfo base(fileInfo.absolutePath());
             for (int row = 0; row < childCount(); ++row) {
@@ -146,7 +146,7 @@ TestTreeItem *BoostTestTreeItem::createParentGroupNode() const
 {
     const QFileInfo fileInfo(filePath());
     const QFileInfo base(fileInfo.absolutePath());
-    return new BoostTestTreeItem(base.baseName(), fileInfo.absolutePath(), TestTreeItem::GroupNode);
+    return new BoostTestTreeItem(framework(), base.baseName(), fileInfo.absolutePath(), TestTreeItem::GroupNode);
 }
 
 QString BoostTestTreeItem::prependWithParentsSuitePaths(const QString &testName) const
@@ -204,7 +204,7 @@ QList<TestConfiguration *> BoostTestTreeItem::getAllTestConfigurations() const
 
     for (auto it = testsPerProjectfile.begin(), end = testsPerProjectfile.end(); it != end; ++it) {
         for (const QString &target : qAsConst(it.value().internalTargets)) {
-            BoostTestConfiguration *config = new BoostTestConfiguration;
+            BoostTestConfiguration *config = new BoostTestConfiguration(framework());
             config->setProject(project);
             config->setProjectFile(it.key());
             config->setTestCaseCount(it.value().testCases);
@@ -215,7 +215,8 @@ QList<TestConfiguration *> BoostTestTreeItem::getAllTestConfigurations() const
     return result;
 }
 
-QList<TestConfiguration *> BoostTestTreeItem::getSelectedTestConfigurations() const
+QList<TestConfiguration *> BoostTestTreeItem::getTestConfigurations(
+        std::function<bool(BoostTestTreeItem *)> predicate) const
 {
     QList<TestConfiguration *> result;
     ProjectExplorer::Project *project = ProjectExplorer::SessionManager::startupProject();
@@ -228,18 +229,18 @@ QList<TestConfiguration *> BoostTestTreeItem::getSelectedTestConfigurations() co
     };
 
     QHash<QString, BoostTestCases> testCasesForProjectFile;
-    forAllChildren([&testCasesForProjectFile](TreeItem *it){
+    forAllChildren([&testCasesForProjectFile, &predicate](TreeItem *it){
         auto item = static_cast<BoostTestTreeItem *>(it);
         if (item->type() != TestCase)
             return;
         if (!item->enabled()) // ignore child tests known to be disabled when using run selected
             return;
-        if (item->checked() == Qt::Checked) {
+        if (predicate(item)) {
             QString tcName = item->name();
             if (item->state().testFlag(BoostTestTreeItem::Templated))
                 tcName.append("<*");
             else if (item->state().testFlag(BoostTestTreeItem::Parameterized))
-                tcName.append('*');
+                tcName.append("_*");
             tcName = handleSpecialFunctionNames(tcName);
             testCasesForProjectFile[item->proFile()].testCases.append(
                         item->prependWithParentsSuitePaths(tcName));
@@ -250,7 +251,7 @@ QList<TestConfiguration *> BoostTestTreeItem::getSelectedTestConfigurations() co
     auto end = testCasesForProjectFile.cend();
     for (auto it = testCasesForProjectFile.cbegin(); it != end; ++it) {
         for (const QString &target : it.value().internalTargets) {
-            BoostTestConfiguration *config = new BoostTestConfiguration;
+            BoostTestConfiguration *config = new BoostTestConfiguration(framework());
             config->setProject(project);
             config->setProjectFile(it.key());
             config->setTestCases(it.value().testCases);
@@ -259,6 +260,20 @@ QList<TestConfiguration *> BoostTestTreeItem::getSelectedTestConfigurations() co
         }
     }
     return result;
+}
+
+QList<TestConfiguration *> BoostTestTreeItem::getSelectedTestConfigurations() const
+{
+    return getTestConfigurations([](BoostTestTreeItem *it) {
+        return it->checked() == Qt::Checked;
+    });
+}
+
+QList<TestConfiguration *> BoostTestTreeItem::getFailedTestConfigurations() const
+{
+    return getTestConfigurations([](BoostTestTreeItem *it) {
+        return it->data(0, FailedRole).toBool();
+    });
 }
 
 TestConfiguration *BoostTestTreeItem::testConfiguration() const
@@ -278,7 +293,7 @@ TestConfiguration *BoostTestTreeItem::testConfiguration() const
                         if (boostItem->type() == TestSuite) // execute everything below a suite
                             tcName.append("/*");
                         else if (boostItem->state().testFlag(BoostTestTreeItem::Parameterized))
-                            tcName.append('*');
+                            tcName.append("_*");
                         else if (boostItem->state().testFlag(BoostTestTreeItem::Templated))
                             tcName.append("<*");
                         testCases.append(boostItem->prependWithParentsSuitePaths(tcName));
@@ -290,11 +305,11 @@ TestConfiguration *BoostTestTreeItem::testConfiguration() const
             if (state().testFlag(BoostTestTreeItem::Templated))
                 tcName.append("<*");
             else if (state().testFlag(BoostTestTreeItem::Parameterized))
-                tcName.append('*');
+                tcName.append("_*");
             testCases.append(prependWithParentsSuitePaths(handleSpecialFunctionNames(tcName)));
         }
 
-        BoostTestConfiguration *config = new BoostTestConfiguration;
+        BoostTestConfiguration *config = new BoostTestConfiguration(framework());
         config->setProjectFile(proFile());
         config->setProject(project);
         config->setTestCases(testCases);

@@ -87,7 +87,7 @@ def __clickCommit__(count):
     # find commit
     try:
         # Commits are listed in reverse chronologic order, so we have to invert count
-        line = filter(lambda line: line.startswith("commit"), content.splitlines())[-count]
+        line = filter(lambda line: line.startswith("commit"), content.splitlines())[-count].strip()
         commit = line.split(" ", 1)[1]
     except:
         test.fail("Could not find the %d. commit - leaving test" % count)
@@ -176,7 +176,7 @@ def main():
     commitMessages = [commit("Initial Commit", "Committed 6 files.")]
     clickButton(waitForObject(":*Qt Creator.Clear_QToolButton"))
     headerName = "pointless_header.h"
-    addCPlusPlusFile(headerName, "C++ Header File", projectName + ".pro",
+    addCPlusPlusFile(headerName, "C/C++ Header File", projectName + ".pro",
                      addToVCS="Git", expectedHeaderName=headerName)
     commitMessages.insert(0, commit("Added pointless header file", "Committed 2 files."))
     readmeName = "README.txt"
@@ -185,7 +185,7 @@ def main():
                          "Some important advice in the README")
     invokeMenuItem("File", "Save All")
     commitsInProject = list(commitMessages) # deep copy
-    commitOutsideProject = commit("Added README file", "Committed 2 files.", True) # QTCREATORBUG-11074
+    commitOutsideProject = commit("Added README file", "Committed 1 files.", True)
     commitMessages.insert(0, commitOutsideProject)
 
     invokeMenuItem('Tools', 'Git', 'Current File', 'Log of "%s"' % readmeName)

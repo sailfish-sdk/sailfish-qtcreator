@@ -47,7 +47,7 @@
 #include <utils/runextensions.h>
 #include <utils/tooltip/tooltip.h>
 
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QVarLengthArray>
 
 using namespace CPlusPlus;
@@ -359,7 +359,7 @@ static int declaredParameterCount(Function *function)
     return argc;
 }
 
-Q_GLOBAL_STATIC(QRegExp, commentArgNameRegexp)
+Q_GLOBAL_STATIC(QRegularExpression, commentArgNameRegexp)
 
 static bool hasCommentedName(
         TranslationUnit *unit,
@@ -410,9 +410,9 @@ static bool hasCommentedName(
 
     QString text = source.mid(nameStart, nameEnd - nameStart);
 
-    if (commentArgNameRegexp()->isEmpty())
-        *commentArgNameRegexp() = QRegExp(QLatin1String("/\\*\\s*(\\w*)\\s*\\*/"));
-    return commentArgNameRegexp()->indexIn(text) != -1;
+    if (commentArgNameRegexp()->pattern().isEmpty())
+        *commentArgNameRegexp() = QRegularExpression(QLatin1String("/\\*\\s*(\\w*)\\s*\\*/"));
+    return text.indexOf(*commentArgNameRegexp()) != -1;
 }
 
 static bool canReplaceSpecifier(TranslationUnit *translationUnit, SpecifierAST *specifier)
@@ -437,6 +437,7 @@ static bool canReplaceSpecifier(TranslationUnit *translationUnit, SpecifierAST *
         case T_AUTO:
         case T___TYPEOF__:
         case T___ATTRIBUTE__:
+        case T___DECLSPEC:
             return true;
         default:
             return false;
@@ -572,7 +573,7 @@ ChangeSet FunctionDeclDefLink::changes(const Snapshot &snapshot, int targetOffse
     // abort if the name of the newly parsed function is not the expected one
     DeclaratorIdAST *newDeclId = getDeclaratorId(newDef->declarator);
     if (!newDeclId || !newDeclId->name || !newDeclId->name->name
-            || overview.prettyName(newDeclId->name->name) != nameInitial) {
+            || overview.prettyName(newDeclId->name->name) != normalizedInitialName()) {
         return changes;
     }
 
@@ -638,6 +639,8 @@ ChangeSet FunctionDeclDefLink::changes(const Snapshot &snapshot, int targetOffse
         env.enter(&q);
         Control *control = sourceContext.bindings()->control().data();
         Overview overview = overviewFromCurrentProjectStyle;
+        overview.showReturnTypes = true;
+        overview.showTemplateParameters = true;
 
         // make a easy to access list of the target parameter declarations
         QVarLengthArray<ParameterDeclarationAST *, 10> targetParameterDecls;
@@ -793,8 +796,9 @@ ChangeSet FunctionDeclDefLink::changes(const Snapshot &snapshot, int targetOffse
                     renamedTargetParameters[targetParam] = overview.prettyName(replacementName);
 
                 // need to change the type (and name)?
+                FullySpecifiedType replacementType = rewriteType(newParam->type(), &env, control);
                 if (!newParam->type().match(sourceParam->type())
-                        && !newParam->type().match(targetParam->type())) {
+                        && !replacementType.match(targetParam->type())) {
                     const int parameterTypeStart = targetFile->startOf(targetParamAst);
                     int parameterTypeEnd = 0;
                     if (targetParamAst->declarator)
@@ -804,7 +808,6 @@ ChangeSet FunctionDeclDefLink::changes(const Snapshot &snapshot, int targetOffse
                     else
                         parameterTypeEnd = targetFile->startOf(targetParamAst);
 
-                    FullySpecifiedType replacementType = rewriteType(newParam->type(), &env, control);
                     newTargetParam = targetFile->textOf(parameterStart, parameterTypeStart);
                     newTargetParam += overview.prettyType(replacementType, replacementName);
                     newTargetParam += targetFile->textOf(parameterTypeEnd, parameterEnd);
@@ -939,6 +942,30 @@ ChangeSet FunctionDeclDefLink::changes(const Snapshot &snapshot, int targetOffse
         }
     }
 
+    // sync noexcept/throw()
+    const QString exceptionSpecTarget = targetFunction->exceptionSpecification()
+            ? QString::fromUtf8(targetFunction->exceptionSpecification()->chars()) : QString();
+    const QString exceptionSpecNew = newFunction->exceptionSpecification()
+            ? QString::fromUtf8(newFunction->exceptionSpecification()->chars()) : QString();
+    if (exceptionSpecTarget != exceptionSpecNew) {
+        if (!exceptionSpecTarget.isEmpty() && !exceptionSpecNew.isEmpty()) {
+            changes.replace(targetFile->range(targetFunctionDeclarator->exception_specification),
+                            exceptionSpecNew);
+        } else if (exceptionSpecTarget.isEmpty()) {
+            int previousToken = targetFunctionDeclarator->ref_qualifier_token;
+            if (!previousToken) {
+                const SpecifierListAST *cvList = targetFunctionDeclarator->cv_qualifier_list;
+                if (cvList && cvList->lastValue()->asSimpleSpecifier())
+                    previousToken = cvList->lastValue()->asSimpleSpecifier()->specifier_token;
+            }
+            if (!previousToken)
+                previousToken = targetFunctionDeclarator->rparen_token;
+            changes.insert(targetFile->endOf(previousToken), ' ' + exceptionSpecNew);
+        } else if (!exceptionSpecTarget.isEmpty()) {
+            changes.remove(targetFile->range(targetFunctionDeclarator->exception_specification));
+        }
+    }
+
     if (targetOffset != -1) {
         // move all change operations to have the right start offset
         const int moveAmount = targetOffset - targetFile->startOf(targetDeclaration);
@@ -951,6 +978,29 @@ ChangeSet FunctionDeclDefLink::changes(const Snapshot &snapshot, int targetOffse
     }
 
     return changes;
+}
+
+// Only has an effect with operators.
+// Makes sure there is exactly one space between the "operator" string
+// and the actual operator, as that is what it will be compared against.
+QString FunctionDeclDefLink::normalizedInitialName() const
+{
+    QString n = nameInitial;
+    const QString op = "operator";
+    int index = n.indexOf(op);
+    if (index == -1)
+        return n;
+    if (index > 0 && n.at(index - 1).isLetterOrNumber())
+        return n;
+    index += op.length();
+    if (index == n.length())
+        return n;
+    if (n.at(index).isLetterOrNumber())
+        return n;
+    n.insert(index++, ' ');
+    while (index < n.length() && n.at(index) == ' ')
+        n.remove(index, 1);
+    return n;
 }
 
 } // namespace Internal

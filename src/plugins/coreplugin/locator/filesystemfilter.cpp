@@ -33,6 +33,7 @@
 #include <coreplugin/editormanager/ieditor.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/idocument.h>
+#include <coreplugin/vcsmanager.h>
 #include <utils/checkablemessagebox.h>
 #include <utils/fileutils.h>
 
@@ -43,6 +44,7 @@
 
 using namespace Core;
 using namespace Core::Internal;
+using namespace Utils;
 
 ILocatorFilter::MatchLevel FileSystemFilter::matchLevelFor(const QRegularExpressionMatch &match,
                                                            const QString &matchText) const
@@ -198,6 +200,7 @@ void FileSystemFilter::accept(LocatorFilterEntry selection,
                 QFile file(targetFile);
                 file.open(QFile::WriteOnly);
                 file.close();
+                VcsManager::promptToAdd(QFileInfo(targetFile).absolutePath(), { targetFile });
             }
             const QFileInfo fileInfo(targetFile);
             const QString cleanedFilePath = QDir::cleanPath(fileInfo.absoluteFilePath());

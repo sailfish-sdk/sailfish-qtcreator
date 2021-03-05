@@ -259,8 +259,10 @@ QString cppExpressionAt(TextEditorWidget *editorWidget, int pos,
     const Snapshot snapshot = CppModelManager::instance()->snapshot();
     const Document::Ptr document = snapshot.document(fileName);
     QTextCursor tc = editorWidget->textCursor();
-    QString expr = tc.selectedText();
-    if (expr.isEmpty()) {
+    QString expr;
+    if (tc.hasSelection() && pos >= tc.selectionStart() && pos <= tc.selectionEnd()) {
+        expr = tc.selectedText();
+    } else {
         tc.setPosition(pos);
         const QChar ch = editorWidget->characterAt(pos);
         if (ch.isLetterOrNumber() || ch == '_')
@@ -325,7 +327,7 @@ ContextData getLocationContext(TextDocument *document, int lineNumber)
             if (!fileName.isEmpty()) {
                 // Possibly one of the  "27 [1] foo = x" lines
                 int pos = line.indexOf('[');
-                int ln = line.leftRef(pos - 1).toInt();
+                int ln = line.left(pos - 1).toInt();
                 if (ln > 0) {
                     data.type = LocationByFile;
                     data.fileName = Utils::FilePath::fromString(fileName);

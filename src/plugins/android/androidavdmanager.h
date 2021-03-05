@@ -32,7 +32,6 @@
 namespace Android {
 namespace Internal {
 
-class AndroidToolManager;
 class AvdManagerOutputParser;
 
 class AndroidAvdManager
@@ -43,7 +42,6 @@ public:
     AndroidAvdManager(const AndroidConfig& config = AndroidConfigurations::currentConfig());
     ~AndroidAvdManager();
 
-    void launchAvdManagerUiTool() const;
     QFuture<CreateAvdInfo> createAvd(CreateAvdInfo info) const;
     bool removeAvd(const QString &name) const;
     QFuture<AndroidDeviceInfoList> avdList() const;
@@ -64,7 +62,6 @@ private:
 
 private:
     const AndroidConfig &m_config;
-    std::unique_ptr<AndroidToolManager> m_androidTool;
     std::unique_ptr<AvdManagerOutputParser> m_parser;
 };
 

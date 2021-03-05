@@ -4,6 +4,15 @@ url         = https://doc.qt.io/qtdesignstudio
 
 moduleheader =
 
+#Words to ignore for auto-linking
+ignorewords += \
+    macOS \
+    WebChannel \
+    WebSocket \
+    WebSockets \
+    OpenGL \
+    MinGW
+
 headerdirs =
 sourcedirs = ../src \
              ../examples/doc \
@@ -25,8 +34,12 @@ imagedirs = ../images \
             ../../../src/plugins/qmldesigner/components/formeditor \
             ../../../src/plugins/qmldesigner/components/navigator \
             ../../../src/plugins/qmldesigner/components/timelineeditor/images \
+            ../../../src/plugins/qmldesigner/componentsplugin/images \
             ../../../src/plugins/qmldesigner/qmlpreviewplugin/images \
+            ../../../src/plugins/qmldesigner/qtquickplugin/images \
             ../../../src/plugins/texteditor/images
+
+include(../../qtcreator/images/extraimages/qtdesignstudio-extraimages.qdocconf)
 
 excludefiles += ../../qtcreator/src/qtcreator.qdoc \
                 ../../qtcreator/src/qtcreator-toc.qdoc
@@ -38,12 +51,15 @@ excludedirs  += ../../qtcreator/examples/accelbubble \
                 ../../qtcreator/src/android \
                 ../../qtcreator/src/baremetal \
                 ../../qtcreator/src/cmake \
+                ../../qtcreator/src/conan \
                 ../../qtcreator/src/debugger/creator-only \
                 ../../qtcreator/src/editors/creator-only \
                 ../../qtcreator/src/howto/creator-only \
+                ../../qtcreator/src/incredibuild \
                 ../../qtcreator/src/ios \
                 ../../qtcreator/src/linux-mobile \
                 ../../qtcreator/src/mcu \
+                ../../qtcreator/src/meson \
                 ../../qtcreator/src/overview/creator-only \
                 ../../qtcreator/src/projects \
                 ../../qtcreator/src/qnx \
@@ -55,9 +71,6 @@ excludedirs  += ../../qtcreator/examples/accelbubble \
 exampledirs = ../examples/ \
               ../../qtcreator/examples
 examples.fileextensions += *.qml *.svg *.ts *.qm
-
-HTML.extraimages         = ../../config/images/commercial.png
-qhp.QtCreator.extraFiles = ../../config/images/commercial.png
 
 depends +=    qtwidgets \
               qtcore \
@@ -110,6 +123,7 @@ qhp.qtdesignstudio.subprojects.manual.type = manual
 # Doxygen compatibility commands
 macro.see                       = "\\sa"
 macro.function                  = "\\fn"
+macro.QMLD                      = "Qt Design Studio"
 
 navigation.landingpage = "$IDE_DISPLAY_NAME Manual"
 buildversion = "$IDE_DISPLAY_NAME Manual $QTC_VERSION"

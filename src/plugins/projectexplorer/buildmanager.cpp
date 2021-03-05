@@ -46,6 +46,7 @@
 #include <coreplugin/progressmanager/futureprogress.h>
 #include <coreplugin/progressmanager/progressmanager.h>
 #include <extensionsystem/pluginmanager.h>
+#include <utils/outputformatter.h>
 #include <utils/runextensions.h>
 #include <utils/stringutils.h>
 
@@ -60,6 +61,7 @@
 #include <QTimer>
 
 using namespace Core;
+using namespace Utils;
 
 namespace ProjectExplorer {
 using namespace Internal;
@@ -140,7 +142,7 @@ static int queue(const QList<Project *> &projects, const QList<Id> &stepIds,
             bool stopThem = true;
             if (settings.prompToStopRunControl) {
                 QStringList names = Utils::transform(toStop, &RunControl::displayName);
-                if (QMessageBox::question(ICore::mainWindow(),
+                if (QMessageBox::question(ICore::dialogParent(),
                         BuildManager::tr("Stop Applications"),
                         BuildManager::tr("Stop these applications before building?")
                         + "\n\n" + names.join('\n'))
@@ -441,6 +443,20 @@ const Internal::CompileOutputSettings &BuildManager::compileOutputSettings()
     return d->m_outputWindow->settings();
 }
 
+QString BuildManager::displayNameForStepId(Id stepId)
+{
+    if (stepId == Constants::BUILDSTEPS_CLEAN) {
+        //: Displayed name for a "cleaning" build step
+        return tr("Clean");
+    }
+    if (stepId == Constants::BUILDSTEPS_DEPLOY) {
+        //: Displayed name for a deploy step
+        return tr("Deploy");
+    }
+    //: Displayed name for a normal build step
+    return tr("Build");
+}
+
 void BuildManager::cancel()
 {
     if (d->m_running) {
@@ -461,8 +477,9 @@ void BuildManager::finish()
 {
     const QString elapsedTime = Utils::formatElapsedTime(d->m_elapsed.elapsed());
     m_instance->addToOutputWindow(elapsedTime, BuildStep::OutputFormat::NormalMessage);
+    d->m_outputWindow->flush();
 
-    QApplication::alert(ICore::mainWindow(), 3000);
+    QApplication::alert(ICore::dialogParent(), 3000);
 }
 
 void BuildManager::emitCancelMessage()
@@ -680,14 +697,16 @@ void BuildManager::nextStep()
         }
 
         static const auto finishedHandler = [](bool success)  {
+            d->m_outputWindow->flush();
             d->m_lastStepSucceeded = success;
             disconnect(d->m_currentBuildStep, nullptr, instance(), nullptr);
             BuildManager::nextBuildQueue();
         };
-        connect(d->m_currentBuildStep, &BuildStep::finished, instance(), finishedHandler,
-                Qt::QueuedConnection);
+        connect(d->m_currentBuildStep, &BuildStep::finished, instance(), finishedHandler);
         connect(d->m_currentBuildStep, &BuildStep::progress,
                 instance(), &BuildManager::progressChanged);
+        d->m_outputWindow->reset();
+        d->m_currentBuildStep->setupOutputFormatter(d->m_outputWindow->outputFormatter());
         d->m_currentBuildStep->run();
     } else {
         d->m_running = false;
@@ -771,7 +790,7 @@ bool BuildManager::buildLists(const QList<BuildStepList *> bsls, const QStringLi
     QStringList stepListNames;
     for (BuildStepList *list : bsls) {
         steps.append(list->steps());
-        stepListNames.append(ProjectExplorerPlugin::displayNameForStepId(list->id()));
+        stepListNames.append(displayNameForStepId(list->id()));
         d->m_isDeploying = d->m_isDeploying || list->id() == Constants::BUILDSTEPS_DEPLOY;
     }
 

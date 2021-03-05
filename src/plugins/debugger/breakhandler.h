@@ -93,6 +93,7 @@ private:
     friend class BreakHandler;
     friend class BreakpointManager;
     friend class BreakpointMarker;
+    friend class DebuggerEngine;
 
     void updateMarker();
     void updateMarkerIcon();
@@ -198,7 +199,6 @@ public:
 private:
     void destroyMarker();
     void updateMarker();
-    void updateMarkerIcon();
     void setState(BreakpointState state);
 
     const GlobalBreakpoint m_globalBreakpoint; // Origin, or null for aliens.

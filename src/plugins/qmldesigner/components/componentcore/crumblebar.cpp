@@ -133,29 +133,35 @@ Utils::CrumblePath *CrumbleBar::crumblePath()
     return m_crumblePath;
 }
 
-void CrumbleBar::showSaveDialog()
+bool CrumbleBar::showSaveDialog()
 {
-    if (DesignerSettings::getValue(DesignerSettingsKey::ALWAYS_SAFE_IN_CRUMBLEBAR).toBool()) {
+    bool canceled = false;
+    bool alwaysSave = DesignerSettings::getValue(DesignerSettingsKey::ALWAYS_SAVE_IN_CRUMBLEBAR).toBool();
+    if (alwaysSave) {
         Core::DocumentManager::saveModifiedDocumentSilently(currentDesignDocument()->editor()->document());
     } else {
-        bool alwaysSave;
-        bool canceled;
-
         Core::DocumentManager::saveModifiedDocument(currentDesignDocument()->editor()->document(),
                                                     tr("Save the changes to preview them correctly."),
                                                     &canceled,
                                                     tr("Always save when leaving subcomponent"),
                                                     &alwaysSave);
 
-        DesignerSettings::setValue(DesignerSettingsKey::ALWAYS_SAFE_IN_CRUMBLEBAR, alwaysSave);
+        DesignerSettings::setValue(DesignerSettingsKey::ALWAYS_SAVE_IN_CRUMBLEBAR, alwaysSave);
     }
+    return !canceled;
 }
 
 void CrumbleBar::onCrumblePathElementClicked(const QVariant &data)
 {
     CrumbleBarInfo clickedCrumbleBarInfo = data.value<CrumbleBarInfo>();
 
-    if (clickedCrumbleBarInfo ==  crumblePath()->dataForLastIndex().value<CrumbleBarInfo>())
+    if (clickedCrumbleBarInfo == crumblePath()->dataForLastIndex().value<CrumbleBarInfo>())
+        return;
+
+    bool inlineComp = !clickedCrumbleBarInfo.modelNode.isValid()
+            && clickedCrumbleBarInfo.fileName == currentDesignDocument()->fileName();
+
+    if (!inlineComp && !showSaveDialog())
         return;
 
     while (clickedCrumbleBarInfo != crumblePath()->dataForLastIndex().value<CrumbleBarInfo>())
@@ -165,17 +171,16 @@ void CrumbleBar::onCrumblePathElementClicked(const QVariant &data)
         crumblePath()->popElement();
 
     m_isInternalCalled = true;
-    if (!clickedCrumbleBarInfo.modelNode.isValid()
-            && clickedCrumbleBarInfo.fileName == currentDesignDocument()->fileName()) {
+    if (inlineComp) {
         nextFileIsCalledInternally();
         currentDesignDocument()->changeToDocumentModel();
         QmlDesignerPlugin::instance()->viewManager().setComponentViewToMaster();
     } else {
-        showSaveDialog();
         crumblePath()->popElement();
         nextFileIsCalledInternally();
         Core::EditorManager::openEditor(clickedCrumbleBarInfo.fileName.toString(),
-            Core::Id(), Core::EditorManager::DoNotMakeVisible);
+                                        Utils::Id(),
+                                        Core::EditorManager::DoNotMakeVisible);
         if (clickedCrumbleBarInfo.modelNode.isValid()) {
             currentDesignDocument()->changeToSubComponent(clickedCrumbleBarInfo.modelNode);
             QmlDesignerPlugin::instance()->viewManager().setComponentNode(clickedCrumbleBarInfo.modelNode);

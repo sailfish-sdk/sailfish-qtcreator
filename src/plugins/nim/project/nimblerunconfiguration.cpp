@@ -24,6 +24,8 @@
 ****************************************************************************/
 
 #include "nimblerunconfiguration.h"
+
+#include "nimblebuildsystem.h"
 #include "nimconstants.h"
 #include "nimbleproject.h"
 
@@ -34,8 +36,6 @@
 
 #include <utils/algorithm.h>
 #include <utils/environment.h>
-
-#include <QStandardPaths>
 
 using namespace ProjectExplorer;
 
@@ -48,7 +48,7 @@ class NimbleRunConfiguration : public RunConfiguration
     Q_DECLARE_TR_FUNCTIONS(Nim::NimbleRunConfiguration)
 
 public:
-    NimbleRunConfiguration(Target *target, Core::Id id)
+    NimbleRunConfiguration(Target *target, Utils::Id id)
         : RunConfiguration(target, id)
     {
         addAspect<LocalEnvironmentAspect>(target);
@@ -86,10 +86,10 @@ class NimbleTestConfiguration : public RunConfiguration
     Q_DECLARE_TR_FUNCTIONS(Nim::NimbleTestConfiguration)
 
 public:
-    NimbleTestConfiguration(ProjectExplorer::Target *target, Core::Id id)
+    NimbleTestConfiguration(ProjectExplorer::Target *target, Utils::Id id)
         : RunConfiguration(target, id)
     {
-        addAspect<ExecutableAspect>()->setExecutable(Utils::FilePath::fromString(QStandardPaths::findExecutable("nimble")));
+        addAspect<ExecutableAspect>()->setExecutable(Nim::nimblePathFromKit(target->kit()));
         addAspect<ArgumentsAspect>()->setArguments("test");
         addAspect<WorkingDirectoryAspect>()->setDefaultWorkingDirectory(project()->projectDirectory());
         addAspect<TerminalAspect>();

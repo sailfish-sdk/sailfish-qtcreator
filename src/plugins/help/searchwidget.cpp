@@ -32,7 +32,9 @@
 #include <coreplugin/coreconstants.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/progressmanager/progressmanager.h>
+
 #include <utils/progressindicator.h>
+#include <utils/stringutils.h>
 #include <utils/styledbar.h>
 #include <utils/utilsicons.h>
 
@@ -47,7 +49,7 @@
 #include <QLabel>
 #include <QMap>
 #include <QMenu>
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QString>
 #include <QStringList>
 #include <QTextBrowser>
@@ -153,7 +155,7 @@ void SearchWidget::showEvent(QShowEvent *event)
         connect(searchEngine, &QHelpSearchEngine::indexingFinished, this,
             &SearchWidget::indexingFinished);
 
-        QMetaObject::invokeMethod(&LocalHelpManager::helpEngine(), "setupFinished",
+        QMetaObject::invokeMethod(&LocalHelpManager::helpEngine(), &QHelpEngine::setupFinished,
             Qt::QueuedConnection);
     }
 }
@@ -214,7 +216,7 @@ bool SearchWidget::eventFilter(QObject *o, QEvent *e)
         if (!link.isEmpty() || link.isValid()) {
             bool controlPressed = me->modifiers() & Qt::ControlModifier;
             if ((me->button() == Qt::LeftButton && controlPressed)
-                || (me->button() == Qt::MidButton)) {
+                || (me->button() == Qt::MiddleButton)) {
                     emit linkActivated(link, currentSearchTerms(), true/*newPage*/);
             }
         }
@@ -261,7 +263,7 @@ void SearchWidget::contextMenuEvent(QContextMenuEvent *contextMenuEvent)
 
 QStringList SearchWidget::currentSearchTerms() const
 {
-    return searchEngine->searchInput().split(QRegExp("\\W+"), QString::SkipEmptyParts);
+    return searchEngine->searchInput().split(QRegularExpression("\\W+"), Qt::SkipEmptyParts);
 }
 
 // #pragma mark -- SearchSideBarItem

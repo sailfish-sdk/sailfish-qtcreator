@@ -25,25 +25,13 @@
 
 #include "fileapireader.h"
 
-#include "cmakebuildconfiguration.h"
-#include "cmakeprojectconstants.h"
-#include "cmakeprojectmanager.h"
 #include "fileapidataextractor.h"
+#include "fileapiparser.h"
 #include "projecttreehelper.h"
 
-#include <coreplugin/editormanager/editormanager.h>
-#include <coreplugin/fileiconprovider.h>
-#include <coreplugin/messagemanager.h>
-#include <coreplugin/progressmanager/progressmanager.h>
 #include <projectexplorer/projectexplorer.h>
-#include <projectexplorer/projectexplorerconstants.h>
-#include <projectexplorer/task.h>
-#include <projectexplorer/taskhub.h>
-#include <projectexplorer/toolchain.h>
 
 #include <utils/algorithm.h>
-#include <utils/optional.h>
-#include <utils/qtcassert.h>
 #include <utils/runextensions.h>
 
 #include <QDateTime>
@@ -63,10 +51,19 @@ using namespace FileApiDetails;
 // FileApiReader:
 // --------------------------------------------------------------------
 
-FileApiReader::FileApiReader() {}
+FileApiReader::FileApiReader()
+    : m_lastReplyTimestamp()
+{
+    QObject::connect(&m_watcher,
+                     &FileSystemWatcher::directoryChanged,
+                     this,
+                     &FileApiReader::replyDirectoryHasChanged);
+}
 
 FileApiReader::~FileApiReader()
 {
+    if (isParsing())
+        emit errorOccurred(tr("Parsing has been canceled."));
     stop();
     resetData();
 }
@@ -80,22 +77,13 @@ void FileApiReader::setParameters(const BuildDirParameters &p)
     m_parameters = p;
     qCDebug(cmakeFileApiMode) << "Work directory:" << m_parameters.workDirectory.toUserOutput();
 
+    // Reset watcher:
+    m_watcher.removeFiles(m_watcher.files());
+    m_watcher.removeDirectories(m_watcher.directories());
+
+    FileApiParser::setupCMakeFileApi(m_parameters.workDirectory, m_watcher);
+
     resetData();
-
-    m_fileApi = std::make_unique<FileApiParser>(m_parameters.sourceDirectory, m_parameters.workDirectory);
-    connect(m_fileApi.get(), &FileApiParser::dirty, this, [this]() {
-        if (!m_isParsing)
-            emit dirty();
-    });
-
-    qCDebug(cmakeFileApiMode) << "FileApiReader: IS READY NOW SIGNAL";
-    emit isReadyNow();
-}
-
-bool FileApiReader::isCompatible(const BuildDirParameters &p)
-{
-    const CMakeTool *cmakeTool = p.cmakeTool();
-    return cmakeTool && cmakeTool->readerType() == CMakeTool::FileApi;
 }
 
 void FileApiReader::resetData()
@@ -111,51 +99,69 @@ void FileApiReader::resetData()
     m_knownHeaders.clear();
 }
 
-void FileApiReader::parse(bool forceCMakeRun, bool forceConfiguration)
+void FileApiReader::parse(bool forceCMakeRun,
+                          bool forceInitialConfiguration,
+                          bool forceExtraConfiguration)
 {
     qCDebug(cmakeFileApiMode) << "Parse called with arguments: ForceCMakeRun:" << forceCMakeRun
-                              << " - forceConfiguration:" << forceConfiguration;
+                              << " - forceConfiguration:" << forceInitialConfiguration
+                              << " - forceExtraConfiguration:" << forceExtraConfiguration;
     startState();
 
-    if (forceConfiguration) {
-        // Initial create:
-        qCDebug(cmakeFileApiMode) << "FileApiReader: Starting CMake with forced configuration.";
-        const FilePath path = m_parameters.workDirectory.pathAppended("qtcsettings.cmake");
-        startCMakeState(QStringList({QString("-C"), path.toUserOutput()}));
-        // Keep m_isParsing enabled!
-        return;
-    }
+    const QStringList args = (forceInitialConfiguration ? m_parameters.initialCMakeArguments
+                                                        : QStringList())
+                             + (forceExtraConfiguration ? m_parameters.extraCMakeArguments
+                                                        : QStringList());
+    qCDebug(cmakeFileApiMode) << "Parameters request these CMake arguments:" << args;
 
-    const QFileInfo replyFi = m_fileApi->scanForCMakeReplyFile();
+    const QFileInfo replyFi = FileApiParser::scanForCMakeReplyFile(m_parameters.workDirectory);
     // Only need to update when one of the following conditions is met:
-    //  * The user forces the update,
+    //  * The user forces the cmake run,
+    //  * The user provided arguments,
     //  * There is no reply file,
     //  * One of the cmakefiles is newer than the replyFile and the user asked
     //    for creator to run CMake as needed,
-    //  * A query files are newer than the reply file
-    const bool mustUpdate = forceCMakeRun || !replyFi.exists()
-                            || (m_parameters.cmakeTool() && m_parameters.cmakeTool()->isAutoRun()
-                                && anyOf(m_cmakeFiles,
-                                         [&replyFi](const FilePath &f) {
-                                             return f.toFileInfo().lastModified()
-                                                    > replyFi.lastModified();
-                                         }))
-                            || anyOf(m_fileApi->cmakeQueryFilePaths(), [&replyFi](const QString &qf) {
-                                   return QFileInfo(qf).lastModified() > replyFi.lastModified();
-                               });
+    //  * A query file is newer than the reply file
+    const bool hasArguments = !args.isEmpty();
+    const bool replyFileMissing = !replyFi.exists();
+    const bool cmakeFilesChanged = m_parameters.cmakeTool() && m_parameters.cmakeTool()->isAutoRun()
+                                   && anyOf(m_cmakeFiles, [&replyFi](const FilePath &f) {
+                                          return f.toFileInfo().lastModified()
+                                                 > replyFi.lastModified();
+                                      });
+    const bool queryFileChanged = anyOf(FileApiParser::cmakeQueryFilePaths(
+                                            m_parameters.workDirectory),
+                                        [&replyFi](const QString &qf) {
+                                            return QFileInfo(qf).lastModified()
+                                                   > replyFi.lastModified();
+                                        });
+
+    const bool mustUpdate = forceCMakeRun || hasArguments || replyFileMissing || cmakeFilesChanged
+                            || queryFileChanged;
+    qCDebug(cmakeFileApiMode) << QString("Do I need to run CMake? %1 "
+                                         "(force: %2 | args: %3 | missing reply: %4 | "
+                                         "cmakeFilesChanged: %5 | "
+                                         "queryFileChanged: %6)")
+                                     .arg(mustUpdate)
+                                     .arg(forceCMakeRun)
+                                     .arg(hasArguments)
+                                     .arg(replyFileMissing)
+                                     .arg(cmakeFilesChanged)
+                                     .arg(queryFileChanged);
 
     if (mustUpdate) {
-        qCDebug(cmakeFileApiMode) << "FileApiReader: Starting CMake with no arguments.";
-        startCMakeState(QStringList());
-        // Keep m_isParsing enabled!
-        return;
+        qCDebug(cmakeFileApiMode) << QString("FileApiReader: Starting CMake with \"%1\".")
+                                         .arg(args.join("\", \""));
+        startCMakeState(args);
+    } else {
+        endState(replyFi);
     }
-
-    endState(replyFi);
 }
 
 void FileApiReader::stop()
 {
+    if (m_cmakeProcess)
+        disconnect(m_cmakeProcess.get(), nullptr, this, nullptr);
     m_cmakeProcess.reset();
 }
 
@@ -225,7 +231,7 @@ void FileApiReader::endState(const QFileInfo &replyFi)
     const FilePath sourceDirectory = m_parameters.sourceDirectory;
     const FilePath buildDirectory = m_parameters.workDirectory;
 
-    m_fileApi->setParsedReplyFilePath(replyFi.filePath());
+    m_lastReplyTimestamp = replyFi.lastModified();
 
     m_future = runAsync(ProjectExplorerPlugin::sharedThreadPool(),
                         [replyFi, sourceDirectory, buildDirectory]() {
@@ -258,7 +264,7 @@ void FileApiReader::endState(const QFileInfo &replyFi)
         if (value->errorMessage.isEmpty()) {
             emit this->dataAvailable();
         } else {
-            emit this->errorOccured(value->errorMessage);
+            emit this->errorOccurred(value->errorMessage);
         }
     });
 }
@@ -285,7 +291,22 @@ void FileApiReader::cmakeFinishedState(int code, QProcess::ExitStatus status)
 
     m_cmakeProcess.release()->deleteLater();
 
-    endState(m_fileApi->scanForCMakeReplyFile());
+    endState(FileApiParser::scanForCMakeReplyFile(m_parameters.workDirectory));
+}
+
+void FileApiReader::replyDirectoryHasChanged(const QString &directory) const
+{
+    if (m_isParsing)
+        return; // This has been triggered by ourselves, ignore.
+
+    const QFileInfo fi = FileApiParser::scanForCMakeReplyFile(m_parameters.workDirectory);
+    const QString dir = fi.absolutePath();
+    if (dir.isEmpty())
+        return; // CMake started to fill the result dir, but has not written a result file yet
+    QTC_ASSERT(dir == directory, return);
+
+    if (m_lastReplyTimestamp.isValid() && fi.lastModified() > m_lastReplyTimestamp)
+        emit dirty();
 }
 
 } // namespace Internal

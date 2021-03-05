@@ -32,9 +32,9 @@
 #include <utils/hostosinfo.h>
 #include <utils/pathchooser.h>
 #include <utils/qtcassert.h>
+#include <utils/variablechooser.h>
 
 #include <coreplugin/icore.h>
-#include <coreplugin/variablechooser.h>
 
 #include <debugger/analyzer/analyzericons.h>
 
@@ -66,7 +66,7 @@ OptionsWidget::OptionsWidget(QWidget *parent)
     m_binary->setExpectedKind(Utils::PathChooser::ExistingCommand);
     m_binary->setCommandVersionArguments({"--version"});
 
-    auto variableChooser = new Core::VariableChooser(this);
+    auto variableChooser = new Utils::VariableChooser(this);
     variableChooser->addSupportedWidget (m_customArguments);
 
     m_unusedFunction->setToolTip(tr("Disables multithreaded check."));
@@ -121,7 +121,7 @@ void OptionsWidget::load(const CppcheckOptions &options)
 
 void OptionsWidget::save(CppcheckOptions &options) const
 {
-    options.binary = m_binary->path();
+    options.binary = m_binary->filePath().toString();
     options.customArguments = m_customArguments->text();
     options.ignoredPatterns = m_ignorePatterns->text();
     options.warning = m_warning->isChecked();

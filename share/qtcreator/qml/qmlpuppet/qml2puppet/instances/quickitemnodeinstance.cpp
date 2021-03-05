@@ -41,6 +41,7 @@ namespace QmlDesigner {
 namespace Internal {
 
 bool QuickItemNodeInstance::s_createEffectItem = false;
+bool QuickItemNodeInstance::s_unifiedRenderPath = false;
 
 QuickItemNodeInstance::QuickItemNodeInstance(QQuickItem *item)
    : ObjectNodeInstance(item),
@@ -58,7 +59,7 @@ QuickItemNodeInstance::QuickItemNodeInstance(QQuickItem *item)
 
 QuickItemNodeInstance::~QuickItemNodeInstance()
 {
-    if (quickItem())
+    if (quickItem() && checkIfRefFromEffect(instanceId()))
         designerSupport()->derefFromEffectItem(quickItem());
 }
 
@@ -156,24 +157,35 @@ void QuickItemNodeInstance::createEffectItem(bool createEffectItem)
     s_createEffectItem = createEffectItem;
 }
 
+void QuickItemNodeInstance::enableUnifiedRenderPath(bool unifiedRenderPath)
+{
+    s_unifiedRenderPath = unifiedRenderPath;
+}
+
+bool QuickItemNodeInstance::checkIfRefFromEffect(qint32 id)
+{
+    if (s_unifiedRenderPath)
+        return false;
+
+    return (s_createEffectItem || id == 0);
+}
+
 void QuickItemNodeInstance::initialize(const ObjectNodeInstance::Pointer &objectNodeInstance,
                                        InstanceContainer::NodeFlags flags)
 {
 
-    if (instanceId() == 0) {
-        DesignerSupport::setRootItem(nodeInstanceServer()->quickView(), quickItem());
-    } else {
-        quickItem()->setParentItem(qobject_cast<QQuickItem*>(nodeInstanceServer()->quickView()->rootObject()));
-    }
+    if (instanceId() == 0)
+        nodeInstanceServer()->setRootItem(quickItem());
+    else
+        quickItem()->setParentItem(nodeInstanceServer()->rootItem());
 
-    if (quickItem()->window()) {
-        if (s_createEffectItem || instanceId() == 0)
-            designerSupport()->refFromEffectItem(quickItem(),
-                                                 !flags.testFlag(InstanceContainer::ParentTakesOverRendering));
+    if (quickItem()->window() && checkIfRefFromEffect(instanceId())) {
+        designerSupport()->refFromEffectItem(quickItem(),
+                                             !flags.testFlag(
+                                                 InstanceContainer::ParentTakesOverRendering));
     }
 
     ObjectNodeInstance::initialize(objectNodeInstance, flags);
-    quickItem()->update();
 }
 
 QQuickItem *QuickItemNodeInstance::contentItem() const
@@ -244,6 +256,18 @@ QStringList QuickItemNodeInstance::allStates() const
     }
 
     return list;
+}
+
+void QuickItemNodeInstance::updateDirtyNode(QQuickItem *item)
+{
+    if (s_unifiedRenderPath)
+        return;
+    DesignerSupport::updateDirtyNode(item);
+}
+
+bool QuickItemNodeInstance::unifiedRenderPath()
+{
+    return s_unifiedRenderPath;
 }
 
 QRectF QuickItemNodeInstance::contentItemBoundingBox() const
@@ -378,17 +402,40 @@ double QuickItemNodeInstance::y() const
 
 QImage QuickItemNodeInstance::renderImage() const
 {
+    if (s_unifiedRenderPath && !isRootNodeInstance())
+        return {};
+
     updateDirtyNodesRecursive(quickItem());
 
     QRectF renderBoundingRect = boundingRect();
 
     QSize size = renderBoundingRect.size().toSize();
     static double devicePixelRatio = qgetenv("FORMEDITOR_DEVICE_PIXEL_RATIO").toDouble();
+    if (size.width() * size.height() > 4000 * 4000)
+        size = QSize(0,0);
     size *= devicePixelRatio;
 
-    QImage renderImage = designerSupport()->renderImageForItem(quickItem(), renderBoundingRect, size);
+    QImage renderImage;
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    if (s_unifiedRenderPath) {
+        renderImage = nodeInstanceServer()->quickWindow()->grabWindow();
+    } else {
+        // Fake render loop signaling to update things like QML items as 3D textures
+        nodeInstanceServer()->quickWindow()->beforeSynchronizing();
+        nodeInstanceServer()->quickWindow()->beforeRendering();
+
+        renderImage = designerSupport()->renderImageForItem(quickItem(), renderBoundingRect, size);
+
+        nodeInstanceServer()->quickWindow()->afterRendering();
+    }
     renderImage.setDevicePixelRatio(devicePixelRatio);
+#else
+    renderImage = nodeInstanceServer()->grabWindow();
+    renderImage = renderImage.copy(renderBoundingRect.toRect());
+    /* When grabbing an offscren window the device pixel ratio is 1 */
+    renderImage.setDevicePixelRatio(1);
+#endif
 
     return renderImage;
 }
@@ -401,7 +448,29 @@ QImage QuickItemNodeInstance::renderPreviewImage(const QSize &previewImageSize) 
         static double devicePixelRatio = qgetenv("FORMEDITOR_DEVICE_PIXEL_RATIO").toDouble();
         const QSize size = previewImageSize * devicePixelRatio;
         if (quickItem()->isVisible()) {
-            return designerSupport()->renderImageForItem(quickItem(), previewItemBoundingRect, size);
+            QImage image;
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+            if (s_unifiedRenderPath) {
+                image = nodeInstanceServer()->quickWindow()->grabWindow();
+            } else {
+                // Fake render loop signaling to update things like QML items as 3D textures
+                nodeInstanceServer()->quickWindow()->beforeSynchronizing();
+                nodeInstanceServer()->quickWindow()->beforeRendering();
+
+                image = designerSupport()->renderImageForItem(quickItem(),
+                                                              previewItemBoundingRect,
+                                                              size);
+
+                nodeInstanceServer()->quickWindow()->afterRendering();
+            }
+#else
+            image = nodeInstanceServer()->grabWindow();
+            image = image.copy(previewItemBoundingRect.toRect());
+#endif
+
+            image = image.scaledToWidth(size.width());
+
+            return image;
         } else {
             QImage transparentImage(size, QImage::Format_ARGB32_Premultiplied);
             transparentImage.fill(Qt::transparent);
@@ -410,6 +479,11 @@ QImage QuickItemNodeInstance::renderPreviewImage(const QSize &previewImageSize) 
     }
 
     return QImage();
+}
+
+QSharedPointer<QQuickItemGrabResult> QuickItemNodeInstance::createGrabResult() const
+{
+    return quickItem()->grabToImage(size().toSize());
 }
 
 void QuickItemNodeInstance::updateAllDirtyNodesRecursive()
@@ -471,15 +545,18 @@ void QuickItemNodeInstance::updateDirtyNodesRecursive(QQuickItem *parentItem) co
     }
 
     QmlPrivateGate::disableNativeTextRendering(parentItem);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     DesignerSupport::updateDirtyNode(parentItem);
+#endif
 }
 
 void QuickItemNodeInstance::updateAllDirtyNodesRecursive(QQuickItem *parentItem) const
 {
-    foreach (QQuickItem *childItem, parentItem->childItems())
-            updateAllDirtyNodesRecursive(childItem);
+    const QList<QQuickItem *> children = parentItem->childItems();
+    for (QQuickItem *childItem : children)
+        updateAllDirtyNodesRecursive(childItem);
 
-    DesignerSupport::updateDirtyNode(parentItem);
+    updateDirtyNode(parentItem);
 }
 
 static inline bool isRectangleSane(const QRectF &rect)
@@ -493,13 +570,16 @@ QRectF QuickItemNodeInstance::boundingRectWithStepChilds(QQuickItem *parentItem)
 
     boundingRect = boundingRect.united(QRectF(QPointF(0, 0), size()));
 
-    foreach (QQuickItem *childItem, parentItem->childItems()) {
+    for (QQuickItem *childItem : parentItem->childItems()) {
         if (!nodeInstanceServer()->hasInstanceForObject(childItem)) {
             QRectF transformedRect = childItem->mapRectToItem(parentItem, boundingRectWithStepChilds(childItem));
             if (isRectangleSane(transformedRect))
                 boundingRect = boundingRect.united(transformedRect);
         }
     }
+
+    if (boundingRect.isEmpty())
+        QRectF{0, 0, 640, 480};
 
     return boundingRect;
 }
@@ -610,7 +690,8 @@ void QuickItemNodeInstance::reparent(const ObjectNodeInstance::Pointer &oldParen
 
     if (quickItem()->parentItem()) {
         refresh();
-        DesignerSupport::updateDirtyNode(quickItem());
+
+        updateDirtyNode(quickItem());
 
         if (instanceIsValidLayoutable(oldParentInstance, oldParentProperty))
             oldParentInstance->refreshLayoutable();

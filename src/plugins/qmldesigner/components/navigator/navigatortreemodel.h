@@ -32,18 +32,30 @@
 
 #include <QAbstractItemModel>
 #include <QPointer>
+#include <QDateTime>
+
+QT_FORWARD_DECLARE_CLASS(QPixmap)
 
 namespace QmlDesigner {
 
 class Model;
 class NavigatorView;
 class ModelNode;
+class DesignerActionManager;
 
 class NavigatorTreeModel : public QAbstractItemModel, public NavigatorModelInterface
 {
     Q_OBJECT
 
 public:
+
+    enum ColumnType {
+        Name = 0,
+        Alias,
+        Visibility,
+        Lock,
+        Count
+    };
 
     explicit NavigatorTreeModel(QObject *parent = nullptr);
     ~NavigatorTreeModel() override;
@@ -87,11 +99,19 @@ public:
     void notifyModelNodesRemoved(const QList<ModelNode> &modelNodes) override;
     void notifyModelNodesInserted(const QList<ModelNode> &modelNodes) override;
     void notifyModelNodesMoved(const QList<ModelNode> &modelNodes) override;
+    void notifyIconsChanged() override;
     void setFilter(bool showOnlyVisibleItems) override;
+    void setOrder(bool reverseItemOrder) override;
     void resetModel() override;
 
+    void updateToolTipPixmap(const ModelNode &node, const QPixmap &pixmap);
+
+signals:
+    void toolTipPixmapUpdated(const QString &id, const QPixmap &pixmap) const;
+
 private:
-    void moveNodesInteractive(NodeAbstractProperty &parentProperty, const QList<ModelNode> &modelNodes, int targetIndex);
+    void moveNodesInteractive(NodeAbstractProperty &parentProperty, const QList<ModelNode> &modelNodes,
+                              int targetIndex, bool executeInTransaction = true);
     void handleInternalDrop(const QMimeData *mimeData, int rowNumber, const QModelIndex &dropModelIndex);
     void handleItemLibraryItemDrop(const QMimeData *mimeData, int rowNumber, const QModelIndex &dropModelIndex);
     void handleItemLibraryImageDrop(const QMimeData *mimeData, int rowNumber, const QModelIndex &dropModelIndex);
@@ -100,6 +120,8 @@ private:
     QPointer<NavigatorView> m_view;
     mutable QHash<ModelNode, QModelIndex> m_nodeIndexHash;
     bool m_showOnlyVisibleItems = true;
+    bool m_reverseItemOrder = false;
+    DesignerActionManager *m_actionManager = nullptr;
 };
 
 } // namespace QmlDesigner

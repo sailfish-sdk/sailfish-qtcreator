@@ -41,14 +41,14 @@ using namespace Utils;
 namespace RemoteLinux {
 namespace Internal {
 
-RemoteLinuxCustomRunConfiguration::RemoteLinuxCustomRunConfiguration(Target *target, Core::Id id)
+RemoteLinuxCustomRunConfiguration::RemoteLinuxCustomRunConfiguration(Target *target, Utils::Id id)
     : RunConfiguration(target, id)
 {
     auto exeAspect = addAspect<ExecutableAspect>();
     exeAspect->setSettingsKey("RemoteLinux.CustomRunConfig.RemoteExecutable");
     exeAspect->setLabelText(tr("Remote executable:"));
     exeAspect->setExecutablePathStyle(OsTypeLinux);
-    exeAspect->setDisplayStyle(BaseStringAspect::LineEditDisplay);
+    exeAspect->setDisplayStyle(StringAspect::LineEditDisplay);
     exeAspect->setHistoryCompleter("RemoteLinux.CustomExecutable.History");
     exeAspect->setExpectedKind(PathChooser::Any);
 

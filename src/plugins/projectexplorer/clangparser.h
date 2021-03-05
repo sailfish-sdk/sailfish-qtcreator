@@ -38,11 +38,14 @@ class PROJECTEXPLORER_EXPORT ClangParser : public ProjectExplorer::GccParser
 
 public:
     ClangParser();
-    void stdError(const QString &line) override;
 
-    static Core::Id id();
+    static QList<Utils::OutputLineParser *> clangParserSuite();
+
+    static Utils::Id id();
 
 private:
+    Result handleLine(const QString &line, Utils::OutputFormat type) override;
+
     QRegularExpression m_commandRegExp;
     QRegularExpression m_inLineRegExp;
     QRegularExpression m_messageRegExp;

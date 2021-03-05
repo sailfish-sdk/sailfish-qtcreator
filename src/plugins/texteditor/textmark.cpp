@@ -24,6 +24,8 @@
 ****************************************************************************/
 
 #include "textmark.h"
+
+#include "fontsettings.h"
 #include "textdocument.h"
 #include "texteditor.h"
 #include "texteditorplugin.h"
@@ -123,7 +125,7 @@ int TextMark::lineNumber() const
 
 void TextMark::paintIcon(QPainter *painter, const QRect &rect) const
 {
-    m_icon.paint(painter, rect, Qt::AlignCenter);
+    icon().paint(painter, rect, Qt::AlignCenter);
 }
 
 void TextMark::paintAnnotation(QPainter &painter, QRectF *annotationRect,
@@ -139,8 +141,10 @@ void TextMark::paintAnnotation(QPainter &painter, QRectF *annotationRect,
     const QColor &markColor = m_color.has_value()
                                   ? Utils::creatorTheme()->color(m_color.value()).toHsl()
                                   : painter.pen().color();
+
+    const FontSettings &fontSettings = m_baseTextDocument->fontSettings();
     const AnnotationColors &colors = AnnotationColors::getAnnotationColors(
-                markColor, painter.background().color());
+                markColor, fontSettings.toTextCharFormat(C_TEXT).background().color());
 
     painter.save();
     QLinearGradient grad(rects.fadeInRect.topLeft() - contentOffset,
@@ -176,7 +180,7 @@ TextMark::AnnotationRects TextMark::annotationRects(const QRectF &boundingRect,
     rects.fadeInRect.setWidth(fadeInOffset);
     rects.annotationRect = boundingRect;
     rects.annotationRect.setLeft(rects.fadeInRect.right());
-    const bool drawIcon = !m_icon.isNull();
+    const bool drawIcon = !icon().isNull();
     constexpr qreal margin = 1;
     rects.iconRect = QRectF(rects.annotationRect.left(), boundingRect.top(),
                             0, boundingRect.height());
@@ -280,9 +284,10 @@ void TextMark::addToToolTipLayout(QGridLayout *target) const
 
     // Left column: text mark icon
     const int row = target->rowCount();
-    if (!m_icon.isNull()) {
+    const QIcon icon = this->icon();
+    if (!icon.isNull()) {
         auto iconLabel = new QLabel;
-        iconLabel->setPixmap(m_icon.pixmap(16, 16));
+        iconLabel->setPixmap(icon.pixmap(16, 16));
         target->addWidget(iconLabel, row, 0, Qt::AlignTop | Qt::AlignHCenter);
     }
 
@@ -311,8 +316,10 @@ void TextMark::addToToolTipLayout(QGridLayout *target) const
 
 bool TextMark::addToolTipContent(QLayout *target) const
 {
-    QString text = m_toolTip;
+    bool useDefaultToolTip = false;
+    QString text = toolTip();
     if (text.isEmpty()) {
+        useDefaultToolTip = true;
         text = m_defaultToolTip;
         if (text.isEmpty())
             return false;
@@ -322,10 +329,26 @@ bool TextMark::addToolTipContent(QLayout *target) const
     textLabel->setOpenExternalLinks(true);
     textLabel->setText(text);
     // Differentiate between tool tips that where explicitly set and default tool tips.
-    textLabel->setEnabled(!m_toolTip.isEmpty());
+    textLabel->setDisabled(useDefaultToolTip);
     target->addWidget(textLabel);
 
     return true;
+}
+
+void TextMark::setIcon(const QIcon &icon)
+{
+    m_icon = icon;
+    m_iconProvider = std::function<QIcon()>();
+}
+
+void TextMark::setIconProvider(const std::function<QIcon ()> &iconProvider)
+{
+    m_iconProvider = iconProvider;
+}
+
+const QIcon TextMark::icon() const
+{
+    return m_iconProvider ? m_iconProvider() : m_icon;
 }
 
 Utils::optional<Theme::Color> TextMark::color() const
@@ -336,6 +359,22 @@ Utils::optional<Theme::Color> TextMark::color() const
 void TextMark::setColor(const Theme::Color &color)
 {
     m_color = color;
+}
+
+void TextMark::setToolTipProvider(const std::function<QString()> &toolTipProvider)
+{
+    m_toolTipProvider = toolTipProvider;
+}
+
+QString TextMark::toolTip() const
+{
+    return m_toolTipProvider ? m_toolTipProvider() : m_toolTip;
+}
+
+void TextMark::setToolTip(const QString &toolTip)
+{
+    m_toolTip = toolTip;
+    m_toolTipProvider = std::function<QString()>();
 }
 
 QVector<QAction *> TextMark::actions() const

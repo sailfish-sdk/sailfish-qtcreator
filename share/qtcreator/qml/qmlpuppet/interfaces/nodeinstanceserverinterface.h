@@ -53,16 +53,14 @@ class RemoveSharedMemoryCommand;
 class ChangeSelectionCommand;
 class InputEventCommand;
 class View3DActionCommand;
+class RequestModelNodePreviewImageCommand;
+class ChangeLanguageCommand;
+class ChangePreviewImageSizeCommand;
 
 class NodeInstanceServerInterface : public QObject
 {
     Q_OBJECT
 public:
-    enum RunModus {
-        NormalModus,
-        TestModus // No preview images and synchronized
-    };
-
     explicit NodeInstanceServerInterface(QObject *parent = nullptr);
 
     virtual void createInstances(const CreateInstancesCommand &command) = 0;
@@ -85,9 +83,12 @@ public:
     virtual void changeSelection(const ChangeSelectionCommand &command) = 0;
     virtual void inputEvent(const InputEventCommand &command) = 0;
     virtual void view3DAction(const View3DActionCommand &command) = 0;
+    virtual void requestModelNodePreviewImage(const RequestModelNodePreviewImageCommand &command) = 0;
+    virtual void changeLanguage(const ChangeLanguageCommand &command) = 0;
+    virtual void changePreviewImageSize(const ChangePreviewImageSizeCommand &command) = 0;
+    virtual void dispatchCommand(const QVariant &) {}
 
-    virtual void benchmark(const QString &)
-    {}
+    virtual void benchmark(const QString &) {}
 
     static void registerCommands();
 };

@@ -28,6 +28,8 @@
 #include "searchsymbols.h"
 
 #include <coreplugin/find/ifindfilter.h>
+#include <coreplugin/find/searchresultitem.h>
+#include <coreplugin/find/searchresultwindow.h>
 
 #include <QFutureWatcher>
 #include <QPointer>
@@ -79,8 +81,8 @@ private:
     void finish();
     void cancel();
     void setPaused(bool paused);
-    void onTaskStarted(Core::Id type);
-    void onAllTasksFinished(Core::Id type);
+    void onTaskStarted(Utils::Id type);
+    void onAllTasksFinished(Utils::Id type);
     void searchAgain();
 
     QString label() const;

@@ -24,19 +24,17 @@
 ****************************************************************************/
 
 #include "cmakefilecompletionassist.h"
-#include "cmakeprojectconstants.h"
-#include "cmakeprojectmanager.h"
-#include "cmakesettingspage.h"
-#include "cmaketoolmanager.h"
+
 #include "cmakekitinformation.h"
+#include "cmakeprojectconstants.h"
+#include "cmaketool.h"
 
 #include <texteditor/codeassist/assistinterface.h>
-#include <projectexplorer/kit.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/session.h>
 #include <projectexplorer/target.h>
 
-#include <coreplugin/editormanager/editormanager.h>
+#include <QFileInfo>
 
 using namespace CMakeProjectManager::Internal;
 using namespace TextEditor;
@@ -61,9 +59,9 @@ CMakeFileCompletionAssist::CMakeFileCompletionAssist() :
 IAssistProposal *CMakeFileCompletionAssist::perform(const AssistInterface *interface)
 {
     Keywords kw;
-    QString fileName = interface->fileName();
-    if (!fileName.isEmpty() && QFileInfo(fileName).isFile()) {
-        Project *p = SessionManager::projectForFile(Utils::FilePath::fromString(fileName));
+    const Utils::FilePath &filePath = interface->filePath();
+    if (!filePath.isEmpty() && filePath.toFileInfo().isFile()) {
+        Project *p = SessionManager::projectForFile(filePath);
         if (p && p->activeTarget()) {
             CMakeTool *cmake = CMakeKitAspect::cmakeTool(p->activeTarget()->kit());
             if (cmake && cmake->isValid())

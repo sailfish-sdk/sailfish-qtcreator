@@ -24,6 +24,11 @@ SOURCES += formeditoritem.cpp \
     scaleitem.cpp \
     resizecontroller.cpp \
     resizehandleitem.cpp \
+    rotationtool.cpp \
+    rotationindicator.cpp \
+    rotationcontroller.cpp \
+    rotationhandleitem.cpp \
+    rotationmanipulator.cpp \
     dragtool.cpp \
     toolbox.cpp \
     formeditorgraphicsview.cpp \
@@ -36,7 +41,8 @@ SOURCES += formeditoritem.cpp \
     contentnoteditableindicator.cpp \
     backgroundaction.cpp \
     formeditortoolbutton.cpp \
-    formeditorannotationicon.cpp
+    formeditorannotationicon.cpp \
+    transitiontool.cpp
 
 HEADERS += formeditorscene.h \
     formeditorwidget.h \
@@ -63,6 +69,11 @@ HEADERS += formeditorscene.h \
     scaleitem.h \
     resizecontroller.h \
     resizehandleitem.h \
+    rotationtool.h \
+    rotationindicator.h \
+    rotationcontroller.h \
+    rotationhandleitem.h \
+    rotationmanipulator.h \
     dragtool.h \
     toolbox.h \
     formeditorgraphicsview.h \
@@ -75,6 +86,7 @@ HEADERS += formeditorscene.h \
     contentnoteditableindicator.h \
     backgroundaction.h \
     formeditortoolbutton.h \
-    formeditorannotationicon.h
+    formeditorannotationicon.h \
+    transitiontool.h
 
 RESOURCES += formeditor.qrc

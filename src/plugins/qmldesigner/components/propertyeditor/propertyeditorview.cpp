@@ -212,7 +212,6 @@ void PropertyEditorView::changeValue(const QString &name)
         }
     }
 
-    bool forceReset = false;
     if (name == "state" && castedValue.toString() == "base state")
         castedValue = "";
 
@@ -226,7 +225,10 @@ void PropertyEditorView::changeValue(const QString &name)
     if (!value->value().isValid()) { //reset
         removePropertyFromModel(propertyName);
     } else {
-        if (castedValue.isValid() && !castedValue.isNull()) {
+        // QVector*D(0, 0, 0) detects as null variant though it is valid value
+        if (castedValue.isValid() && (!castedValue.isNull()
+                                      || castedValue.type() == QVariant::Vector2D
+                                      || castedValue.type() == QVariant::Vector3D)) {
             commitVariantValueToModel(propertyName, castedValue);
         }
     }
@@ -355,12 +357,9 @@ bool PropertyEditorView::locked() const
     return m_locked;
 }
 
-void PropertyEditorView::nodeCreated(const ModelNode &modelNode)
+void PropertyEditorView::currentTimelineChanged(const ModelNode &)
 {
-    if (!m_qmlBackEndForCurrentType->contextObject()->hasActiveTimeline()
-            && QmlTimeline::isValidQmlTimeline(modelNode)) {
-        m_qmlBackEndForCurrentType->contextObject()->setHasActiveTimeline(QmlTimeline::hasActiveTimeline(this));
-    }
+    m_qmlBackEndForCurrentType->contextObject()->setHasActiveTimeline(QmlTimeline::hasActiveTimeline(this));
 }
 
 void PropertyEditorView::updateSize()
@@ -470,8 +469,8 @@ void PropertyEditorView::setupQmlBackend()
         if (m_selectedNode.isValid()) {
             qmlObjectNode = QmlObjectNode(m_selectedNode);
             Q_ASSERT(qmlObjectNode.isValid());
+            currentQmlBackend->setup(qmlObjectNode, currentStateName, qmlSpecificsFile, this);
         }
-        currentQmlBackend->setup(qmlObjectNode, currentStateName, qmlSpecificsFile, this);
         currentQmlBackend->context()->setContextProperty("finishedNotify", QVariant(false));
         if (specificQmlData.isEmpty())
             currentQmlBackend->contextObject()->setSpecificQmlData(specificQmlData);

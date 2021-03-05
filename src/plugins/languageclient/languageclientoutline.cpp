@@ -155,6 +155,7 @@ LanguageClientOutlineWidget::LanguageClientOutlineWidget(Client *client,
     setLayout(layout);
     m_view.setModel(&m_model);
     m_view.setHeaderHidden(true);
+    m_view.setExpandsOnDoubleClick(false);
     connect(&m_view, &QAbstractItemView::activated,
             this, &LanguageClientOutlineWidget::onItemActivated);
     connect(m_editor->editorWidget(), &TextEditor::TextEditorWidget::cursorPositionChanged,
@@ -187,6 +188,9 @@ void LanguageClientOutlineWidget::handleResponse(const DocumentUri &uri,
         m_model.setInfo(Utils::get<QList<DocumentSymbol>>(result));
     else
         m_model.clear();
+
+    // The list has changed, update the current items
+    updateSelectionInTree(m_editor->textCursor());
 }
 
 void LanguageClientOutlineWidget::updateTextCursor(const QModelIndex &proxyIndex)
@@ -313,6 +317,10 @@ void OutlineComboBox::updateModel(const DocumentUri &resultUri, const DocumentSy
         m_model.setInfo(Utils::get<QList<DocumentSymbol>>(result));
     else
         m_model.clear();
+
+    view()->expandAll();
+    // The list has changed, update the current item
+    updateEntry();
 }
 
 void OutlineComboBox::updateEntry()

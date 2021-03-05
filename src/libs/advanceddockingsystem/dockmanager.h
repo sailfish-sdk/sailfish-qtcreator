@@ -143,9 +143,35 @@ protected:
     DockOverlay *dockAreaOverlay() const;
 
     /**
+     * A container needs to call this function if a widget has been dropped
+     * into it
+     */
+    void notifyWidgetOrAreaRelocation(QWidget *droppedWidget);
+
+    /**
+     * This function is called, if a floating widget has been dropped into
+     * an new position.
+     * When this function is called, all dock widgets of the FloatingWidget
+     * are already inserted into its new position
+     */
+    void notifyFloatingWidgetDrop(FloatingDockContainer *floatingWidget);
+
+    /**
+     * This function is called, if the given DockWidget has been relocated from
+     * the old container ContainerOld to the new container DockWidget->dockContainer()
+     */
+    void notifyDockWidgetRelocation(DockWidget *dockWidget, DockContainerWidget *containerOld);
+
+    /**
+     * This function is called, if the given DockAreahas been relocated from
+     * the old container ContainerOld to the new container DockArea->dockContainer()
+     */
+    void notifyDockAreaRelocation(DockAreaWidget *dockArea, DockContainerWidget *containerOld);
+
+    /**
      * Show the floating widgets that has been created floating
      */
-    virtual void showEvent(QShowEvent *event) override;
+    void showEvent(QShowEvent *event) override;
 
 public:
     using Super = DockContainerWidget;
@@ -190,11 +216,18 @@ public:
         DockAreaHideDisabledButtons
         = 0x10000, //!< If the flag is set disabled dock area buttons will not appear on the tollbar at all (enabling them will bring them back)
         DockAreaDynamicTabsMenuButtonVisibility
-        = 0x20000, //!< If the flag is set dock area will disable a tabs menu button when there is only one tab in the area
+        = 0x20000, //!< If the flag is set, the tabs menu button will be shown only when it is required - that means, if the tabs are elided. If the tabs are not elided, it is hidden
         FloatingContainerHasWidgetTitle
-        = 0x40000,
+        = 0x40000, //!< If set, the Floating Widget window title reflects the title of the current dock widget otherwise it displays application name as window title
         FloatingContainerHasWidgetIcon
-        = 0x80000,
+        = 0x80000, //!< If set, the Floating Widget icon reflects the icon of the current dock widget otherwise it displays application icon
+        HideSingleCentralWidgetTitleBar
+        = 0x100000, //!< If there is only one single visible dock widget in the main dock container (the dock manager) and if this flag is set, then the titlebar of this dock widget will be hidden
+                    //!< this only makes sense for non draggable and non floatable widgets and enables the creation of some kind of "central" widget
+        FocusHighlighting
+        = 0x200000, //!< enables styling of focused dock widget tabs or floating widget titlebar
+        EqualSplitOnInsertion
+        = 0x400000, ///!< if enabled, the space is equally distributed to all widgets in a splitter
 
         DefaultDockAreaButtons = DockAreaHasCloseButton
                                | DockAreaHasUndockButton
@@ -229,10 +262,10 @@ public:
     /**
      * Virtual Destructor
      */
-    virtual ~DockManager() override;
+    ~DockManager() override;
 
     /**
-     * This function returns the global configuration flags
+     * This function returns the global configuration flags.
      */
     static ConfigFlags configFlags();
 
@@ -244,13 +277,13 @@ public:
     static void setConfigFlags(const ConfigFlags flags);
 
     /**
-     * Set a certain config flag
+     * Set a certain config flag.
      * \see setConfigFlags()
      */
     static void setConfigFlag(eConfigFlag flag, bool on = true);
 
     /**
-     * Returns true if the given config flag is set
+     * Returns true if the given config flag is set.
      */
     static bool testConfigFlag(eConfigFlag flag);
 
@@ -263,9 +296,22 @@ public:
 
     /**
      * The distance the user needs to move the mouse with the left button
-     * hold down before a dock widget start floating
+     * hold down before a dock widget start floating.
      */
     static int startDragDistance();
+
+    /**
+     * Helper function to set focus depending on the configuration of the
+     * FocusStyling flag
+     */
+    template <class QWidgetPtr>
+    static void setWidgetFocus(QWidgetPtr widget)
+    {
+        if (!DockManager::testConfigFlag(DockManager::FocusHighlighting))
+            return;
+
+        widget->setFocus(Qt::OtherFocusReason);
+    }
 
     /**
      * Set the QtCreator settings.
@@ -319,37 +365,37 @@ public:
     /**
      * Searches for a registered doc widget with the given ObjectName
      * \return Return the found dock widget or nullptr if a dock widget with the
-     * given name is not registered
+     * given name is not registered.
      */
     DockWidget *findDockWidget(const QString &objectName) const;
 
     /**
-     * Remove the given Dock from the dock manager
+     * Remove the given DockWidget from the dock manager.
      */
     void removeDockWidget(DockWidget *dockWidget);
 
     /**
      * This function returns a readable reference to the internal dock
-     * widgets map so that it is possible to iterate over all dock widgets
+     * widgets map so that it is possible to iterate over all dock widgets.
      */
     QMap<QString, DockWidget *> dockWidgetsMap() const;
 
     /**
      * Returns the list of all active and visible dock containers
-     * Dock containers are the main dock manager and all floating widgets
+     * Dock containers are the main dock manager and all floating widgets.
      */
     const QList<DockContainerWidget *> dockContainers() const;
 
     /**
-     * Returns the list of all floating widgets
+     * Returns the list of all floating widgets.
      */
-    const QList<FloatingDockContainer *> floatingWidgets() const;
+    const QList<QPointer<FloatingDockContainer> > floatingWidgets() const;
 
     /**
      * This function always return 0 because the main window is always behind
-     * any floating widget
+     * any floating widget.
      */
-    virtual unsigned int zOrderIndex() const override;
+    unsigned int zOrderIndex() const override;
 
     /**
      * Saves the current state of the dockmanger and all its dock widgets
@@ -358,8 +404,12 @@ public:
      * If auto formatting is enabled, the output is intended and line wrapped.
      * The XmlMode XmlAutoFormattingDisabled is better if you would like to have
      * a more compact XML output - i.e. for storage in ini files.
+     * The version number is stored as part of the data.
+     * To restore the saved state, pass the return value and version number
+     * to restoreState().
+     * \see restoreState()
      */
-    QByteArray saveState(int version = Version1) const;
+    QByteArray saveState(int version = 0) const;
 
     /**
      * Restores the state of this dockmanagers dockwidgets.
@@ -367,8 +417,9 @@ public:
      * not match, the dockmanager's state is left unchanged, and this function
      * returns false; otherwise, the state is restored, and this function
      * returns true.
+     * \see saveState()
      */
-    bool restoreState(const QByteArray &state, int version = Version1);
+    bool restoreState(const QByteArray &state, int version = 0);
 
     /**
      * This function returns true between the restoringState() and
@@ -376,35 +427,42 @@ public:
      */
     bool isRestoringState() const;
 
+    /**
+     * Request a focus change to the given dock widget.
+     * This function only has an effect, if the flag CDockManager::FocusStyling
+     * is enabled
+     */
+    void setDockWidgetFocused(DockWidget *dockWidget);
+
 signals:
     /**
-     * This signal is emitted if the list of perspectives changed
+     * This signal is emitted if the list of workspaces changed.
      */
     void workspaceListChanged();
 
     /**
-     * This signal is emitted if perspectives have been removed
+     * This signal is emitted if workspaces have been removed.
      */
     void workspacesRemoved();
 
     /**
      * This signal is emitted, if the restore function is called, just before
      * the dock manager starts restoring the state.
-     * If this function is called, nothing has changed yet
+     * If this function is called, nothing has changed yet.
      */
     void restoringState();
 
     /**
      * This signal is emitted if the state changed in restoreState.
      * The signal is emitted if the restoreState() function is called or
-     * if the openWorkspace() function is called
+     * if the openWorkspace() function is called.
      */
     void stateRestored();
 
     /**
      * This signal is emitted, if the dock manager starts opening a
-     * perspective.
-     * Opening a perspective may take more than a second if there are
+     * workspace.
+     * Opening a workspace may take more than a second if there are
      * many complex widgets. The application may use this signal
      * to show some progress indicator or to change the mouse cursor
      * into a busy cursor.
@@ -413,7 +471,7 @@ signals:
 
     /**
      * This signal is emitted if the dock manager finished opening a
-     * perspective
+     * workspace.
      */
     void workspaceOpened(const QString &workspaceName);
 
@@ -432,8 +490,7 @@ signals:
     void dockAreaCreated(DockAreaWidget *dockArea);
 
     /**
-     * This signal is emitted just before the given dock widget is removed
-     * from the
+     * This signal is emitted just before removal of the given DockWidget.
      */
     void dockWidgetAboutToBeRemoved(DockWidget *dockWidget);
 
@@ -445,6 +502,13 @@ signals:
      */
     void dockWidgetRemoved(DockWidget *dockWidget);
 
+    /**
+     * This signal is emitted if the focused dock widget changed.
+     * Both old and now can be nullptr.
+     * The focused dock widget is the one that is highlighted in the GUI
+     */
+    void focusedDockWidgetChanged(DockWidget *old, DockWidget *now);
+
 public:
     void showWorkspaceMananger();
 
@@ -452,10 +516,13 @@ public:
     QString activeWorkspace() const;
     QString lastWorkspace() const;
     bool autoRestorLastWorkspace() const;
+    QString workspaceFileExtension() const;
     QStringList workspaces();
     QSet<QString> workspacePresets() const;
     QDateTime workspaceDateTime(const QString &workspace) const;
-    Utils::FilePath workspaceNameToFileName(const QString &workspaceName) const;
+    Utils::FilePath workspaceNameToFilePath(const QString &workspaceName) const;
+    QString fileNameToWorkspaceName(const QString &fileName) const;
+    QString workspaceNameToFileName(const QString &workspaceName) const;
 
     bool createWorkspace(const QString &workspace);
 
@@ -477,6 +544,9 @@ public:
 
     void setModeChangeState(bool value);
     bool isModeChangeState() const;
+
+    void importWorkspace(const QString &workspace);
+    void exportWorkspace(const QString &target, const QString &workspace);
 
 signals:
     void aboutToUnloadWorkspace(QString workspaceName);

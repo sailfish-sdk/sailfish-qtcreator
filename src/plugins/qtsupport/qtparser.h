@@ -25,7 +25,7 @@
 
 #pragma once
 
-#include <QRegExp>
+#include <QRegularExpression>
 
 #include "qtsupport_global.h"
 #include <projectexplorer/ioutputparser.h>
@@ -34,17 +34,18 @@ namespace QtSupport {
 
 // Parser for Qt-specific utilities like moc, uic, etc.
 
-class QTSUPPORT_EXPORT QtParser : public ProjectExplorer::IOutputParser
+class QTSUPPORT_EXPORT QtParser : public ProjectExplorer::OutputTaskParser
 {
     Q_OBJECT
 
 public:
     QtParser();
-    void stdError(const QString &line) override;
 
 private:
-    QRegExp m_mocRegExp;
-    QRegExp m_translationRegExp;
+    Result handleLine(const QString &line, Utils::OutputFormat type) override;
+
+    QRegularExpression m_mocRegExp;
+    QRegularExpression m_translationRegExp;
 };
 
-} // namespace ProjectExplorer
+} // namespace QtSupport

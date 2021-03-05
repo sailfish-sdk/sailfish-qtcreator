@@ -98,20 +98,30 @@ public:
         for (KitAspect *aspect : KitManager::kitAspects())
             aspect->addToMacroExpander(kit, &m_macroExpander);
 
-        // This provides the same global fall back as the global expander
-        // without relying on the currentKit() discovery process there.
-        m_macroExpander.registerVariable(Constants::VAR_CURRENTKIT_NAME,
+        // TODO: Remove the "Current" variants in ~4.16
+        m_macroExpander.registerVariable("CurrentKit:Name",
             tr("The name of the currently active kit."),
             [kit] { return kit->displayName(); },
             false);
-        m_macroExpander.registerVariable(Constants::VAR_CURRENTKIT_FILESYSTEMNAME,
+        m_macroExpander.registerVariable("Kit:Name",
+            tr("The name of the kit."),
+            [kit] { return kit->displayName(); });
+
+        m_macroExpander.registerVariable("CurrentKit:FileSystemName",
             tr("The name of the currently active kit in a filesystem-friendly version."),
             [kit] { return kit->fileSystemFriendlyName(); },
             false);
-        m_macroExpander.registerVariable(Constants::VAR_CURRENTKIT_ID,
+        m_macroExpander.registerVariable("Kit:FileSystemName",
+            tr("The name of the kit in a filesystem-friendly version."),
+            [kit] { return kit->fileSystemFriendlyName(); });
+
+        m_macroExpander.registerVariable("CurrentKit:Id",
             tr("The id of the currently active kit."),
             [kit] { return kit->id().toString(); },
             false);
+        m_macroExpander.registerVariable("Kit:Id",
+            tr("The id of the kit."),
+            [kit] { return kit->id().toString(); });
     }
 
     DisplayName m_unexpandedDisplayName;
@@ -372,7 +382,7 @@ int Kit::weight() const
     });
 }
 
-static QIcon iconForDeviceType(Core::Id deviceType)
+static QIcon iconForDeviceType(Utils::Id deviceType)
 {
     const IDeviceFactory *factory = Utils::findOrDefault(IDeviceFactory::allDeviceFactories(),
         [&deviceType](const IDeviceFactory *factory) {
@@ -391,7 +401,7 @@ QIcon Kit::icon() const
         return d->m_cachedIcon;
     }
 
-    const Core::Id deviceType = d->m_deviceTypeForIcon.isValid()
+    const Utils::Id deviceType = d->m_deviceTypeForIcon.isValid()
             ? d->m_deviceTypeForIcon : DeviceTypeKitAspect::deviceTypeId(this);
     const QIcon deviceTypeIcon = iconForDeviceType(deviceType);
     if (!deviceTypeIcon.isNull()) {
@@ -559,12 +569,12 @@ void Kit::addToEnvironment(Environment &env) const
         aspect->addToEnvironment(this, env);
 }
 
-IOutputParser *Kit::createOutputParser() const
+QList<OutputLineParser *> Kit::createOutputParsers() const
 {
-    auto first = new OsParser;
+    QList<OutputLineParser *> parsers{new OsParser};
     for (KitAspect *aspect : KitManager::kitAspects())
-        first->appendOutputParser(aspect->createOutputParser(this));
-    return first;
+        parsers << aspect->createOutputParsers(this);
+    return parsers;
 }
 
 QString Kit::toHtml(const Tasks &additional, const QString &extraText) const
@@ -734,6 +744,19 @@ void Kit::kitUpdated()
     d->m_cachedIcon = QIcon();
     KitManager::notifyAboutUpdate(this);
     d->m_mustNotify = false;
+}
+
+
+static Id replacementKey() { return "IsReplacementKit"; }
+
+void ProjectExplorer::Kit::makeReplacementKit()
+{
+    setValueSilently(replacementKey(), true);
+}
+
+bool Kit::isReplacementKit() const
+{
+    return value(replacementKey()).toBool();
 }
 
 } // namespace ProjectExplorer

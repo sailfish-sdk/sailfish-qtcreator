@@ -36,7 +36,9 @@
 #include "dockmanager.h"
 
 #include "ads_globals.h"
+#include "dockareatitlebar.h"
 #include "dockareawidget.h"
+#include "dockfocuscontroller.h"
 #include "dockingstatereader.h"
 #include "dockoverlay.h"
 #include "dockwidget.h"
@@ -72,6 +74,15 @@ static Q_LOGGING_CATEGORY(adsLog, "qtc.qmldesigner.advanceddockingsystem", QtWar
 
 namespace ADS
 {
+    /**
+     * Internal file version in case the structure changes internally
+     */
+    enum eStateFileVersion {
+        InitialVersion = 0,       //!< InitialVersion
+        Version1 = 1,             //!< Version1
+        CurrentVersion = Version1 //!< CurrentVersion
+    };
+
     static DockManager::ConfigFlags g_staticConfigFlags = DockManager::DefaultNonOpaqueConfig;
 
     /**
@@ -81,13 +92,14 @@ namespace ADS
     {
     public:
         DockManager *q;
-        QList<FloatingDockContainer *> m_floatingWidgets;
+        QList<QPointer<FloatingDockContainer>> m_floatingWidgets;
         QList<DockContainerWidget *> m_containers;
         DockOverlay *m_containerOverlay = nullptr;
         DockOverlay *m_dockAreaOverlay = nullptr;
         QMap<QString, DockWidget *> m_dockWidgetsMap;
         bool m_restoringState = false;
         QVector<FloatingDockContainer *> m_uninitializedFloatingWidgets;
+        DockFocusController *m_focusController = nullptr;
 
         QString m_workspaceName;
         bool m_workspaceListDirty = true;
@@ -98,7 +110,7 @@ namespace ADS
         bool m_autorestoreLastWorkspace; // This option is set in the Workspace Manager!
         QSettings *m_settings = nullptr;
         QString m_workspacePresetsPath;
-        bool m_modeChangeState;
+        bool m_modeChangeState = false;
 
         /**
          * Private data constructor
@@ -106,17 +118,12 @@ namespace ADS
         DockManagerPrivate(DockManager *parent);
 
         /**
-         * Checks if the given data stream is a valid docking system state
-         * file.
-         */
-        bool checkFormat(const QByteArray &state, int version);
-
-        /**
-         * Restores the state
+         * Restores the state. If testing is set to true it will check if
+         * the given data stream is a valid docking system state file.
          */
         bool restoreStateFromXml(const QByteArray &state,
                                  int version,
-                                 bool testing = internal::restore);
+                                 bool testing = false);
 
         /**
          * Restore state
@@ -130,13 +137,13 @@ namespace ADS
         void hideFloatingWidgets()
         {
             // Hide updates of floating widgets from user
-            for (auto floatingWidget : m_floatingWidgets) // TODO qAsConst()
+            for (auto floatingWidget : qAsConst(m_floatingWidgets))
                 floatingWidget->hide();
         }
 
         void markDockWidgetsDirty()
         {
-            for (auto dockWidget : m_dockWidgetsMap) // TODO qAsConst()
+            for (auto dockWidget : qAsConst(m_dockWidgetsMap))
                 dockWidget->setProperty("dirty", true);
         }
 
@@ -164,19 +171,13 @@ namespace ADS
         } else {
             qCInfo(adsLog) << "d->m_containers[i]->restoreState ";
             auto container = m_containers[index];
-            if (container->isFloating()) {
+            if (container->isFloating())
                 result = container->floatingWidget()->restoreState(stream, testing);
-            } else {
+            else
                 result = container->restoreState(stream, testing);
-            }
         }
 
         return result;
-    }
-
-    bool DockManagerPrivate::checkFormat(const QByteArray &state, int version)
-    {
-        return restoreStateFromXml(state, version, internal::restoreTesting);
     }
 
     bool DockManagerPrivate::restoreStateFromXml(const QByteArray &state, int version, bool testing)
@@ -190,7 +191,7 @@ namespace ADS
         if (!stateReader.readNextStartElement())
             return false;
 
-        if (stateReader.name() != "QtAdvancedDockingSystem")
+        if (stateReader.name() != QLatin1String("QtAdvancedDockingSystem"))
             return false;
 
         qCInfo(adsLog) << stateReader.attributes().value("version");
@@ -200,6 +201,17 @@ namespace ADS
             return false;
 
         stateReader.setFileVersion(v);
+
+        qCInfo(adsLog) << stateReader.attributes().value("userVersion");
+        // Older files do not support UserVersion but we still want to load them so
+        // we first test if the attribute exists
+        if (!stateReader.attributes().value("userVersion").isEmpty())
+        {
+            v = stateReader.attributes().value("userVersion").toInt(&ok);
+            if (!ok || v != version)
+                return false;
+        }
+
         bool result = true;
 #ifdef ADS_DEBUG_PRINT
         int dockContainers = stateReader.attributes().value("containers").toInt();
@@ -207,7 +219,7 @@ namespace ADS
 #endif
         int dockContainerCount = 0;
         while (stateReader.readNextStartElement()) {
-            if (stateReader.name() == "container") {
+            if (stateReader.name() == QLatin1String("container")) {
                 result = restoreContainer(dockContainerCount, stateReader, testing);
                 if (!result)
                     break;
@@ -258,9 +270,8 @@ namespace ADS
                 DockAreaWidget *dockArea = dockContainer->dockArea(i);
                 QString dockWidgetName = dockArea->property("currentDockWidget").toString();
                 DockWidget *dockWidget = nullptr;
-                if (!dockWidgetName.isEmpty()) {
+                if (!dockWidgetName.isEmpty())
                     dockWidget = q->findDockWidget(dockWidgetName);
-                }
 
                 if (!dockWidget || dockWidget->isClosed()) {
                     int index = dockArea->indexOfFirstOpenDockWidget();
@@ -286,9 +297,8 @@ namespace ADS
             } else {
                 for (int i = 0; i < dockContainer->dockAreaCount(); ++i) {
                     auto dockArea = dockContainer->dockArea(i);
-                    for (auto dockWidget : dockArea->dockWidgets()) {
+                    for (auto dockWidget : dockArea->dockWidgets())
                         dockWidget->emitTopLevelChanged(false);
-                    }
                 }
             }
         }
@@ -297,7 +307,8 @@ namespace ADS
     bool DockManagerPrivate::restoreState(const QByteArray &state, int version)
     {
         QByteArray currentState = state.startsWith("<?xml") ? state : qUncompress(state);
-        if (!checkFormat(currentState, version)) {
+        // Check the format of the given data stream
+        if (!restoreStateFromXml(currentState, version, true)) {
             qCInfo(adsLog) << "checkFormat: Error checking format!!!";
             return false;
         }
@@ -335,6 +346,9 @@ namespace ADS
         d->m_dockAreaOverlay = new DockOverlay(this, DockOverlay::ModeDockAreaOverlay);
         d->m_containerOverlay = new DockOverlay(this, DockOverlay::ModeContainerOverlay);
         d->m_containers.append(this);
+
+        if (DockManager::configFlags().testFlag(DockManager::FocusHighlighting))
+            d->m_focusController = new DockFocusController(this);
     }
 
     DockManager::~DockManager()
@@ -343,9 +357,13 @@ namespace ADS
         save();
         saveStartupWorkspace();
 
-        for (auto floatingWidget : d->m_floatingWidgets)
-            delete floatingWidget;
-
+        for (auto floatingWidget : d->m_floatingWidgets) {
+            /* There have been crashes with partially destructed widgets in
+               m_floatingWidgets. Those do not have a parent. */
+            if (floatingWidget && floatingWidget->parent() == this)
+                delete floatingWidget.data();
+        }
+        d->m_floatingWidgets.clear();
         delete d;
     }
 
@@ -407,13 +425,12 @@ namespace ADS
     DockAreaWidget *DockManager::addDockWidgetTab(DockWidgetArea area, DockWidget *dockWidget)
     {
         DockAreaWidget *areaWidget = lastAddedDockAreaWidget(area);
-        if (areaWidget) {
+        if (areaWidget)
             return addDockWidget(ADS::CenterDockWidgetArea, dockWidget, areaWidget);
-        } else if (!openedDockAreas().isEmpty()) {
-            return addDockWidget(area, dockWidget, openedDockAreas().last());
-        } else {
+        else if (!openedDockAreas().isEmpty())
+            return addDockWidget(area, dockWidget, openedDockAreas().constLast());
+        else
             return addDockWidget(area, dockWidget, nullptr);
-        }
     }
 
     DockAreaWidget *DockManager::addDockWidgetTabToArea(DockWidget *dockWidget,
@@ -432,11 +449,11 @@ namespace ADS
         dockWidget->setDockManager(this);
         FloatingDockContainer *floatingWidget = new FloatingDockContainer(dockWidget);
         floatingWidget->resize(dockWidget->size());
-        if (isVisible()) {
+        if (isVisible())
             floatingWidget->show();
-        } else {
+        else
             d->m_uninitializedFloatingWidgets.append(floatingWidget);
-        }
+
         return floatingWidget;
     }
 
@@ -459,9 +476,8 @@ namespace ADS
 
     void DockManager::removeDockContainer(DockContainerWidget *dockContainer)
     {
-        if (this != dockContainer) {
+        if (this != dockContainer)
             d->m_containers.removeAll(dockContainer);
-        }
     }
 
     DockOverlay *DockManager::containerOverlay() const { return d->m_containerOverlay; }
@@ -473,7 +489,7 @@ namespace ADS
         return d->m_containers;
     }
 
-    const QList<FloatingDockContainer *> DockManager::floatingWidgets() const
+    const QList<QPointer<FloatingDockContainer>> DockManager::floatingWidgets() const
     {
         return d->m_floatingWidgets;
     }
@@ -488,7 +504,8 @@ namespace ADS
         stream.setAutoFormatting(configFlags.testFlag(XmlAutoFormattingEnabled));
         stream.writeStartDocument();
         stream.writeStartElement("QtAdvancedDockingSystem");
-        stream.writeAttribute("version", QString::number(version));
+        stream.writeAttribute("version", QString::number(CurrentVersion));
+        stream.writeAttribute("userVersion", QString::number(version));
         stream.writeAttribute("containers", QString::number(d->m_containers.count()));
         for (auto container : d->m_containers)
             container->saveState(stream);
@@ -521,10 +538,10 @@ namespace ADS
         emit restoringState();
         bool result = d->restoreState(state, version);
         d->m_restoringState = false;
-        emit stateRestored();
         if (!isHidden)
             show();
 
+        emit stateRestored();
         return result;
     }
 
@@ -583,15 +600,14 @@ namespace ADS
         emit aboutToSaveWorkspace();
 
         bool result = write(activeWorkspace(), saveState(), parentWidget());
-        if (result) {
+        if (result)
             d->m_workspaceDateTimes.insert(activeWorkspace(), QDateTime::currentDateTime());
-        } else {
+        else
             QMessageBox::warning(parentWidget(),
                                  tr("Cannot Save Workspace"),
                                  tr("Could not save workspace to file %1")
-                                     .arg(workspaceNameToFileName(d->m_workspaceName)
+                                     .arg(workspaceNameToFilePath(d->m_workspaceName)
                                               .toUserOutput()));
-        }
 
         return result;
     }
@@ -613,6 +629,8 @@ namespace ADS
     const QString m_dirName = QLatin1String("workspaces");
     const QString m_fileExt = QLatin1String(".wrk"); // TODO
 
+    QString DockManager::workspaceFileExtension() const { return m_fileExt; }
+
     QStringList DockManager::workspaces()
     {
         if (d->m_workspaces.isEmpty() || d->m_workspaceListDirty) {
@@ -622,14 +640,13 @@ namespace ADS
             QDir workspaceDir(QFileInfo(d->m_settings->fileName()).path() + QLatin1Char('/')
                               + m_dirName);
             QFileInfoList workspaceFiles
-                = workspaceDir.entryInfoList(QStringList() << QLatin1String("*.wrk"),
+                = workspaceDir.entryInfoList(QStringList() << QLatin1Char('*') + m_fileExt,
                                              QDir::NoFilter,
                                              QDir::Time);
             for (const QFileInfo &fileInfo : workspaceFiles) {
-                QString filename = fileInfo.completeBaseName();
-                filename.replace("_", " ");
-                d->m_workspaceDateTimes.insert(filename, fileInfo.lastModified());
-                tmp.insert(filename);
+                QString workspaceName = fileNameToWorkspaceName(fileInfo.completeBaseName());
+                d->m_workspaceDateTimes.insert(workspaceName, fileInfo.lastModified());
+                tmp.insert(workspaceName);
             }
 
             d->m_workspaceListDirty = false;
@@ -643,14 +660,11 @@ namespace ADS
         if (d->m_workspacePresets.isEmpty()) {
             QDir workspacePresetsDir(d->m_workspacePresetsPath);
             QFileInfoList workspacePresetsFiles
-                = workspacePresetsDir.entryInfoList(QStringList() << QLatin1String("*.wrk"),
+                = workspacePresetsDir.entryInfoList(QStringList() << QLatin1Char('*') + m_fileExt,
                                                     QDir::NoFilter,
                                                     QDir::Time);
-            for (const QFileInfo &fileInfo : workspacePresetsFiles) {
-                QString filename = fileInfo.completeBaseName();
-                filename.replace("_", " ");
-                d->m_workspacePresets.insert(filename);
-            }
+            for (const QFileInfo &fileInfo : workspacePresetsFiles)
+                d->m_workspacePresets.insert(fileNameToWorkspaceName(fileInfo.completeBaseName()));
         }
         return d->m_workspacePresets;
     }
@@ -660,13 +674,27 @@ namespace ADS
         return d->m_workspaceDateTimes.value(workspace);
     }
 
-    Utils::FilePath DockManager::workspaceNameToFileName(const QString &workspaceName) const
+    Utils::FilePath DockManager::workspaceNameToFilePath(const QString &workspaceName) const
     {
         QTC_ASSERT(d->m_settings, return {});
-        QString workspaceNameCopy = workspaceName;
         return Utils::FilePath::fromString(
             QFileInfo(d->m_settings->fileName()).path() + QLatin1Char('/') + m_dirName
-            + QLatin1Char('/') + workspaceNameCopy.replace(" ", "_") + QLatin1String(".wrk"));
+            + QLatin1Char('/') + workspaceNameToFileName(workspaceName));
+    }
+
+    QString DockManager::fileNameToWorkspaceName(const QString &fileName) const
+    {
+        QString copy = QFileInfo(fileName).baseName();
+        copy.replace("_", " ");
+        return copy;
+    }
+
+    QString DockManager::workspaceNameToFileName(const QString &workspaceName) const
+    {
+        QString copy = workspaceName;
+        copy.replace(" ", "_");
+        copy.append(m_fileExt);
+        return copy;
     }
 
     /**
@@ -686,7 +714,7 @@ namespace ADS
             QMessageBox::warning(parentWidget(),
                                  tr("Cannot Save Workspace"),
                                  tr("Could not save workspace to file %1")
-                                     .arg(workspaceNameToFileName(d->m_workspaceName)
+                                     .arg(workspaceNameToFilePath(d->m_workspaceName)
                                               .toUserOutput()));
         }
 
@@ -695,9 +723,9 @@ namespace ADS
 
     bool DockManager::openWorkspace(const QString &workspace)
     {
-        // Do nothing if we have that workspace already loaded, exception if the
-        // workspace is the default virgin workspace we still want to be able to
-        // load the default workspace.
+        // Do nothing if we have that workspace already loaded, exception if it is
+        // a preset workspace. In this case we still want to be able to load the
+        // default workspace to undo potential user changes.
         if (workspace == d->m_workspaceName && !isWorkspacePreset(workspace))
             return true;
 
@@ -775,7 +803,7 @@ namespace ADS
             return false;
 
         // Remove corresponding workspace file
-        QFile fi(workspaceNameToFileName(workspace).toString());
+        QFile fi(workspaceNameToFilePath(workspace).toString());
         if (fi.exists()) {
             if (fi.remove()) {
                 d->m_workspaces.removeOne(workspace);
@@ -799,12 +827,12 @@ namespace ADS
         if (!d->m_workspaces.contains(original))
             return false;
 
-        QFile fi(workspaceNameToFileName(original).toString());
+        QFile fi(workspaceNameToFilePath(original).toString());
         // If the file does not exist, we can still clone
-        if (!fi.exists() || fi.copy(workspaceNameToFileName(clone).toString())) {
+        if (!fi.exists() || fi.copy(workspaceNameToFilePath(clone).toString())) {
             d->m_workspaces.insert(1, clone);
             d->m_workspaceDateTimes
-                .insert(clone, workspaceNameToFileName(clone).toFileInfo().lastModified());
+                .insert(clone, workspaceNameToFilePath(clone).toFileInfo().lastModified());
             emit workspaceListChanged();
             return true;
         }
@@ -815,8 +843,10 @@ namespace ADS
     {
         if (!cloneWorkspace(original, newName))
             return false;
+
         if (original == activeWorkspace())
             openWorkspace(newName);
+
         return deleteWorkspace(original);
     }
 
@@ -825,17 +855,14 @@ namespace ADS
         if (!isWorkspacePreset(workspace))
             return false;
 
-        Utils::FilePath filename = workspaceNameToFileName(workspace);
+        Utils::FilePath fileName = workspaceNameToFilePath(workspace);
 
-        if (!QFile::remove(filename.toString()))
+        if (!QFile::remove(fileName.toString()))
             return false;
 
         QDir presetsDir(d->m_workspacePresetsPath);
-        QString presetName = workspace;
-        presetName.replace(" ", "_");
-        presetName.append(".wrk");
-
-        bool result = QFile::copy(presetsDir.filePath(presetName), filename.toString());
+        bool result = QFile::copy(presetsDir.filePath(workspaceNameToFileName(workspace)),
+                                  fileName.toString());
         if (result)
             d->m_workspaceDateTimes.insert(workspace, QDateTime::currentDateTime());
 
@@ -852,13 +879,89 @@ namespace ADS
         return d->m_modeChangeState;
     }
 
+    void DockManager::importWorkspace(const QString &workspace)
+    {
+        // Extract workspace name
+        QString workspaceName = fileNameToWorkspaceName(workspace);
+
+        // Check if the workspace is already contained in the list of workspaces. If that is the case
+        // add a counter to the workspace name.
+        if (workspaces().contains(workspaceName)) {
+            int i = 2;
+            QString copy;
+            do {
+                copy = workspaceName + QLatin1String(" (") + QString::number(i) + QLatin1Char(')');
+                ++i;
+            } while (workspaces().contains(copy));
+            workspaceName = copy;
+        }
+
+        QString fileName = workspaceNameToFileName(workspaceName);
+        QFile file(workspace);
+        if (!file.exists()) {
+            qCInfo(adsLog) << QString("File doesn't exist '%1'").arg(workspace);
+            return;
+        }
+
+        QDir workspaceDir(QFileInfo(d->m_settings->fileName()).path() + QLatin1Char('/') + m_dirName);
+
+        if (!file.copy(workspaceDir.filePath(fileName))) {
+            qCInfo(adsLog) << QString("Could not copy '%1' to '%2' error: %3").arg(
+                workspace, workspaceDir.filePath(fileName), file.errorString());
+        } else {
+            d->m_workspaces.insert(1, workspaceName);
+            d->m_workspaceDateTimes.insert(workspaceName,
+                                           workspaceNameToFilePath(workspaceName).toFileInfo().lastModified());
+            d->m_workspaceListDirty = true;
+            // After importing the workspace, update the workspace list
+            workspaces();
+            emit workspaceListChanged();
+        }
+    }
+
+    void DockManager::exportWorkspace(const QString &target, const QString &workspace)
+    {
+        // If we came this far the user decided that in case the target already exists to overwrite it.
+        // We first need to remove the existing file, otherwise QFile::copy() will fail.
+        QFileInfo targetFileInfo(target);
+
+        // Remove the file which supposed to be overwritten
+        if (targetFileInfo.exists()) {
+            QFile fi(targetFileInfo.absoluteFilePath());
+            if (!fi.remove()) {
+                qCInfo(adsLog) << QString("Couldn't remove '%1'").arg(targetFileInfo.absoluteFilePath());
+                return;
+            }
+        }
+
+        // Check if the target directory exists
+        if (!targetFileInfo.absoluteDir().exists()) {
+            qCInfo(adsLog) << QString("Directory doesn't exist '%1'").arg(targetFileInfo.dir().dirName());
+            return;
+        }
+
+        // Check if the workspace exists
+        Utils::FilePath workspaceFilePath = workspaceNameToFilePath(workspace);
+        if (!workspaceFilePath.exists()) {
+           qCInfo(adsLog) << QString("Workspace doesn't exist '%1'").arg(workspaceFilePath.toString());
+           return;
+        }
+
+        // Finally copy the workspace to the target
+        QFile workspaceFile(workspaceFilePath.toString());
+        if (!workspaceFile.copy(targetFileInfo.absoluteFilePath())) {
+            qCInfo(adsLog) << QString("Could not copy '%1' to '%2' error: %3").arg(
+                workspace, workspaceFilePath.toString(), workspaceFile.errorString());
+        }
+    }
+
     bool DockManager::write(const QString &workspace, const QByteArray &data, QString *errorString) const
     {
-        Utils::FilePath filename = workspaceNameToFileName(workspace);
+        Utils::FilePath fileName = workspaceNameToFilePath(workspace);
 
         QDir tmp;
-        tmp.mkpath(filename.toFileInfo().path());
-        Utils::FileSaver fileSaver(filename.toString(), QIODevice::Text);
+        tmp.mkpath(fileName.toFileInfo().path());
+        Utils::FileSaver fileSaver(fileName.toString(), QIODevice::Text);
         if (!fileSaver.hasError())
             fileSaver.write(data);
 
@@ -884,7 +987,7 @@ namespace ADS
     QByteArray DockManager::loadWorkspace(const QString &workspace) const
     {
         QByteArray data;
-        Utils::FilePath fileName = workspaceNameToFileName(workspace);
+        Utils::FilePath fileName = workspaceNameToFilePath(workspace);
         if (fileName.exists()) {
             QFile file(fileName.toString());
             if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
@@ -920,18 +1023,15 @@ namespace ADS
         }
 
         for (const auto &preset : presets) {
-            QString filename = preset;
-            filename.replace(" ", "_");
-            filename.append(".wrk");
-
-            QString filePath = presetsDir.filePath(filename);
+            QString fileName = workspaceNameToFileName(preset);
+            QString filePath = presetsDir.filePath(fileName);
             QFile file(filePath);
 
             if (file.exists()) {
-                if (!file.copy(workspaceDir.filePath(filename))) {
+                if (!file.copy(workspaceDir.filePath(fileName)))
                     qCInfo(adsLog) << QString("Could not copy '%1' to '%2' error: %3").arg(
-                        filePath, workspaceDir.filePath(filename), file.errorString());
-                }
+                        filePath, workspaceDir.filePath(fileName), file.errorString());
+
                 d->m_workspaceListDirty = true;
             }
         }
@@ -944,6 +1044,24 @@ namespace ADS
     {
         QTC_ASSERT(d->m_settings, return );
         d->m_settings->setValue(Constants::STARTUP_WORKSPACE_SETTINGS_KEY, activeWorkspace());
+    }
+
+    void DockManager::notifyWidgetOrAreaRelocation(QWidget *droppedWidget)
+    {
+        if (d->m_focusController)
+            d->m_focusController->notifyWidgetOrAreaRelocation(droppedWidget);
+    }
+
+    void DockManager::notifyFloatingWidgetDrop(FloatingDockContainer *floatingWidget)
+    {
+        if (d->m_focusController)
+            d->m_focusController->notifyFloatingWidgetDrop(floatingWidget);
+    }
+
+    void DockManager::setDockWidgetFocused(DockWidget *dockWidget)
+    {
+        if (d->m_focusController)
+            d->m_focusController->setDockWidgetFocused(dockWidget);
     }
 
 } // namespace ADS

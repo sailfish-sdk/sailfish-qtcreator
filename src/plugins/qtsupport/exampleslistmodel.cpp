@@ -44,6 +44,7 @@
 #include <utils/algorithm.h>
 #include <utils/fileutils.h>
 #include <utils/qtcassert.h>
+#include <utils/stringutils.h>
 #include <utils/stylehelper.h>
 
 #include <algorithm>
@@ -218,7 +219,7 @@ int ExampleSetModel::getQtId(int i) const
     return variant.toInt();
 }
 
-bool ExampleSetModel::selectedQtSupports(const Core::Id &target) const
+bool ExampleSetModel::selectedQtSupports(const Utils::Id &target) const
 {
     return m_selectedQtTypes.contains(target);
 }
@@ -336,11 +337,11 @@ void ExamplesListModel::parseExamples(QXmlStreamReader *reader,
             } else if (reader->name() == QLatin1String("dependency")) {
                 item->dependencies.append(projectsOffset + slash + reader->readElementText(QXmlStreamReader::ErrorOnUnexpectedElement));
             } else if (reader->name() == QLatin1String("tags")) {
-                item->tags = trimStringList(reader->readElementText(QXmlStreamReader::ErrorOnUnexpectedElement).split(QLatin1Char(','), QString::SkipEmptyParts));
+                item->tags = trimStringList(reader->readElementText(QXmlStreamReader::ErrorOnUnexpectedElement).split(QLatin1Char(','), Qt::SkipEmptyParts));
             } else if (reader->name() == QLatin1String("platforms")) {
-                item->platforms = trimStringList(reader->readElementText(QXmlStreamReader::ErrorOnUnexpectedElement).split(QLatin1Char(','), QString::SkipEmptyParts));
+                item->platforms = trimStringList(reader->readElementText(QXmlStreamReader::ErrorOnUnexpectedElement).split(QLatin1Char(','), Qt::SkipEmptyParts));
             } else if (reader->name() == QLatin1String("preferredFeatures")) {
-                item->preferredFeatures = trimStringList(reader->readElementText(QXmlStreamReader::ErrorOnUnexpectedElement).split(QLatin1Char(','), QString::SkipEmptyParts));
+                item->preferredFeatures = trimStringList(reader->readElementText(QXmlStreamReader::ErrorOnUnexpectedElement).split(QLatin1Char(','), Qt::SkipEmptyParts));
         }
             break;
         case QXmlStreamReader::EndElement:
@@ -518,7 +519,7 @@ QPixmap ExamplesListModel::fetchPixmapAndUpdatePixmapCache(const QString &url) c
         if (!fetchedData.isEmpty()) {
             QBuffer imgBuffer(&fetchedData);
             imgBuffer.open(QIODevice::ReadOnly);
-            QImageReader reader(&imgBuffer);
+            QImageReader reader(&imgBuffer, QFileInfo(url).suffix().toLatin1());
             QImage img = reader.read();
             img = ScreenshotCropper::croppedImage(img, url, ListModel::defaultImageSize);
             pixmap = QPixmap::fromImage(img);

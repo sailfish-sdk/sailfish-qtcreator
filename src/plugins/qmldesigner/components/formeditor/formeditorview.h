@@ -47,6 +47,7 @@ class AbstractFormEditorTool;
 class AbstractCustomTool;
 class MoveTool;
 class SelectionTool;
+class RotationTool;
 class ResizeTool;
 class DragTool;
 class ItemLibraryEntry;
@@ -76,12 +77,20 @@ public:
     void selectedNodesChanged(const QList<ModelNode> &selectedNodeList,
                               const QList<ModelNode> &lastSelectedNodeList) override;
 
-    void bindingPropertiesChanged(const QList<BindingProperty>& propertyList,
+    void variantPropertiesChanged(const QList<VariantProperty> &propertyList,
+                                  PropertyChangeFlags propertyChange) override;
+
+    void bindingPropertiesChanged(const QList<BindingProperty> &propertyList,
                                   PropertyChangeFlags propertyChange) override;
 
     void documentMessagesChanged(const QList<DocumentMessage> &errors, const QList<DocumentMessage> &warnings) override;
 
-    void customNotification(const AbstractView *view, const QString &identifier, const QList<ModelNode> &nodeList, const QList<QVariant> &data) override;
+    void customNotification(const AbstractView *view,
+                            const QString &identifier,
+                            const QList<ModelNode> &nodeList,
+                            const QList<QVariant> &data) override;
+
+    void currentStateChanged(const ModelNode &node) override;
 
     // FormEditorView
     WidgetInfo widgetInfo() override;
@@ -95,6 +104,8 @@ public:
     void changeToDragTool();
     void changeToSelectionTool();
     void changeToSelectionTool(QGraphicsSceneMouseEvent *event);
+    void resetToSelectionTool();
+    void changeToRotationTool();
     void changeToResizeTool();
     void changeToTransformTools();
     void changeToCustomTool();
@@ -120,6 +131,10 @@ public:
     void setGotoErrorCallback(std::function<void(int, int)> gotoErrorCallback);
 
     void exportAsImage();
+    QPicture renderToPicture() const;
+
+    void setupFormEditorWidget();
+    void cleanupToolsAndScene();
 
 protected:
     void reset();
@@ -131,7 +146,7 @@ private:
     void removeNodeFromScene(const QmlItemNode &qmlItemNode);
     void hideNodeFromScene(const QmlItemNode &qmlItemNode);
     void createFormEditorWidget();
-    void temporaryBlockView();
+    void temporaryBlockView(int duration = 1000);
     void resetNodeInstanceView();
 
     QPointer<FormEditorWidget> m_formEditorWidget;
@@ -139,6 +154,7 @@ private:
     QList<AbstractCustomTool*> m_customToolList;
     std::unique_ptr<MoveTool> m_moveTool;
     std::unique_ptr<SelectionTool> m_selectionTool;
+    std::unique_ptr<RotationTool> m_rotationTool;
     std::unique_ptr<ResizeTool> m_resizeTool;
     std::unique_ptr<DragTool> m_dragTool;
     AbstractFormEditorTool *m_currentTool = nullptr;

@@ -14,6 +14,8 @@ shared {
 }
 
 QT += widgets gui network qml xml
+greaterThan(QT_MAJOR_VERSION, 5): QT += core5compat
+
 
 CONFIG += exceptions # used by portlist.cpp, textfileformat.cpp, and ssh/*
 
@@ -132,7 +134,14 @@ SOURCES += \
     $$PWD/jsontreeitem.cpp \
     $$PWD/namevaluevalidator.cpp \
     $$PWD/camelcasecursor.cpp \
-    $$PWD/infolabel.cpp
+    $$PWD/infolabel.cpp \
+    $$PWD/overlaywidget.cpp \
+    $$PWD/archive.cpp \
+    $$PWD/id.cpp \
+    $$PWD/infobar.cpp \
+    $$PWD/aspects.cpp \
+    $$PWD/layoutbuilder.cpp \
+    $$PWD/variablechooser.cpp
 
 HEADERS += \
     $$PWD/environmentfwd.h \
@@ -150,6 +159,8 @@ HEADERS += \
     $$PWD/pointeralgorithm.h \
     $$PWD/qrcparser.h \
     $$PWD/qtcprocess.h \
+    $$PWD/span.h \
+    $$PWD/../3rdparty/span/span.hpp \
     $$PWD/utils_global.h \
     $$PWD/reloadpromptutils.h \
     $$PWD/settingsaccessor.h \
@@ -279,7 +290,16 @@ HEADERS += \
     $$PWD/listmodel.h \
     $$PWD/namevaluevalidator.h \
     $$PWD/camelcasecursor.h \
-    $$PWD/infolabel.h
+    $$PWD/infolabel.h \
+    $$PWD/overlaywidget.h \
+    $$PWD/archive.h \
+    $$PWD/id.h \
+    $$PWD/infobar.h \
+    $$PWD/porting.h \
+    $$PWD/aspects.h \
+    $$PWD/layoutbuilder.h \
+    $$PWD/variablechooser.h \
+    $$PWD/set_algorithm.h
 
 FORMS += $$PWD/filewizardpage.ui \
     $$PWD/projectintropage.ui \

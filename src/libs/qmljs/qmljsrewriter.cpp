@@ -88,14 +88,15 @@ Rewriter::Range Rewriter::addBinding(AST::UiObjectInitializer *ast,
     bool needsTrailingSemicolon = false;
 
     if (isOneLiner) {
+        bool hasTrailingSemicolon = propertyValue.endsWith(';');
         if (insertAfter == nullptr) { // we're inserting after an lbrace
             if (ast->members) { // we're inserting before a member (and not the rbrace)
-                needsTrailingSemicolon = bindingType == ScriptBinding;
+                needsTrailingSemicolon = bindingType == ScriptBinding && !hasTrailingSemicolon;
             }
         } else { // we're inserting after a member, not after the lbrace
             if (endOfPreviousMember.isValid()) { // there already is a semicolon after the previous member
                 if (insertAfter->next && insertAfter->next->member) { // and the after us there is a member, not an rbrace, so:
-                    needsTrailingSemicolon = bindingType == ScriptBinding;
+                    needsTrailingSemicolon = bindingType == ScriptBinding && !hasTrailingSemicolon;
                 }
             } else { // there is no semicolon after the previous member (probably because there is an rbrace after us/it, so:
                 needsPreceedingSemicolon = true;
@@ -124,7 +125,8 @@ Rewriter::Range Rewriter::addBinding(AST::UiObjectInitializer *ast,
     if (isOneLiner) {
         if (needsPreceedingSemicolon)
             newPropertyTemplate.prepend(QLatin1Char(';'));
-        newPropertyTemplate.prepend(QLatin1Char(' '));
+        if (!propertyName.startsWith(' '))
+            newPropertyTemplate.prepend(QLatin1Char(' '));
         if (needsTrailingSemicolon)
             newPropertyTemplate.append(QLatin1Char(';'));
     } else {
@@ -649,17 +651,20 @@ Rewriter::Range Rewriter::addObject(UiArrayBinding *ast, const QString &content,
     return Range(insertionPoint, insertionPoint);
 }
 
-void Rewriter::removeObjectMember(UiObjectMember *member, UiObjectMember *parent)
+void Rewriter::removeObjectMember(Node *member, UiObjectMember *parent)
 {
     int start = member->firstSourceLocation().offset;
     int end = member->lastSourceLocation().end();
 
-    if (UiArrayBinding *parentArray = cast<UiArrayBinding *>(parent)) {
-        extendToLeadingOrTrailingComma(parentArray, member, start, end);
-    } else {
-        if (UiObjectDefinition *parentObjectDefinition = cast<UiObjectDefinition *>(parent))
-            includeEmptyGroupedProperty(parentObjectDefinition, member, start, end);
-        includeSurroundingWhitespace(m_originalText, start, end);
+    auto uiObjMember = member->uiObjectMemberCast();
+    if (uiObjMember) {
+        if (UiArrayBinding *parentArray = cast<UiArrayBinding *>(parent)) {
+            extendToLeadingOrTrailingComma(parentArray, uiObjMember, start, end);
+        } else {
+            if (UiObjectDefinition *parentObjectDefinition = cast<UiObjectDefinition *>(parent))
+                includeEmptyGroupedProperty(parentObjectDefinition, uiObjMember, start, end);
+            includeSurroundingWhitespace(m_originalText, start, end);
+        }
     }
 
     includeLeadingEmptyLine(m_originalText, start);

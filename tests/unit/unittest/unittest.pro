@@ -1,8 +1,11 @@
 INCLUDEPATH += ../mockup
+INCLUDEPATH += ../mockup/qmldesigner/designercore/include
 
 QT += core network testlib widgets
-CONFIG += console c++14 testcase object_parallel_to_source
+CONFIG += console c++17 testcase
 CONFIG -= app_bundle shared
+
+QTC_UNITTEST_BUILD_CPP_PARSER = $$(QTC_UNITTEST_BUILD_CPP_PARSER)
 
 include(gmock_dependency.pri)
 include(clang_dependency.pri)
@@ -11,15 +14,12 @@ include(benchmark_dependency.pri)
 
 requires(isEmpty(QTC_CLANG_BUILDMODE_MISMATCH))
 
-OBJECTS_DIR = $$OUT_PWD/obj # workaround for qmake bug in object_parallel_to_source
-
 !msvc:force_debug_info:QMAKE_CXXFLAGS += -fno-omit-frame-pointer
 
 DEFINES += \
     QT_NO_CAST_TO_ASCII \
     QT_RESTRICTED_CAST_FROM_ASCII \
-    QT_USE_FAST_OPERATOR_PLUS \
-    QT_USE_FAST_CONCATENATION \
+    QT_USE_QSTRINGBUILDER \
     UNIT_TESTS \
     DONT_CHECK_MESSAGE_COUNTER \
     QTC_RESOURCE_DIR=\"R\\\"xxx($$PWD/../../../share/qtcreator)xxx\\\"\" \
@@ -38,8 +38,11 @@ CONFIG(release, debug|release):QMAKE_LFLAGS += -Wl,--strip-debug
 }
 
 gcc:!clang: QMAKE_CXXFLAGS += -Wno-noexcept-type
-msvc: QMAKE_CXXFLAGS += /bigobj /wd4267 /wd4141 /wd4146
+msvc{
+QMAKE_CXXFLAGS += /bigobj /wd4267 /wd4141 /wd4146 /wd4624
+QMAKE_LFLAGS += /INCREMENTAL
 
+}
 # create fake CppTools.json for the mime type definitions
 dependencyList = "\"Dependencies\" : []"
 cpptoolsjson.input = $$PWD/../../../src/plugins/cpptools/CppTools.json.in
@@ -63,9 +66,13 @@ SOURCES += \
     filepathview-test.cpp \
     gtest-creator-printing.cpp \
     gtest-qt-printing.cpp \
+    imagecache-test.cpp \
+    imagecachegenerator-test.cpp \
+    imagecachestorage-test.cpp \
+    lastchangedrowid-test.cpp \
     lineprefixer-test.cpp \
+    listmodeleditor-test.cpp \
     locatorfilter-test.cpp \
-    matchingtext-test.cpp \
     mimedatabase-utilities.cpp \
     pchmanagerclientserverinprocess-test.cpp \
     pchmanagerclient-test.cpp \
@@ -80,6 +87,8 @@ SOURCES += \
     smallstring-test.cpp \
     sourcerangefilter-test.cpp \
     spydummy.cpp \
+    sqlitesessions-test.cpp \
+    sqlitevalue-test.cpp \
     symbolindexer-test.cpp \
     symbolsfindfilter-test.cpp \
     stringcache-test.cpp \
@@ -122,18 +131,25 @@ SOURCES += \
     headerpathfilter-test.cpp \
     toolchainargumentscache-test.cpp \
     modifiedtimechecker-test.cpp \
-    readexporteddiagnostics-test.cpp
+    sqlitecolumn-test.cpp \
+    sqlitedatabasebackend-test.cpp \
+    sqlitedatabase-test.cpp \
+    sqlitestatement-test.cpp \
+    sqlitetable-test.cpp \
+    sqlstatementbuilder-test.cpp \
+    createtablesqlstatementbuilder-test.cpp \
+    sqlitereadstatementmock.cpp \
+    sqlitewritestatementmock.cpp
+
+!isEmpty(QTC_UNITTEST_BUILD_CPP_PARSER):SOURCES += matchingtext-test.cpp
 
 !isEmpty(LIBCLANG_LIBS) {
 SOURCES += \
-    activationsequencecontextprocessor-test.cpp \
-    activationsequenceprocessor-test.cpp \
     chunksreportedmonitor.cpp \
     clangasyncjob-base.cpp \
     clangcodecompleteresults-test.cpp \
     clangcodemodelserver-test.cpp \
     clangcompletecodejob-test.cpp \
-    clangcompletioncontextanalyzer-test.cpp \
     clangdiagnosticfilter-test.cpp \
     clangdocumentprocessors-test.cpp \
     clangdocumentprocessor-test.cpp \
@@ -158,27 +174,29 @@ SOURCES += \
     codecompleter-test.cpp \
     codecompletionsextractor-test.cpp \
     completionchunkstotextconverter-test.cpp \
-    createtablesqlstatementbuilder-test.cpp \
     cursor-test.cpp \
     diagnosticset-test.cpp \
     diagnostic-test.cpp \
     fixit-test.cpp \
+    gtest-clang-printing.cpp \
     highlightingresultreporter-test.cpp \
     senddocumenttracker-test.cpp \
     skippedsourceranges-test.cpp \
     sourcelocation-test.cpp \
     sourcerange-test.cpp \
-    sqlitecolumn-test.cpp \
-    sqlitedatabasebackend-test.cpp \
-    sqlitedatabase-test.cpp \
-    sqlitestatement-test.cpp \
-    sqlitetable-test.cpp \
-    sqlstatementbuilder-test.cpp \
     token-test.cpp \
+    tokenprocessor-test.cpp \
     translationunitupdater-test.cpp \
     unsavedfiles-test.cpp \
     unsavedfile-test.cpp \
-    utf8positionfromlinecolumn-test.cpp
+    utf8positionfromlinecolumn-test.cpp \
+    readexporteddiagnostics-test.cpp
+
+!isEmpty(QTC_UNITTEST_BUILD_CPP_PARSER):SOURCE += \
+    clangcompletioncontextanalyzer-test.cpp \
+    activationsequencecontextprocessor-test.cpp \
+    activationsequenceprocessor-test.cpp
+
 }
 
 !isEmpty(LIBTOOLING_LIBS) {
@@ -189,20 +207,20 @@ SOURCES += \
     clangqueryprojectfindfilter-test.cpp \
     clangquery-test.cpp \
     clangreferencescollector-test.cpp \
-    gtest-clang-printing.cpp \
     pchcreator-test.cpp \
     refactoringclientserverinprocess-test.cpp \
     refactoringclient-test.cpp \
     refactoringcompilationdatabase-test.cpp \
-    refactoringengine-test.cpp \
     refactoringserver-test.cpp \
     sourcerangeextractor-test.cpp \
     symbolindexing-test.cpp \
     symbolscollector-test.cpp \
     testclangtool.cpp \
     usedmacrocollector-test.cpp \
-    builddependencycollector-test.cpp \
-    tokenprocessor-test.cpp
+    builddependencycollector-test.cpp
+
+!isEmpty(QTC_UNITTEST_BUILD_CPP_PARSER):SOURCES += refactoringengine-test.cpp
+
 }
 
 !isEmpty(CLANGFORMAT_LIBS) {
@@ -226,12 +244,17 @@ HEADERS += \
     gtest-creator-printing.h \
     gtest-llvm-printing.h \
     gtest-qt-printing.h \
+    gtest-std-printing.h \
+    imagecachecollectormock.h \
     mimedatabase-utilities.h \
     mockclangcodemodelclient.h \
     mockclangcodemodelserver.h \
     mockclangpathwatcher.h \
     mockclangpathwatchernotifier.h \
     mockfilesystem.h \
+    mockimagecachegenerator.h \
+    mockimagecachestorage.h \
+    mocklistmodeleditorview.h \
     mockpchcreator.h \
     mockpchmanagerclient.h \
     mockpchmanagernotifier.h \
@@ -243,6 +266,8 @@ HEADERS += \
     mocksearchhandle.h \
     mocksearchresult.h \
     mocksyntaxhighligher.h \
+    mocktimestampprovider.h \
+    notification.h \
     processevents-utilities.h \
     sourcerangecontainer-matcher.h \
     spydummy.h \
@@ -283,7 +308,16 @@ HEADERS += \
     mockbuilddependencygenerator.h \
     mockpchtasksmerger.h \
     mockpchtaskqueue.h \
-    mockpchtaskgenerator.h
+    mockpchtaskgenerator.h \
+    ../mockup/qmldesigner/designercore/include/nodeinstanceview.h \
+    ../mockup/qmldesigner/designercore/include/rewriterview.h \
+    ../mockup/qmldesigner/designercore/include/itemlibraryitem.h\
+    sqlitedatabasemock.h \
+    sqlitereadstatementmock.h \
+    sqlitestatementmock.h \
+    sqlitetransactionbackendmock.h \
+    sqlitewritestatementmock.h
+
 
 !isEmpty(LIBCLANG_LIBS) {
 HEADERS += \
@@ -291,14 +325,14 @@ HEADERS += \
     clangasyncjob-base.h \
     clangcompareoperators.h \
     diagnosticcontainer-matcher.h \
+    gtest-clang-printing.h
 }
 
 !isEmpty(LIBTOOLING_LIBS) {
 HEADERS += \
-    gtest-clang-printing.h \
     mockrefactoringclient.h \
     mockrefactoringserver.h \
-    testclangtool.h \
+    testclangtool.h
 }
 
 OTHER_FILES += $$files(data/*) $$files(data/include/*)

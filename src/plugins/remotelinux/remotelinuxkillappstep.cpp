@@ -25,6 +25,7 @@
 
 #include "remotelinuxkillappstep.h"
 
+#include "remotelinux_constants.h"
 #include "remotelinuxkillappservice.h"
 
 #include <projectexplorer/runcontrol.h>
@@ -35,12 +36,11 @@ using namespace ProjectExplorer;
 
 namespace RemoteLinux {
 
-RemoteLinuxKillAppStep::RemoteLinuxKillAppStep(BuildStepList *bsl, Core::Id id)
+RemoteLinuxKillAppStep::RemoteLinuxKillAppStep(BuildStepList *bsl, Utils::Id id)
         : AbstractRemoteLinuxDeployStep(bsl, id)
 {
     auto service = createDeployService<RemoteLinuxKillAppService>();
 
-    setDefaultDisplayName(displayName());
     setWidgetExpandedByDefault(false);
 
     setInternalInitializer([this, service] {
@@ -53,9 +53,9 @@ RemoteLinuxKillAppStep::RemoteLinuxKillAppStep(BuildStepList *bsl, Core::Id id)
     });
 }
 
-Core::Id RemoteLinuxKillAppStep::stepId()
+Utils::Id RemoteLinuxKillAppStep::stepId()
 {
-    return "RemoteLinux.KillAppStep";
+    return Constants::KillAppStepId;
 }
 
 QString RemoteLinuxKillAppStep::displayName()

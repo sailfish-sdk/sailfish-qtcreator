@@ -59,5 +59,15 @@ public:
                  void (bool));
 
     MOCK_METHOD0(walCheckpointFull, void());
+
+    MOCK_METHOD2(setUpdateHook,
+                 void(void *object,
+                      void (*)(void *object, int, char const *database, char const *, long long rowId)));
+
+    MOCK_METHOD0(resetUpdateHook, void());
+
+    MOCK_METHOD0(applyAndUpdateSessions, void());
+
+    MOCK_METHOD1(setAttachedTables, void(const Utils::SmallStringVector &tables));
 };
 

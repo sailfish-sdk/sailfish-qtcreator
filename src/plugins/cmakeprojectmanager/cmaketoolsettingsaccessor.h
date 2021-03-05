@@ -25,15 +25,8 @@
 
 #pragma once
 
+#include <utils/id.h>
 #include <utils/settingsaccessor.h>
-
-#include <coreplugin/id.h>
-
-#include <QList>
-
-#include <memory>
-
-namespace Core { class Id; }
 
 namespace CMakeProjectManager {
 
@@ -47,14 +40,14 @@ public:
     CMakeToolSettingsAccessor();
 
     struct CMakeTools {
-        Core::Id defaultToolId;
+        Utils::Id defaultToolId;
         std::vector<std::unique_ptr<CMakeTool>> cmakeTools;
     };
 
     CMakeTools restoreCMakeTools(QWidget *parent) const;
 
     void saveCMakeTools(const QList<CMakeTool *> &cmakeTools,
-                        const Core::Id &defaultId,
+                        const Utils::Id &defaultId,
                         QWidget *parent);
 
 private:

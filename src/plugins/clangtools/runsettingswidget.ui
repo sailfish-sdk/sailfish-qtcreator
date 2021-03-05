@@ -10,9 +10,6 @@
     <height>125</height>
    </rect>
   </property>
-  <property name="windowTitle">
-   <string>Form</string>
-  </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <property name="leftMargin">
     <number>0</number>
@@ -39,6 +36,13 @@
        <widget class="QCheckBox" name="buildBeforeAnalysis">
         <property name="text">
          <string>Build the project before analysis</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="analyzeOpenFiles">
+        <property name="text">
+         <string>Analyze open files</string>
         </property>
        </widget>
       </item>

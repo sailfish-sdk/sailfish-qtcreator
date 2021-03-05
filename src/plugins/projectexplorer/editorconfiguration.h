@@ -27,15 +27,16 @@
 
 #include "projectexplorer_export.h"
 
+#include <utils/id.h>
+
 #include <QObject>
 #include <QVariantMap>
 
 #include <memory>
 
-namespace Core {
-class IEditor;
-class Id;
-}
+QT_BEGIN_NAMESPACE
+class QTextCodec;
+QT_END_NAMESPACE
 
 namespace TextEditor {
 class BaseTextEditor;
@@ -77,8 +78,8 @@ public:
     const TextEditor::MarginSettings &marginSettings() const;
 
     TextEditor::ICodeStylePreferences *codeStyle() const;
-    TextEditor::ICodeStylePreferences *codeStyle(Core::Id languageId) const;
-    QMap<Core::Id, TextEditor::ICodeStylePreferences *> codeStyles() const;
+    TextEditor::ICodeStylePreferences *codeStyle(Utils::Id languageId) const;
+    QMap<Utils::Id, TextEditor::ICodeStylePreferences *> codeStyles() const;
 
     void configureEditor(TextEditor::BaseTextEditor *textEditor) const;
     void deconfigureEditor(TextEditor::BaseTextEditor *textEditor) const;

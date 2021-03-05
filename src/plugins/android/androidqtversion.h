@@ -43,13 +43,14 @@ public:
     bool isValid() const override;
     QString invalidReason() const override;
 
+    bool supportsMultipleQtAbis() const override;
     ProjectExplorer::Abis detectQtAbis() const override;
 
     void addToEnvironment(const ProjectExplorer::Kit *k, Utils::Environment &env) const override;
     Utils::Environment qmakeRunEnvironment() const override;
 
-    QSet<Core::Id> availableFeatures() const override;
-    QSet<Core::Id> targetDeviceTypes() const override;
+    QSet<Utils::Id> availableFeatures() const override;
+    QSet<Utils::Id> targetDeviceTypes() const override;
 
     QString description() const override;
     const QStringList &androidAbis() const;

@@ -80,6 +80,7 @@
 #include <utils/qtcassert.h>
 
 #include <QAction>
+#include <QActionGroup>
 #include <QComboBox>
 #include <QDir>
 #include <QEvent>
@@ -140,16 +141,15 @@ public:
     QAction *syncEachOtherAction = nullptr;
 };
 
-ModelEditor::ModelEditor(UiController *uiController, ActionHandler *actionHandler, QWidget *parent)
-    : IEditor(parent),
-      d(new ModelEditorPrivate)
+ModelEditor::ModelEditor(UiController *uiController, ActionHandler *actionHandler)
+    : d(new ModelEditorPrivate)
 {
     setContext(Core::Context(Constants::MODEL_EDITOR_ID));
     d->uiController = uiController;
     d->actionHandler = actionHandler;
     d->document = new ModelDocument(this);
     connect(d->document, &ModelDocument::contentSet, this, &ModelEditor::onContentSet);
-    init(parent);
+    init();
 }
 
 ModelEditor::~ModelEditor()
@@ -174,7 +174,7 @@ QByteArray ModelEditor::saveState() const
     return saveState(currentDiagram());
 }
 
-bool ModelEditor::restoreState(const QByteArray &state)
+void ModelEditor::restoreState(const QByteArray &state)
 {
     QDataStream stream(state);
     int version = 0;
@@ -198,20 +198,18 @@ bool ModelEditor::restoreState(const QByteArray &state)
             qmt::MDiagram *diagram = d->document->documentController()->modelController()->findObject<qmt::MDiagram>(uid);
             if (diagram) {
                 openDiagram(diagram, false);
-                return true;
             }
         }
     }
-    return false;
 }
 
-void ModelEditor::init(QWidget *parent)
+void ModelEditor::init()
 {
     // create and configure properties view
     d->propertiesView = new qmt::PropertiesView(this);
 
     // create and configure editor ui
-    d->rightSplitter = new Core::MiniSplitter(parent);
+    d->rightSplitter = new Core::MiniSplitter;
     connect(d->rightSplitter, &QSplitter::splitterMoved,
             this, &ModelEditor::onRightSplitterMoved);
     connect(d->uiController, &UiController::rightSplitterChanged,
@@ -842,7 +840,7 @@ void ModelEditor::expandModelTreeToDepth(int depth)
     d->modelTreeView->expandToDepth(depth);
 }
 
-QToolButton *ModelEditor::createToolbarCommandButton(const Core::Id &id,
+QToolButton *ModelEditor::createToolbarCommandButton(const Utils::Id &id,
                                                      const std::function<void()> &slot,
                                                      QWidget *parent)
 {
@@ -1119,11 +1117,11 @@ void ModelEditor::initToolbars()
                 if (!tool.m_stereotype.isEmpty() && stereotypeIconElement != qmt::StereotypeIcon::ElementAny) {
                     const qmt::Style *style = documentController->styleController()->adaptStyle(styleEngineElementType);
                     icon = stereotypeController->createIcon(
-                                stereotypeIconElement, QStringList() << tool.m_stereotype,
+                                stereotypeIconElement, {tool.m_stereotype},
                                 QString(), style, QSize(128, 128), QMarginsF(6.0, 4.0, 6.0, 8.0), 8.0);
                     if (!icon.isNull()) {
                         QString stereotypeIconId = stereotypeController->findStereotypeIconId(
-                                    stereotypeIconElement, QStringList() << tool.m_stereotype);
+                                    stereotypeIconElement, {tool.m_stereotype});
                         qmt::StereotypeIcon stereotypeIcon = stereotypeController->findStereotypeIcon(stereotypeIconId);
                         if (stereotypeIcon.hasName())
                             newElementName = stereotypeIcon.name();

@@ -128,14 +128,14 @@ public:
     {
         const QByteArray ba = m_proc.readAllStandardOutput();
         const QString msg = QString::fromLocal8Bit(ba, ba.length());
-        m_runTool->appendMessage(msg, StdOutFormatSameLine);
+        m_runTool->appendMessage(msg, StdOutFormat);
     }
 
     void handleStandardError()
     {
         const QByteArray ba = m_proc.readAllStandardError();
         const QString msg = QString::fromLocal8Bit(ba, ba.length());
-        m_runTool->appendMessage(msg, StdErrFormatSameLine);
+        m_runTool->appendMessage(msg, StdErrFormat);
     }
 
     void handleFinished()
@@ -508,6 +508,11 @@ void DebuggerRunTool::addQmlServerInferiorCommandLineArgumentIfNeeded()
     d->addQmlServerInferiorCommandLineArgumentIfNeeded = true;
 }
 
+void DebuggerRunTool::modifyDebuggerEnvironment(const EnvironmentItems &items)
+{
+    m_runParameters.debugger.environment.modify(items);
+}
+
 void DebuggerRunTool::setCrashParameter(const QString &event)
 {
     m_runParameters.crashParameter = event;
@@ -689,10 +694,10 @@ void DebuggerRunTool::start()
 
     if (m_runParameters.startMode == StartInternal) {
         QStringList unhandledIds;
-        for (const GlobalBreakpoint bp : BreakpointManager::globalBreakpoints()) {
+//        for (const GlobalBreakpoint &bp : BreakpointManager::globalBreakpoints()) {
 //            if (bp->isEnabled() && !m_engine->acceptsBreakpoint(bp))
 //                unhandledIds.append(bp.id().toString());
-        }
+//        }
         if (!unhandledIds.isEmpty()) {
             QString warningMessage =
                     DebuggerPlugin::tr("Some breakpoints cannot be handled by the debugger "
@@ -704,7 +709,7 @@ void DebuggerRunTool::start()
 
             static bool checked = true;
             if (checked)
-                CheckableMessageBox::information(Core::ICore::mainWindow(),
+                CheckableMessageBox::information(Core::ICore::dialogParent(),
                                                  tr("Debugger"),
                                                  warningMessage,
                                                  tr("&Show this message again."),
@@ -895,6 +900,11 @@ Internal::TerminalRunner *DebuggerRunTool::terminalRunner() const
     return d->terminalRunner;
 }
 
+DebuggerEngineType DebuggerRunTool::cppEngineType() const
+{
+    return m_runParameters.cppEngineType;
+}
+
 DebuggerRunTool::DebuggerRunTool(RunControl *runControl, AllowTerminal allowTerminal)
     : RunWorker(runControl), d(new DebuggerRunToolPrivate)
 {
@@ -963,7 +973,7 @@ DebuggerRunTool::DebuggerRunTool(RunControl *runControl, AllowTerminal allowTerm
     m_runParameters.toolChainAbi = ToolChainKitAspect::targetAbi(kit);
 
     bool ok = false;
-    int nativeMixedOverride = qgetenv("QTC_DEBUGGER_NATIVE_MIXED").toInt(&ok);
+    const int nativeMixedOverride = qEnvironmentVariableIntValue("QTC_DEBUGGER_NATIVE_MIXED", &ok);
     if (ok)
         m_runParameters.nativeMixedEnabled = bool(nativeMixedOverride);
 
@@ -972,7 +982,7 @@ DebuggerRunTool::DebuggerRunTool(RunControl *runControl, AllowTerminal allowTerm
     const Tasks tasks = DebuggerKitAspect::validateDebugger(kit);
     for (const Task &t : tasks) {
         if (t.type != Task::Warning)
-            m_runParameters.validationErrors.append(t.description);
+            m_runParameters.validationErrors.append(t.description());
     }
 
     RunConfiguration *runConfig = runControl->runConfiguration();
@@ -1035,10 +1045,10 @@ void DebuggerRunTool::showMessage(const QString &msg, int channel, int timeout)
         m_engine->showMessage(msg, channel, timeout);
     switch (channel) {
     case AppOutput:
-        appendMessage(msg, StdOutFormatSameLine);
+        appendMessage(msg, StdOutFormat);
         break;
     case AppError:
-        appendMessage(msg, StdErrFormatSameLine);
+        appendMessage(msg, StdErrFormat);
         break;
     case AppStuff:
         appendMessage(msg, DebugFormat);

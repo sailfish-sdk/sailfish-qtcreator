@@ -34,13 +34,14 @@
 
 #include <QAbstractEventDispatcher>
 #include <QCoreApplication>
-#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QLocalServer>
 #include <QLocalSocket>
+#include <QRegularExpression>
 #include <QSettings>
 #include <QTemporaryFile>
+#include <QTextCodec>
 #include <QTimer>
 #include <QWinEventNotifier>
 
@@ -136,6 +137,11 @@ void ConsoleProcess::setCommand(const CommandLine &command)
     d->m_commandLine = command;
 }
 
+CommandLine ConsoleProcess::command() const
+{
+    return d->m_commandLine;
+}
+
 void ConsoleProcess::setSettings(QSettings *settings)
 {
     d->m_settings = settings;
@@ -151,7 +157,7 @@ Q_GLOBAL_STATIC_WITH_ARGS(const QVector<TerminalCommand>, knownTerminals, (
     {"rxvt", "", "-e"},
     {"urxvt", "", "-e"},
     {"xfce4-terminal", "", "-x"},
-    {"konsole", "--separate", "-e"},
+    {"konsole", "--separate --workdir .", "-e"},
     {"gnome-terminal", "", "--"}
 }));
 
@@ -278,8 +284,8 @@ static QString quoteWinArgument(const QString &arg)
 
     QString ret(arg);
     // Quotes are escaped and their preceding backslashes are doubled.
-    ret.replace(QRegExp(QLatin1String("(\\\\*)\"")), QLatin1String("\\1\\1\\\""));
-    if (ret.contains(QRegExp(QLatin1String("\\s")))) {
+    ret.replace(QRegularExpression("(\\\\*)\""), "\\1\\1\\\"");
+    if (ret.contains(QRegularExpression("\\s"))) {
         // The argument must not end with a \ since this would be interpreted
         // as escaping the quote -- rather put the \ behind the quote: e.g.
         // rather use "foo"\ than "foo\"
@@ -296,7 +302,7 @@ static QString quoteWinArgument(const QString &arg)
 QString createWinCommandline(const QString &program, const QStringList &args)
 {
     QString programName = quoteWinCommand(program);
-    foreach (const QString &arg, args) {
+    for (const QString &arg : args) {
         programName += QLatin1Char(' ');
         programName += quoteWinArgument(arg);
     }
@@ -411,21 +417,19 @@ bool ConsoleProcess::start()
             d->m_tempFile = nullptr;
             return false;
         }
-        QTextStream out(d->m_tempFile);
-        out.setCodec("UTF-16LE");
-        out.setGenerateByteOrderMark(false);
-
+        QString outString;
+        QTextStream out(&outString);
         // Add PATH and SystemRoot environment variables in case they are missing
         const QStringList fixedEnvironment = [env] {
             QStringList envStrings = env;
             // add PATH if necessary (for DLL loading)
-            if (envStrings.filter(QRegExp(QLatin1String("^PATH="),Qt::CaseInsensitive)).isEmpty()) {
+            if (envStrings.filter(QRegularExpression("^PATH=.*", QRegularExpression::CaseInsensitiveOption)).isEmpty()) {
                 QByteArray path = qgetenv("PATH");
                 if (!path.isEmpty())
                     envStrings.prepend(QString::fromLatin1("PATH=%1").arg(QString::fromLocal8Bit(path)));
             }
             // add systemroot if needed
-            if (envStrings.filter(QRegExp(QLatin1String("^SystemRoot="),Qt::CaseInsensitive)).isEmpty()) {
+            if (envStrings.filter(QRegularExpression("^SystemRoot=.*", QRegularExpression::CaseInsensitiveOption)).isEmpty()) {
                 QByteArray systemRoot = qgetenv("SystemRoot");
                 if (!systemRoot.isEmpty())
                     envStrings.prepend(QString::fromLatin1("SystemRoot=%1").arg(QString::fromLocal8Bit(systemRoot)));
@@ -436,15 +440,18 @@ bool ConsoleProcess::start()
         for (const QString &var : fixedEnvironment)
             out << var << QChar(0);
         out << QChar(0);
-        out.flush();
-        if (out.status() != QTextStream::Ok) {
+        const QTextCodec *textCodec = QTextCodec::codecForName("UTF-16LE");
+        QTC_CHECK(textCodec);
+        const QByteArray outBytes = textCodec ? textCodec->fromUnicode(outString) : QByteArray();
+        if (!textCodec || d->m_tempFile->write(outBytes) < 0) {
             stubServerShutdown();
             emitError(QProcess::FailedToStart, msgCannotWriteTempFile());
             delete d->m_tempFile;
             d->m_tempFile = nullptr;
             return false;
         }
-    }
+        d->m_tempFile->flush();
+}
 
     STARTUPINFO si;
     ZeroMemory(&si, sizeof(si));
@@ -511,7 +518,7 @@ bool ConsoleProcess::start()
                                  " is currently not supported."));
             return false;
         }
-        pcmd = QLatin1String("/bin/sh");
+        pcmd = qEnvironmentVariable("SHELL", "/bin/sh");
         pargs = QtcProcess::Arguments::createUnixArgs(
                         {"-c", (QtcProcess::quoteArg(d->m_commandLine.executable().toString())
                          + ' ' + d->m_commandLine.arguments())});
@@ -995,7 +1002,7 @@ void ConsoleProcess::emitError(QProcess::ProcessError err, const QString &errorS
 {
     d->m_error = err;
     d->m_errorString = errorString;
-    emit error(err);
+    emit errorOccurred(err);
     emit processError(errorString);
 }
 

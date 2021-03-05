@@ -26,7 +26,6 @@
 #pragma once
 
 #include "qnxconstants.h"
-#include "qnxqtversion.h"
 
 #include <qtsupport/baseqtversion.h>
 #include <qtsupport/qtversionfactory.h>
@@ -43,8 +42,8 @@ public:
 
     QString description() const override;
 
-    QSet<Core::Id> availableFeatures() const override;
-    QSet<Core::Id> targetDeviceTypes() const override;
+    QSet<Utils::Id> availableFeatures() const override;
+    QSet<Utils::Id> targetDeviceTypes() const override;
 
     QString qnxHost() const;
     Utils::FilePath qnxTarget() const;

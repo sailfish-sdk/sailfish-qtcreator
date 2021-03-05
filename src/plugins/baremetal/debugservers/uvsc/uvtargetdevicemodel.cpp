@@ -67,8 +67,26 @@ static QString extractPackVersion(const QString &packFilePath)
 static QStringList findKeilPackFiles(const QString &path)
 {
     QStringList files;
-    // Search for the STMicroelectronics devices.
-    QDirIterator it(path, {"STM*_DFP"}, QDir::Dirs);
+    // Search for STMicroelectronics and NXP S32 devices.
+    QDirIterator it(path, {"STM*_DFP", "S32*_DFP"}, QDir::Dirs);
+    while (it.hasNext()) {
+        const QDir dfpDir(it.next());
+        const QFileInfoList entries = dfpDir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot,
+                                                           QDir::Name);
+        if (entries.isEmpty())
+            continue;
+        QDirIterator fit(entries.last().absoluteFilePath(), {"*.pdsc"},
+                         QDir::Files | QDir::NoSymLinks);
+        while (fit.hasNext())
+            files.push_back(fit.next());
+    }
+    return files;
+}
+
+static QStringList findNordicSemiconductorPackFiles(const QString &path)
+{
+    QStringList files;
+    QDirIterator it(path, {"*_DeviceFamilyPack"}, QDir::Dirs);
     while (it.hasNext()) {
         const QDir dfpDir(it.next());
         const QFileInfoList entries = dfpDir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot,
@@ -115,8 +133,10 @@ static void fillAlgorithms(QXmlStreamReader &in, DeviceSelection::Algorithms &al
     in.skipCurrentElement();
     DeviceSelection::Algorithm algorithm;
     algorithm.path = attrs.value("name").toString();
-    algorithm.start = attrs.value("start").toString();
-    algorithm.size = attrs.value("size").toString();
+    algorithm.flashStart = attrs.value("start").toString();
+    algorithm.flashSize = attrs.value("size").toString();
+    algorithm.ramStart = attrs.value("RAMstart").toString();
+    algorithm.ramSize = attrs.value("RAMsize").toString();
     algorithms.push_back(algorithm);
 }
 
@@ -147,9 +167,10 @@ static void fillSvd(QXmlStreamReader &in, QString &svd)
 class DeviceSelectionItem final : public TreeItem
 {
 public:
+    enum Type { Root, Package, Family, SubFamily, Device, DeviceVariant };
     enum Column { NameColumn, VersionColumn, VendorNameColumn };
-    explicit DeviceSelectionItem()
-    {}
+    explicit DeviceSelectionItem(const Type &type = Root)
+        : type(type) {}
 
     QVariant data(int column, int role) const final
     {
@@ -170,6 +191,7 @@ public:
         return hasChildren() ? Qt::ItemIsEnabled : (Qt::ItemIsEnabled | Qt::ItemIsSelectable);
     }
 
+    const Type type;
     QString desc;
     QString fullPath;
     QString name;
@@ -204,11 +226,13 @@ void DeviceSelectionModel::fillAllPacks(const FilePath &toolsIniFile)
         return;
 
     QStringList allPackFiles;
-    QDirIterator it(packsPath, {"Keil"}, QDir::Dirs | QDir::NoDotAndDotDot);
+    QDirIterator it(packsPath, {"Keil", "NordicSemiconductor"}, QDir::Dirs | QDir::NoDotAndDotDot);
     while (it.hasNext()) {
         const QString path = it.next();
         if (path.endsWith("/Keil"))
             allPackFiles << findKeilPackFiles(path);
+        else if (path.endsWith("/NordicSemiconductor"))
+            allPackFiles << findNordicSemiconductorPackFiles(path);
     }
 
     if (allPackFiles.isEmpty())
@@ -224,8 +248,8 @@ void DeviceSelectionModel::parsePackage(const QString &packageFile)
         return;
     QXmlStreamReader in(&f);
     while (in.readNextStartElement()) {
-        const QStringRef elementName = in.name();
-        if (elementName == "package")
+        const auto elementName = in.name();
+        if (elementName == QLatin1String("package"))
             parsePackage(in, packageFile);
         else
             in.skipCurrentElement();
@@ -235,24 +259,24 @@ void DeviceSelectionModel::parsePackage(const QString &packageFile)
 void DeviceSelectionModel::parsePackage(QXmlStreamReader &in, const QString &packageFile)
 {
     // Create and fill the 'package' item.
-    const auto child = new DeviceSelectionItem;
+    const auto child = new DeviceSelectionItem(DeviceSelectionItem::Package);
     rootItem()->appendChild(child);
     child->fullPath = packageFile;
     child->version = extractPackVersion(packageFile);
     while (in.readNextStartElement()) {
-        const QStringRef elementName = in.name();
-        if (elementName == "name") {
+        const auto elementName = in.name();
+        if (elementName == QLatin1String("name")) {
             fillElementProperty(in, child->name);
-        } else if (elementName == "description") {
+        } else if (elementName == QLatin1String("description")) {
             fillElementProperty(in, child->desc);
-        } else if (elementName == "vendor") {
+        } else if (elementName == QLatin1String("vendor")) {
             fillVendor(in, child->vendorName, child->vendorId);
-        } else if (elementName == "url") {
+        } else if (elementName == QLatin1String("url")) {
             fillElementProperty(in, child->url);
-        } else if (elementName == "devices") {
+        } else if (elementName == QLatin1String("devices")) {
             while (in.readNextStartElement()) {
-                const QStringRef elementName = in.name();
-                if (elementName == "family")
+                const auto elementName = in.name();
+                if (elementName == QLatin1String("family"))
                     parseFamily(in, child);
                 else
                     in.skipCurrentElement();
@@ -266,22 +290,24 @@ void DeviceSelectionModel::parsePackage(QXmlStreamReader &in, const QString &pac
 void DeviceSelectionModel::parseFamily(QXmlStreamReader &in, DeviceSelectionItem *parent)
 {
     // Create and fill the 'family' item.
-    const auto child = new DeviceSelectionItem;
+    const auto child = new DeviceSelectionItem(DeviceSelectionItem::Family);
     parent->appendChild(child);
     const QXmlStreamAttributes attrs = in.attributes();
     child->name = attrs.value("Dfamily").toString();
     fillVendor(attrs.value("Dvendor").toString(), child->vendorName, child->vendorId);
     while (in.readNextStartElement()) {
-        const QStringRef elementName = in.name();
-        if (elementName == "processor") {
+        const auto elementName = in.name();
+        if (elementName == QLatin1String("processor")) {
             fillCpu(in, child->cpu);
-        } else if (elementName == "memory") {
+        } else if (elementName == QLatin1String("algorithm")) {
+            fillAlgorithms(in, child->algorithms);
+        } else if (elementName == QLatin1String("memory")) {
             fillMemories(in, child->memories);
-        } else if (elementName == "description") {
+        } else if (elementName == QLatin1String("description")) {
             fillElementProperty(in, child->desc);
-        } else if (elementName == "subFamily") {
+        } else if (elementName == QLatin1String("subFamily")) {
             parseSubFamily(in, child);
-        } else if (elementName == "device") {
+        } else if (elementName == QLatin1String("device")) {
             parseDevice(in, child);
         } else {
             in.skipCurrentElement();
@@ -292,17 +318,17 @@ void DeviceSelectionModel::parseFamily(QXmlStreamReader &in, DeviceSelectionItem
 void DeviceSelectionModel::parseSubFamily(QXmlStreamReader &in, DeviceSelectionItem *parent)
 {
     // Create and fill the 'sub-family' item.
-    const auto child = new DeviceSelectionItem;
+    const auto child = new DeviceSelectionItem(DeviceSelectionItem::SubFamily);
     parent->appendChild(child);
     const QXmlStreamAttributes attrs = in.attributes();
     child->name = attrs.value("DsubFamily").toString();
     while (in.readNextStartElement()) {
-        const QStringRef elementName = in.name();
-        if (elementName == "processor") {
+        const auto elementName = in.name();
+        if (elementName == QLatin1String("processor")) {
             fillCpu(in, child->cpu);
-        } else if (elementName == "debug") {
+        } else if (elementName == QLatin1String("debug")) {
             fillSvd(in, child->svd);
-        } else if (elementName == "device") {
+        } else if (elementName == QLatin1String("device")) {
             parseDevice(in, child);
         } else {
             in.skipCurrentElement();
@@ -313,19 +339,23 @@ void DeviceSelectionModel::parseSubFamily(QXmlStreamReader &in, DeviceSelectionI
 void DeviceSelectionModel::parseDevice(QXmlStreamReader &in, DeviceSelectionItem *parent)
 {
     // Create and fill the 'device' item.
-    const auto child = new DeviceSelectionItem;
+    const auto child = new DeviceSelectionItem(DeviceSelectionItem::Device);
     parent->appendChild(child);
     const QXmlStreamAttributes attrs = in.attributes();
     child->name = attrs.value("Dname").toString();
     while (in.readNextStartElement()) {
-        const QStringRef elementName = in.name();
-        if (elementName == "processor") {
+        const auto elementName = in.name();
+        if (elementName == QLatin1String("processor")) {
             fillCpu(in, child->cpu);
-        } else if (elementName == "memory") {
+        } else if (elementName == QLatin1String("debug")) {
+            fillSvd(in, child->svd);
+        } else if (elementName == QLatin1String("description")) {
+            fillElementProperty(in, child->desc);
+        } else if (elementName == QLatin1String("memory")) {
             fillMemories(in, child->memories);
-        } else if (elementName == "algorithm") {
+        } else if (elementName == QLatin1String("algorithm")) {
             fillAlgorithms(in, child->algorithms);
-        } else if (elementName == "variant") {
+        } else if (elementName == QLatin1String("variant")) {
             parseDeviceVariant(in, child);
         } else {
             in.skipCurrentElement();
@@ -336,17 +366,17 @@ void DeviceSelectionModel::parseDevice(QXmlStreamReader &in, DeviceSelectionItem
 void DeviceSelectionModel::parseDeviceVariant(QXmlStreamReader &in, DeviceSelectionItem *parent)
 {
     // Create and fill the 'device-variant' item.
-    const auto child = new DeviceSelectionItem;
+    const auto child = new DeviceSelectionItem(DeviceSelectionItem::DeviceVariant);
     parent->appendChild(child);
     const QXmlStreamAttributes attrs = in.attributes();
     child->name = attrs.value("Dvariant").toString();
     while (in.readNextStartElement()) {
-        const QStringRef elementName = in.name();
-        if (elementName == "processor") {
+        const auto elementName = in.name();
+        if (elementName == QLatin1String("processor")) {
             fillCpu(in, child->cpu);
-        } else if (elementName == "memory") {
+        } else if (elementName == QLatin1String("memory")) {
             fillMemories(in, child->memories);
-        } else if (elementName == "algorithm") {
+        } else if (elementName == QLatin1String("algorithm")) {
             fillAlgorithms(in, child->algorithms);
         } else {
             in.skipCurrentElement();
@@ -391,31 +421,15 @@ DeviceSelection DeviceSelectionView::buildSelection(const DeviceSelectionItem *i
     DeviceSelection::Memories &mems = selection.memories;
     DeviceSelection::Package &pkg = selection.package;
 
-    do {
+    auto extractBaseProps = [&selection, &algs, &cpu, &mems](const DeviceSelectionItem *item) {
         if (selection.name.isEmpty())
             selection.name = item->name;
-        else if (selection.subfamily.isEmpty())
-            selection.subfamily = item->name;
-        else if (selection.family.isEmpty())
-            selection.family = item->name;
-        else if (pkg.name.isEmpty())
-            pkg.name = item->name;
-
         if (selection.desc.isEmpty())
             selection.desc = item->desc;
-        else if (pkg.desc.isEmpty())
-            pkg.desc = item->desc;
-
         if (selection.vendorId.isEmpty())
             selection.vendorId = item->vendorId;
-        else if (pkg.vendorId.isEmpty())
-            pkg.vendorId = item->vendorId;
-
         if (selection.vendorName.isEmpty())
             selection.vendorName = item->vendorName;
-        else if (pkg.vendorName.isEmpty())
-            pkg.vendorName = item->vendorName;
-
         if (selection.svd.isEmpty())
             selection.svd = item->svd;
 
@@ -427,13 +441,6 @@ DeviceSelection DeviceSelectionView::buildSelection(const DeviceSelectionItem *i
             cpu.fpu = item->cpu.fpu;
         if (cpu.mpu.isEmpty())
             cpu.mpu = item->cpu.mpu;
-
-        if (pkg.file.isEmpty())
-            pkg.file = item->fullPath;
-        if (pkg.url.isEmpty())
-            pkg.url = item->url;
-        if (pkg.version.isEmpty())
-            pkg.version = item->version;
 
         // Add only new flash algorithms.
         for (const DeviceSelection::Algorithm &newAlg : item->algorithms) {
@@ -452,8 +459,44 @@ DeviceSelection DeviceSelectionView::buildSelection(const DeviceSelectionItem *i
             if (!contains)
                 mems.push_back(newMem);
         }
+    };
 
+    auto extractPackageProps = [&pkg](const DeviceSelectionItem *item) {
+        pkg.desc = item->desc;
+        pkg.file = item->fullPath;
+        pkg.name = item->name;
+        pkg.url = item->url;
+        pkg.vendorId = item->vendorId;
+        pkg.vendorName = item->vendorName;
+        pkg.version = item->version;
+    };
+
+    do {
+        if (item->type == DeviceSelectionItem::DeviceVariant
+                || item->type == DeviceSelectionItem::Device) {
+            extractBaseProps(item);
+        } else if (item->type == DeviceSelectionItem::SubFamily) {
+            extractBaseProps(item);
+            if (selection.subfamily.isEmpty())
+                selection.subfamily = item->name;
+        } else if (item->type == DeviceSelectionItem::Family) {
+            extractBaseProps(item);
+            if (selection.family.isEmpty())
+                selection.family = item->name;
+        } else if (item->type == DeviceSelectionItem::Package) {
+            extractPackageProps(item);
+        }
     } while ((item->level() > 1) && (item = static_cast<const DeviceSelectionItem *>(item->parent())));
+
+    // Fix relative SVD file sub-path to make it as an absolute file path.
+    if (!selection.svd.isEmpty()) {
+        const QFileInfo fi(selection.svd);
+        if (!fi.isAbsolute()) {
+            const QDir dir(QFileInfo(selection.package.file).path());
+            selection.svd = QFileInfo(dir, fi.filePath()).absoluteFilePath();
+        }
+    }
+
     return selection;
 }
 

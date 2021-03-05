@@ -36,17 +36,20 @@
 
 #include <app/app_version.h>
 
+#include <coreplugin/messagebox.h>
+#include <coreplugin/icore.h>
+
 #include <projectexplorer/kit.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/target.h>
 #include <projectexplorer/toolchain.h>
-#include <coreplugin/messagebox.h>
-#include <coreplugin/icore.h>
+
+#include <qmlprojectmanager/qmlmultilanguageaspect.h>
+
 #include <qtsupport/baseqtversion.h>
 #include <qtsupport/qtkitinformation.h>
 #include <qtsupport/qtsupportconstants.h>
-#include <coreplugin/icore.h>
 
 #include <utils/algorithm.h>
 #include <utils/environment.h>
@@ -68,6 +71,8 @@
 static Q_LOGGING_CATEGORY(puppetStart, "qtc.puppet.start", QtWarningMsg)
 static Q_LOGGING_CATEGORY(puppetBuild, "qtc.puppet.build", QtWarningMsg)
 
+using namespace ProjectExplorer;
+
 namespace QmlDesigner {
 
 class EventFilter : public QObject {
@@ -86,7 +91,7 @@ public:
     }
 };
 
-QHash<Core::Id, PuppetCreator::PuppetType> PuppetCreator::m_qml2PuppetForKitPuppetHash;
+QHash<Utils::Id, PuppetCreator::PuppetType> PuppetCreator::m_qml2PuppetForKitPuppetHash;
 
 QByteArray PuppetCreator::qtHash() const
 {
@@ -173,39 +178,42 @@ PuppetCreator::PuppetCreator(ProjectExplorer::Target *target, const Model *model
 {
 }
 
-QProcess *PuppetCreator::createPuppetProcess(const QString &puppetMode,
-                                             const QString &socketToken,
-                                             QObject *handlerObject,
-                                             const char *outputSlot,
-                                             const char *finishSlot,
-                                             const QStringList &customOptions) const
+QProcessUniquePointer PuppetCreator::createPuppetProcess(
+    const QString &puppetMode,
+    const QString &socketToken,
+    std::function<void()> processOutputCallback,
+    std::function<void(int, QProcess::ExitStatus)> processFinishCallback,
+    const QStringList &customOptions) const
 {
     return puppetProcess(qml2PuppetPath(m_availablePuppetType),
                          qmlPuppetDirectory(m_availablePuppetType),
                          puppetMode,
                          socketToken,
-                         handlerObject,
-                         outputSlot,
-                         finishSlot,
+                         processOutputCallback,
+                         processFinishCallback,
                          customOptions);
 }
 
-
-QProcess *PuppetCreator::puppetProcess(const QString &puppetPath,
-                                       const QString &workingDirectory,
-                                       const QString &puppetMode,
-                                       const QString &socketToken,
-                                       QObject *handlerObject,
-                                       const char *outputSlot,
-                                       const char *finishSlot,
-                                       const QStringList &customOptions) const
+QProcessUniquePointer PuppetCreator::puppetProcess(
+    const QString &puppetPath,
+    const QString &workingDirectory,
+    const QString &puppetMode,
+    const QString &socketToken,
+    std::function<void()> processOutputCallback,
+    std::function<void(int, QProcess::ExitStatus)> processFinishCallback,
+    const QStringList &customOptions) const
 {
-    auto puppetProcess = new QProcess;
+    QProcessUniquePointer puppetProcess{new QProcess};
     puppetProcess->setObjectName(puppetMode);
     puppetProcess->setProcessEnvironment(processEnvironment());
 
-    QObject::connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, puppetProcess, &QProcess::kill);
-    QObject::connect(puppetProcess, SIGNAL(finished(int,QProcess::ExitStatus)), handlerObject, finishSlot);
+    QObject::connect(QCoreApplication::instance(),
+                     &QCoreApplication::aboutToQuit,
+                     puppetProcess.get(),
+                     &QProcess::kill);
+    QObject::connect(puppetProcess.get(),
+                     static_cast<void (QProcess::*)(int, QProcess::ExitStatus)>(&QProcess::finished),
+                     processFinishCallback);
 
 #ifndef QMLDESIGNER_TEST
     QString forwardOutput = m_designerSettings.value(DesignerSettingsKey::
@@ -215,7 +223,7 @@ QProcess *PuppetCreator::puppetProcess(const QString &puppetPath,
 #endif
     if (forwardOutput == puppetMode || forwardOutput == "all") {
         puppetProcess->setProcessChannelMode(QProcess::MergedChannels);
-        QObject::connect(puppetProcess, SIGNAL(readyRead()), handlerObject, outputSlot);
+        QObject::connect(puppetProcess.get(), &QProcess::readyRead, processOutputCallback);
     }
     puppetProcess->setWorkingDirectory(workingDirectory);
 
@@ -268,7 +276,7 @@ static QString idealProcessCount()
 bool PuppetCreator::build(const QString &qmlPuppetProjectFilePath) const
 {
     PuppetBuildProgressDialog progressDialog;
-    progressDialog.setParent(Core::ICore::mainWindow());
+    progressDialog.setParent(Core::ICore::dialogParent());
 
     m_compileLog.clear();
 
@@ -450,8 +458,12 @@ QProcessEnvironment PuppetCreator::processEnvironment() const
     environment.set("QML_BAD_GUI_RENDER_LOOP", "true");
     environment.set("QML_PUPPET_MODE", "true");
     environment.set("QML_DISABLE_DISK_CACHE", "true");
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     if (!environment.hasKey("QT_SCREEN_SCALE_FACTORS") && !environment.hasKey("QT_SCALE_FACTOR")
             && QApplication::testAttribute(Qt::AA_EnableHighDpiScaling))
+#else
+    if (!environment.hasKey("QT_SCREEN_SCALE_FACTORS") && !environment.hasKey("QT_SCALE_FACTOR"))
+#endif
         environment.set("QT_AUTO_SCREEN_SCALE_FACTOR", "1");
 
 #ifndef QMLDESIGNER_TEST
@@ -483,13 +495,13 @@ QProcessEnvironment PuppetCreator::processEnvironment() const
     }
 
 #ifndef QMLDESIGNER_TEST
-    auto view = QmlDesignerPlugin::instance()->viewManager().nodeInstanceView();
-    view->emitCustomNotification("PuppetStatus", {}, {QVariant(m_qrcMapping)});
-
     // set env var if QtQuick3D import exists
     QmlDesigner::Import import = QmlDesigner::Import::createLibraryImport("QtQuick3D", "1.0");
     if (m_model->hasImport(import, true, true))
         environment.set("QMLDESIGNER_QUICK3D_MODE", "true");
+    import = QmlDesigner::Import::createLibraryImport("QtCharts", "2.0");
+    if (m_model->hasImport(import, true, true))
+        environment.set("QMLDESIGNER_FORCE_QAPPLICATION", "true");
 #endif
 
     QStringList importPaths = m_model->importPaths();
@@ -508,7 +520,14 @@ QProcessEnvironment PuppetCreator::processEnvironment() const
         importPaths.append(designerImports);
 
         customFileSelectors = m_target->additionalData("CustomFileSelectorsData").toStringList();
+
+        if (auto multiLanguageAspect = QmlProjectManager::QmlMultiLanguageAspect::current(m_target)) {
+            if (!multiLanguageAspect->databaseFilePath().isEmpty())
+                environment.set("QT_MULTILANGUAGE_DATABASE", multiLanguageAspect->databaseFilePath().toString());
+        }
     }
+
+    customFileSelectors.append("DesignMode");
 
     if (m_availablePuppetType == FallbackPuppet)
         importPaths.prepend(QLibraryInfo::location(QLibraryInfo::Qml2ImportsPath));
@@ -532,11 +551,7 @@ QString PuppetCreator::buildCommand() const
     Utils::Environment environment = Utils::Environment::systemEnvironment();
     m_target->kit()->addToEnvironment(environment);
 
-    ProjectExplorer::ToolChain *toolChain
-            = ProjectExplorer::ToolChainKitAspect::toolChain(m_target->kit(),
-                                                                  ProjectExplorer::Constants::CXX_LANGUAGE_ID);
-
-    if (toolChain)
+    if (ToolChain *toolChain = ToolChainKitAspect::cxxToolChain(m_target->kit()))
         return toolChain->makeCommand(environment).toString();
 
     return QString();

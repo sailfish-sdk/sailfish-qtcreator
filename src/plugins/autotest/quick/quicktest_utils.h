@@ -27,14 +27,15 @@
 
 #include <QHash>
 
-namespace Core { class Id; }
-
 namespace Autotest {
+
+class ITestFramework;
+
 namespace Internal {
 namespace QuickTestUtils {
 
 bool isQuickTestMacro(const QByteArray &macro);
-QHash<QString, QString> proFilesForQmlFiles(const Core::Id &id, const QStringList &files);
+QHash<QString, QString> proFilesForQmlFiles(ITestFramework *framework, const QStringList &files);
 
 } // namespace QuickTestUtils
 } // namespace Internal

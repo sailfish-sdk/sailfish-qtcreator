@@ -103,10 +103,11 @@ namespace ADS
 
         /**
          * Returns true if the given config flag is set
+         * Convenience function to ease config flag testing
          */
         static bool testConfigFlag(DockManager::eConfigFlag flag)
         {
-            return DockManager::configFlags().testFlag(flag);
+            return DockManager::testConfigFlag(flag);
         }
 
         /**
@@ -132,6 +133,7 @@ namespace ADS
 
     void DockAreaTitleBarPrivate::createButtons()
     {
+        const QSize iconSize(14, 14);
         QSizePolicy sizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
         // Tabs menu button
         m_tabsMenuButton = new TitleBarButton(testConfigFlag(DockManager::DockAreaHasTabsMenuButton));
@@ -149,6 +151,7 @@ namespace ADS
         m_tabsMenuButton->setMenu(tabsMenu);
         internal::setToolTip(m_tabsMenuButton, QObject::tr("List All Tabs"));
         m_tabsMenuButton->setSizePolicy(sizePolicy);
+        m_tabsMenuButton->setIconSize(iconSize);
         m_layout->addWidget(m_tabsMenuButton, 0);
         QObject::connect(m_tabsMenuButton->menu(),
                          &QMenu::triggered,
@@ -157,13 +160,14 @@ namespace ADS
 
         // Undock button
         m_undockButton = new TitleBarButton(testConfigFlag(DockManager::DockAreaHasUndockButton));
-        m_undockButton->setObjectName("undockButton");
+        m_undockButton->setObjectName("detachGroupButton");
         m_undockButton->setAutoRaise(true);
         internal::setToolTip(m_undockButton, QObject::tr("Detach Group"));
         internal::setButtonIcon(m_undockButton,
                                 QStyle::SP_TitleBarNormalButton,
                                 ADS::DockAreaUndockIcon);
         m_undockButton->setSizePolicy(sizePolicy);
+        m_undockButton->setIconSize(iconSize);
         m_layout->addWidget(m_undockButton, 0);
         QObject::connect(m_undockButton,
                          &QToolButton::clicked,
@@ -172,18 +176,18 @@ namespace ADS
 
         // Close button
         m_closeButton = new TitleBarButton(testConfigFlag(DockManager::DockAreaHasCloseButton));
-        m_closeButton->setObjectName("closeButton");
+        m_closeButton->setObjectName("dockAreaCloseButton");
         m_closeButton->setAutoRaise(true);
         internal::setButtonIcon(m_closeButton,
                                 QStyle::SP_TitleBarCloseButton,
                                 ADS::DockAreaCloseIcon);
-        if (testConfigFlag(DockManager::DockAreaCloseButtonClosesTab)) {
+        if (testConfigFlag(DockManager::DockAreaCloseButtonClosesTab))
             internal::setToolTip(m_closeButton, QObject::tr("Close Active Tab"));
-        } else {
+        else
             internal::setToolTip(m_closeButton, QObject::tr("Close Group"));
-        }
+
         m_closeButton->setSizePolicy(sizePolicy);
-        m_closeButton->setIconSize(QSize(16, 16));
+        m_closeButton->setIconSize(iconSize);
         m_layout->addWidget(m_closeButton, 0);
         QObject::connect(m_closeButton,
                          &QToolButton::clicked,
@@ -235,7 +239,7 @@ namespace ADS
     {
         QSize size = m_dockArea->size();
         m_dragState = dragState;
-        bool opaqueUndocking = DockManager::configFlags().testFlag(DockManager::OpaqueUndocking)
+        bool opaqueUndocking = DockManager::testConfigFlag(DockManager::OpaqueUndocking)
                                || (DraggingFloatingWidget != dragState);
         FloatingDockContainer *floatingDockContainer = nullptr;
         AbstractFloatingWidget *floatingWidget;
@@ -266,9 +270,9 @@ namespace ADS
     }
 
     TitleBarButton::TitleBarButton(bool visible, QWidget *parent)
-        : TitleBarButtonType(parent),
-          m_visible(visible),
-          m_hideWhenDisabled(DockAreaTitleBarPrivate::testConfigFlag(DockManager::DockAreaHideDisabledButtons))
+        : TitleBarButtonType(parent)
+        , m_visible(visible)
+        , m_hideWhenDisabled(DockAreaTitleBarPrivate::testConfigFlag(DockManager::DockAreaHideDisabledButtons))
     {}
 
     void TitleBarButton::setVisible(bool visible)
@@ -278,9 +282,8 @@ namespace ADS
 
         // 'visible' can stay 'true' unless: this button is configured to be invisible when it
         // is disabled and it is currently disabled:
-        if (visible && m_hideWhenDisabled) {
+        if (visible && m_hideWhenDisabled)
             visible = isEnabled();
-        }
 
         Super::setVisible(visible);
     }
@@ -290,7 +293,8 @@ namespace ADS
         if (QEvent::EnabledChange == event->type() && m_hideWhenDisabled) {
             // force setVisible() call
             // Calling setVisible() directly here doesn't work well when button is expected to be shown first time
-            QMetaObject::invokeMethod(this, "setVisible", Qt::QueuedConnection, Q_ARG(bool, isEnabled()));
+            const bool visible = isEnabled();
+            QMetaObject::invokeMethod(this, [this, visible] { setVisible(visible); }, Qt::QueuedConnection);
         }
 
         return Super::event(event);
@@ -349,17 +353,17 @@ namespace ADS
                     break;
                 }
             }
-            bool visible = (hasElidedTabTitle && (d->m_tabBar->count() > 1));
-            QMetaObject::invokeMethod(d->m_tabsMenuButton, "setVisible", Qt::QueuedConnection, Q_ARG(bool, visible));
+            const bool visible = (hasElidedTabTitle && (d->m_tabBar->count() > 1));
+            QMetaObject::invokeMethod(this, [this, visible] {
+                d->m_tabsMenuButton->setVisible(visible); }, Qt::QueuedConnection);
         }
         d->m_menuOutdated = true;
     }
 
     void DockAreaTitleBar::onTabsMenuAboutToShow()
     {
-        if (!d->m_menuOutdated) {
+        if (!d->m_menuOutdated)
             return;
-        }
 
         QMenu *menu = d->m_tabsMenuButton->menu();
         menu->clear();
@@ -379,18 +383,16 @@ namespace ADS
     void DockAreaTitleBar::onCloseButtonClicked()
     {
         qCInfo(adsLog) << Q_FUNC_INFO;
-        if (d->testConfigFlag(DockManager::DockAreaCloseButtonClosesTab)) {
+        if (d->testConfigFlag(DockManager::DockAreaCloseButtonClosesTab))
             d->m_tabBar->closeTab(d->m_tabBar->currentIndex());
-        } else {
+        else
             d->m_dockArea->closeArea();
-        }
     }
 
     void DockAreaTitleBar::onUndockButtonClicked()
     {
-        if (d->m_dockArea->features().testFlag(DockWidget::DockWidgetFloatable)) {
+        if (d->m_dockArea->features().testFlag(DockWidget::DockWidgetFloatable))
             d->makeAreaFloating(mapFromGlobal(QCursor::pos()), DraggingInactive);
-        }
     }
 
     void DockAreaTitleBar::onTabsMenuActionTriggered(QAction *action)
@@ -467,6 +469,9 @@ namespace ADS
             event->accept();
             d->m_dragStartMousePos = event->pos();
             d->m_dragState = DraggingMousePressed;
+            if (DockManager::testConfigFlag(DockManager::FocusHighlighting))
+                d->m_tabBar->currentTab()->setFocus(Qt::OtherFocusReason);
+
             return;
         }
         Super::mousePressEvent(event);
@@ -502,7 +507,7 @@ namespace ADS
             return;
         }
 
-        // If this is the last dock area in a dock container it does not make
+        // If this is the last dock area in a floating dock container it does not make
         // sense to move it to a new floating widget and leave this one empty
         if (d->m_dockArea->dockContainer()->isFloating()
             && d->m_dockArea->dockContainer()->visibleDockAreaCount() == 1) {
@@ -522,7 +527,7 @@ namespace ADS
 
         int dragDistance = (d->m_dragStartMousePos - event->pos()).manhattanLength();
         if (dragDistance >= DockManager::startDragDistance()) {
-            qCInfo(adsLog) << "TabsScrollArea::startFloating";
+            qCInfo(adsLog) << "DockAreaTitlBar::startFloating";
             d->startFloating(d->m_dragStartMousePos);
             auto overlay = d->m_dockArea->dockManager()->containerOverlay();
             overlay->setAllowedAreas(OuterDockAreas);

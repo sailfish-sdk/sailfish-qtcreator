@@ -69,7 +69,6 @@
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/helpmanager.h>
 #include <coreplugin/icore.h>
-#include <coreplugin/id.h>
 #include <coreplugin/modemanager.h>
 
 #include <ssh/sshconnection.h>
@@ -702,6 +701,7 @@ MemcheckToolPrivate::MemcheckToolPrivate()
     m_perspective.addToolBarAction(m_goBack);
     m_perspective.addToolBarAction(m_goNext);
     m_perspective.addToolBarWidget(filterButton);
+    m_perspective.registerNextPrevShortcuts(m_goNext, m_goBack);
 
     updateFromSettings();
     maybeActiveRunConfigurationChanged();
@@ -776,7 +776,7 @@ void MemcheckToolPrivate::heobAction()
         executable.remove(0, wdSlashed.size());
 
     // heob arguments
-    HeobDialog dialog(Core::ICore::mainWindow());
+    HeobDialog dialog(Core::ICore::dialogParent());
     if (!dialog.exec())
         return;
     const QString heobArguments = dialog.arguments();
@@ -786,7 +786,7 @@ void MemcheckToolPrivate::heobAction()
     const QString heobPath = dialog.path() + '/' + heob;
     if (!QFile::exists(heobPath)) {
         QMessageBox::critical(
-            Core::ICore::mainWindow(),
+            Core::ICore::dialogParent(),
             MemcheckTool::tr("Heob"),
             MemcheckTool::tr("The %1 executables must be in the appropriate location.")
                 .arg("<a href=\"https://github.com/ssbssa/heob/releases\">Heob</a>"));
@@ -799,7 +799,7 @@ void MemcheckToolPrivate::heobAction()
         const QString dwarfstackPath = dialog.path() + '/' + dwarfstack;
         if (!QFile::exists(dwarfstackPath)
             && CheckableMessageBox::doNotShowAgainInformation(
-                   Core::ICore::mainWindow(),
+                   Core::ICore::dialogParent(),
                    MemcheckTool::tr("Heob"),
                    MemcheckTool::tr("Heob used with MinGW projects needs the %1 DLLs for proper "
                                     "stacktrace resolution.")
@@ -824,6 +824,7 @@ void MemcheckToolPrivate::heobAction()
     if (!commandLineArguments.isEmpty())
         arguments += ' ' + commandLineArguments;
     QByteArray argumentsCopy(reinterpret_cast<const char *>(arguments.utf16()), arguments.size() * 2 + 2);
+    Q_UNUSED(argumentsCopy)
 
     // process environment
     QByteArray env;
@@ -1015,7 +1016,7 @@ void MemcheckToolPrivate::loadShowXmlLogFile(const QString &filePath, const QStr
 void MemcheckToolPrivate::loadExternalXmlLogFile()
 {
     const QString filePath = QFileDialog::getOpenFileName(
-                ICore::mainWindow(),
+                ICore::dialogParent(),
                 MemcheckTool::tr("Open Memcheck XML Log File"),
                 QString(),
                 MemcheckTool::tr("XML Files (*.xml);;All Files (*)"));
@@ -1198,7 +1199,7 @@ HeobDialog::HeobDialog(QWidget *parent) :
 
     auto profilesLayout = new QHBoxLayout;
     m_profilesCombo = new QComboBox;
-    for (auto profile : m_profiles)
+    for (const auto &profile : m_profiles)
         m_profilesCombo->addItem(settings->value(profile + "/" + heobProfileNameC).toString());
     if (hasSelProfile) {
         int selIdx = m_profiles.indexOf(selProfile);
@@ -1390,7 +1391,7 @@ bool HeobDialog::attach() const
 
 QString HeobDialog::path() const
 {
-    return m_pathChooser->path();
+    return m_pathChooser->filePath().toString();
 }
 
 void HeobDialog::keyPressEvent(QKeyEvent *e)
@@ -1475,7 +1476,7 @@ void HeobDialog::saveOptions()
     settings->setValue(heobLeakRecordingC, m_leakRecordingCombo->currentIndex());
     settings->setValue(heobAttachC, m_attachCheck->isChecked());
     settings->setValue(heobExtraArgsC, m_extraArgsEdit->text());
-    settings->setValue(heobPathC, m_pathChooser->path());
+    settings->setValue(heobPathC, m_pathChooser->filePath().toString());
     settings->endGroup();
 }
 

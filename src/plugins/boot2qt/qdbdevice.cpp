@@ -264,7 +264,7 @@ public:
         QdbDevice::Ptr device = QdbDevice::create();
 
         device->setDisplayName(settingsPage.deviceName());
-        device->setupId(ProjectExplorer::IDevice::ManuallyAdded, Core::Id());
+        device->setupId(ProjectExplorer::IDevice::ManuallyAdded, Utils::Id());
         device->setType(Constants::QdbLinuxOsType);
         device->setMachineType(ProjectExplorer::IDevice::Hardware);
 
@@ -291,7 +291,7 @@ QdbLinuxDeviceFactory::QdbLinuxDeviceFactory()
 
 IDevice::Ptr QdbLinuxDeviceFactory::create() const
 {
-    QdbDeviceWizard wizard(Core::ICore::mainWindow());
+    QdbDeviceWizard wizard(Core::ICore::dialogParent());
 
     if (wizard.exec() != QDialog::Accepted)
         return IDevice::Ptr();

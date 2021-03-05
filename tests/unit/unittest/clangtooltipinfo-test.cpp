@@ -115,6 +115,16 @@ TEST_F(ToolTipInfo, LocalVariableInt)
     ASSERT_THAT(actual, IsToolTip(::ToolTipInfo(Utf8StringLiteral("int"))));
 }
 
+TEST_F(ToolTipInfo, LocalVariableConstInt)
+{
+    ASSERT_THAT(tooltip(211, 19), IsToolTip(::ToolTipInfo(Utf8StringLiteral("const int"))));
+}
+
+TEST_F(ToolTipInfo, FileScopeVariableConstInt)
+{
+    ASSERT_THAT(tooltip(206, 11), IsToolTip(::ToolTipInfo(Utf8StringLiteral("const int"))));
+}
+
 TEST_F(ToolTipInfo, LocalVariablePointerToConstInt)
 {
     const ::ToolTipInfo actual = tooltip(4, 5);
@@ -383,6 +393,14 @@ TEST_F(ToolTipInfo, SizeForUnion)
     const ::ToolTipInfo actual = tooltip(98, 7);
 
     ASSERT_THAT(actual.sizeInBytes, Utf8StringLiteral("1"));
+}
+
+TEST_F(ToolTipInfo, constexprValue)
+{
+    ASSERT_THAT(tooltip(204, 12).value.toInt(), 4);
+    ASSERT_THAT(tooltip(204, 27).value.toInt(), CINDEX_VERSION_MINOR > 59 ? 3 : 4);
+    ASSERT_THAT(tooltip(204, 30).value.toInt(), 4);
+    ASSERT_THAT(tooltip(204, 32).value.toInt(), CINDEX_VERSION_MINOR > 59 ? 1 : 4);
 }
 
 TEST_F(ToolTipInfo, Namespace)

@@ -164,7 +164,7 @@ bool FancyTabBar::event(QEvent *event)
 }
 
 // Resets hover animation on mouse enter
-void FancyTabBar::enterEvent(QEvent *event)
+void FancyTabBar::enterEvent(EnterEvent *event)
 {
     Q_UNUSED(event)
     m_hoverRect = QRect();
@@ -184,13 +184,13 @@ void FancyTabBar::leaveEvent(QEvent *event)
 QSize FancyTabBar::sizeHint() const
 {
     const QSize sh = tabSizeHint();
-    return {sh.width(), sh.height() * m_tabs.count()};
+    return {sh.width(), sh.height() * int(m_tabs.count())};
 }
 
 QSize FancyTabBar::minimumSizeHint() const
 {
     const QSize sh = tabSizeHint(true);
-    return {sh.width(), sh.height() * m_tabs.count()};
+    return {sh.width(), sh.height() * int(m_tabs.count())};
 }
 
 QRect FancyTabBar::tabRect(int index) const
@@ -211,8 +211,9 @@ void FancyTabBar::mousePressEvent(QMouseEvent *event)
         if (rect.contains(event->pos())) {
             if (isTabEnabled(index)) {
                 if (m_tabs.at(index)->hasMenu
-                    && rect.right() - event->pos().x() <= kMenuButtonWidth) {
-                    // menu arrow clicked
+                    && ((!m_iconsOnly && rect.right() - event->pos().x() <= kMenuButtonWidth)
+                        || event->button() == Qt::RightButton)) {
+                    // menu arrow clicked or right-click
                     emit menuTriggered(index, event);
                 } else {
                     if (index != m_currentIndex) {
@@ -387,7 +388,7 @@ void FancyTabBar::paintTab(QPainter *painter, int tabIndex) const
         paintIconAndText(painter, rect, tab->icon, tab->text, enabled, selected);
 
     // menu arrow
-    if (tab->hasMenu) {
+    if (tab->hasMenu && !m_iconsOnly) {
         QStyleOption opt;
         opt.initFrom(this);
         opt.rect = rect.adjusted(rect.width() - kMenuButtonWidth, 0, -8, 0);

@@ -29,24 +29,18 @@
 #include "boosttestsettings.h"
 
 #include "../autotestplugin.h"
-#include "../testframeworkmanager.h"
+#include "../itestframework.h"
 #include "../testsettings.h"
+
+#include <utils/stringutils.h>
 
 namespace Autotest {
 namespace Internal {
 
-static QSharedPointer<BoostTestSettings> getBoostSettings()
-{
-    const Core::Id id = Core::Id(Constants::FRAMEWORK_PREFIX).withSuffix(
-                BoostTest::Constants::FRAMEWORK_NAME);
-    TestFrameworkManager *manager = TestFrameworkManager::instance();
-    return qSharedPointerCast<BoostTestSettings>(manager->settingsForTestFramework(id));
-}
-
 TestOutputReader *BoostTestConfiguration::outputReader(const QFutureInterface<TestResultPtr> &fi,
                                                        QProcess *app) const
 {
-    auto settings = getBoostSettings();
+    auto settings = dynamic_cast<BoostTestSettings *>(framework()->frameworkSettings());
     return new BoostTestOutputReader(fi, app, buildDirectory(), projectFile(),
                                      settings->logLevel, settings->reportLevel);
 }
@@ -84,7 +78,7 @@ static QStringList filterInterfering(const QStringList &provided, QStringList *o
     QStringList allowed;
     bool filterNextArg = false;
     bool ignoreRest = false;
-    for (auto arg : provided) {
+    for (const auto &arg : provided) {
         bool filterArg = filterNextArg;
         filterNextArg = false;
         if (ignoreRest) {
@@ -113,7 +107,7 @@ static QStringList filterInterfering(const QStringList &provided, QStringList *o
 
 QStringList BoostTestConfiguration::argumentsForTestRunner(QStringList *omitted) const
 {
-    auto boostSettings = getBoostSettings();
+    auto boostSettings = dynamic_cast<BoostTestSettings *>(framework()->frameworkSettings());
     QStringList arguments;
     arguments << "-l" << BoostTestSettings::logLevelToOption(boostSettings->logLevel);
     arguments << "-r" << BoostTestSettings::reportLevelToOption(boostSettings->reportLevel);
@@ -134,7 +128,7 @@ QStringList BoostTestConfiguration::argumentsForTestRunner(QStringList *omitted)
 
     if (AutotestPlugin::settings()->processArgs) {
         arguments << filterInterfering(runnable().commandLineArguments.split(
-                                           ' ', QString::SkipEmptyParts), omitted);
+                                           ' ', Qt::SkipEmptyParts), omitted);
     }
     return arguments;
 }

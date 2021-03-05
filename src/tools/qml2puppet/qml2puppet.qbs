@@ -1,4 +1,4 @@
-import qbs
+import qbs.Utilities
 import QtcFunctions
 
 QtcTool {
@@ -15,7 +15,18 @@ QtcTool {
             "widgets"
         ]
     }
-    cpp.defines: base.filter(function(d) { return d != "QT_CREATOR"; })
+    Depends { name: "Qt.quick3d-private"; required: false }
+    property bool useQuick3d: Utilities.versionCompare(Qt.core.version, "5.15") >= 0
+                              && Qt["quick3d-private"].present
+
+    property bool useQt5Compat: Utilities.versionCompare(Qt.core.version, "6.0") >= 0
+
+    cpp.defines: {
+        var defines = base.filter(function(d) { return d != "QT_CREATOR"; });
+        if (useQuick3d)
+            defines.push("QUICK3D_MODULE");
+        return defines;
+    }
     Properties {
         condition: qbs.targetOS.contains("unix") && !qbs.targetOS.contains("bsd")
         cpp.dynamicLibraries: base.concat("rt")
@@ -89,6 +100,10 @@ QtcTool {
             "commands/statepreviewimagechangedcommand.h",
             "commands/synchronizecommand.cpp",
             "commands/synchronizecommand.h",
+            "commands/changepreviewimagesizecommand.cpp",
+            "commands/changepreviewimagesizecommand.h",
+            "commands/changelanguagecommand.cpp",
+            "commands/changelanguagecommand.h",
             "commands/tokencommand.cpp",
             "commands/tokencommand.h",
             "commands/valueschangedcommand.cpp",
@@ -103,6 +118,10 @@ QtcTool {
             "commands/inputeventcommand.h",
             "commands/view3dactioncommand.cpp",
             "commands/view3dactioncommand.h",
+            "commands/requestmodelnodepreviewimagecommand.cpp",
+            "commands/requestmodelnodepreviewimagecommand.h",
+            "commands/captureddatacommand.h",
+            "commands/scenecreatedcommand.h",
             "container/addimportcontainer.cpp",
             "container/addimportcontainer.h",
             "container/idcontainer.cpp",
@@ -185,6 +204,8 @@ QtcTool {
             "instances/qmlstatenodeinstance.h",
             "instances/quick3dnodeinstance.cpp",
             "instances/quick3dnodeinstance.h",
+            "instances/quick3dtexturenodeinstance.cpp",
+            "instances/quick3dtexturenodeinstance.h",
             "instances/qmltransitionnodeinstance.cpp",
             "instances/qmltransitionnodeinstance.h",
             "instances/qt3dpresentationnodeinstance.cpp",
@@ -203,26 +224,56 @@ QtcTool {
             "instances/qt5testnodeinstanceserver.h",
             "instances/servernodeinstance.cpp",
             "instances/servernodeinstance.h",
+            "instances/qt5capturepreviewnodeinstanceserver.cpp",
+            "instances/qt5capturepreviewnodeinstanceserver.h",
+            "instances/qt5captureimagenodeinstanceserver.cpp",
+            "instances/qt5captureimagenodeinstanceserver.h",
+            "instances/nodeinstanceserverdispatcher.cpp",
+            "instances/nodeinstanceserverdispatcher.h",
+            "instances/capturenodeinstanceserverdispatcher.cpp",
+            "instances/capturenodeinstanceserverdispatcher.h",
             "editor3d/generalhelper.cpp",
-            "editor3d/generalhelper.h",
             "editor3d/mousearea3d.cpp",
-            "editor3d/mousearea3d.h",
             "editor3d/camerageometry.cpp",
-            "editor3d/camerageometry.h",
             "editor3d/lightgeometry.cpp",
-            "editor3d/lightgeometry.h",
             "editor3d/gridgeometry.cpp",
-            "editor3d/gridgeometry.h",
             "editor3d/selectionboxgeometry.cpp",
-            "editor3d/selectionboxgeometry.h",
             "editor3d/linegeometry.cpp",
-            "editor3d/linegeometry.h",
             "editor3d/icongizmoimageprovider.cpp",
             "editor3d/icongizmoimageprovider.h",
             "iconrenderer/iconrenderer.cpp",
             "iconrenderer/iconrenderer.h",
             "qml2puppetmain.cpp",
         ]
+
+        Group {
+            name: "3d-only puppet2 headers"
+            files: [
+                "editor3d/camerageometry.h",
+                "editor3d/generalhelper.h",
+                "editor3d/gridgeometry.h",
+                "editor3d/lightgeometry.h",
+                "editor3d/linegeometry.h",
+                "editor3d/selectionboxgeometry.h",
+                "editor3d/mousearea3d.h",
+            ]
+            fileTags: product.useQuick3d ? [] : ["unmocable"]
+            overrideTags: false
+        }
+
+        Group {
+            name: "puppet2 Qt 5 compatibility sources"
+            condition: product.useQt5Compat
+            files: ["editor3d/qt5compat/qquick3darealight.cpp"]
+        }
+
+        Group {
+            name: "puppet2 Qt 5 compatibility headers"
+            condition: product.useQt5Compat
+            files: ["editor3d/qt5compat/qquick3darealight_p.h"]
+            fileTags: product.useQuick3d ? [] : ["unmocable"]
+            overrideTags: false
+        }
     }
 
     Group {

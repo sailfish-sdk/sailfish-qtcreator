@@ -25,7 +25,8 @@
 
 #pragma once
 
-#include <QtGlobal>
+#include <qmldesignercorelib_global.h>
+
 #include <QHash>
 #include <QVariant>
 #include <QByteArray>
@@ -48,7 +49,7 @@ const char WARNING_FOR_QML_FILES_INSTEAD_OF_UIQML_FILES[] = "WarnAboutQmlFilesIn
 const char WARNING_FOR_DESIGNER_FEATURES_IN_EDITOR[] = "WarnAboutQtQuickDesignerFeaturesInCodeEditor";
 const char SHOW_DEBUGVIEW[] = "ShowQtQuickDesignerDebugView";
 const char ENABLE_DEBUGVIEW[] = "EnableQtQuickDesignerDebugView";
-const char ALWAYS_SAFE_IN_CRUMBLEBAR[] = "AlwaysSafeInCrumbleBar";
+const char ALWAYS_SAVE_IN_CRUMBLEBAR[] = "AlwaysSaveInCrumbleBar";
 const char USE_DEFAULT_PUPPET[] = "UseDefaultPuppet";
 const char PUPPET_TOPLEVEL_BUILD_DIRECTORY[] = "PuppetToplevelBuildDirectory";
 const char PUPPET_DEFAULT_DIRECTORY[] = "PuppetDefaultDirectory";
@@ -61,6 +62,7 @@ const char DEBUG_PUPPET[] = "DebugPuppet";
 const char FORWARD_PUPPET_OUTPUT[] = "ForwardPuppetOutput";
 const char STATESEDITOR_EXPANDED[] = "StatesEditorExpanded";
 const char NAVIGATOR_SHOW_ONLY_VISIBLE_ITEMS[] = "NavigatorShowOnlyVisibleItems";
+const char NAVIGATOR_REVERSE_ITEM_ORDER[] = "NavigatorReverseItemOrder";
 const char REFORMAT_UI_QML_FILES[] = "ReformatUiQmlFiles";        /* These settings are not exposed in ui. */
 const char IGNORE_DEVICE_PIXEL_RATIO[] = "IgnoreDevicePixelRaio"; /* The settings can be used to turn off the feature, if there are serious issues */
 const char STANDALONE_MODE[] = "StandAloneMode";
@@ -70,7 +72,7 @@ const char ALWAYS_DESIGN_MODE[] = "AlwaysDesignMode";
 const char DISABLE_ITEM_LIBRARY_UPDATE_TIMER[] = "DisableItemLibraryUpdateTimer";
 }
 
-class DesignerSettings : public QHash<QByteArray, QVariant>
+class QMLDESIGNERCORE_EXPORT DesignerSettings : public QHash<QByteArray, QVariant>
 {
 public:
     DesignerSettings();

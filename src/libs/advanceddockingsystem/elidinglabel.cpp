@@ -1,4 +1,4 @@
-/****************************************************************************
+﻿/****************************************************************************
 **
 ** Copyright (C) 2020 Uwe Kindler
 ** Contact: https://www.qt.io/licensing/
@@ -67,7 +67,7 @@ namespace ADS {
 
         QFontMetrics fm = q->fontMetrics();
         QString str = fm.elidedText(m_text, m_elideMode, width - q->margin() * 2 - q->indent());
-        if (str == QChar(0x2026))
+        if (str == u'\u2026')
             str = m_text.at(0);
 
         bool wasElided = m_isElided;
@@ -115,9 +115,8 @@ namespace ADS {
     void ElidingLabel::mouseReleaseEvent(QMouseEvent *event)
     {
         Super::mouseReleaseEvent(event);
-        if (event->button() != Qt::LeftButton) {
+        if (event->button() != Qt::LeftButton)
             return;
-        }
 
         emit clicked();
     }
@@ -131,17 +130,26 @@ namespace ADS {
 
     void ElidingLabel::resizeEvent(QResizeEvent *event)
     {
-        if (!d->isModeElideNone()) {
+        if (!d->isModeElideNone())
             d->elideText(event->size().width());
-        }
+
         Super::resizeEvent(event);
+    }
+
+    bool ElidingLabel::hasPixmap() const
+    {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        return !pixmap().isNull();
+#else
+        return pixmap() != nullptr;
+#endif
     }
 
     QSize ElidingLabel::minimumSizeHint() const
     {
-        if (pixmap() != nullptr || d->isModeElideNone()) {
+        if (hasPixmap() || d->isModeElideNone())
             return QLabel::minimumSizeHint();
-        }
+
         const QFontMetrics &fm = fontMetrics();
 #if (QT_VERSION >= QT_VERSION_CHECK(5, 11, 0))
         QSize size(fm.horizontalAdvance(d->m_text.left(2) + "…"), fm.height());
@@ -153,9 +161,9 @@ namespace ADS {
 
     QSize ElidingLabel::sizeHint() const
     {
-        if (pixmap() != nullptr || d->isModeElideNone()) {
+        if (hasPixmap() || d->isModeElideNone())
             return QLabel::sizeHint();
-        }
+
         const QFontMetrics &fm = fontMetrics();
 #if (QT_VERSION >= QT_VERSION_CHECK(5, 11, 0))
         QSize size(fm.horizontalAdvance(d->m_text), QLabel::sizeHint().height());
@@ -167,10 +175,10 @@ namespace ADS {
 
     void ElidingLabel::setText(const QString &text)
     {
+        d->m_text = text;
         if (d->isModeElideNone()) {
             Super::setText(text);
         } else {
-            d->m_text = text;
             internal::setToolTip(this, text);
             d->elideText(this->size().width());
         }

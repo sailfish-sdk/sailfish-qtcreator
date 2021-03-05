@@ -44,6 +44,7 @@
 #include <QMenu>
 
 using namespace Core;
+using namespace Utils;
 
 namespace GlslEditor {
 namespace Internal {
@@ -51,6 +52,9 @@ namespace Internal {
 class GlslEditorPluginPrivate
 {
 public:
+    GlslEditorPlugin::InitFile m_glsl_330_frag{"glsl_330.frag"};
+    GlslEditorPlugin::InitFile m_glsl_330_vert{"glsl_330.vert"};
+    GlslEditorPlugin::InitFile m_glsl_330_common{"glsl_330_common.glsl"};
     GlslEditorPlugin::InitFile m_glsl_120_frag{"glsl_120.frag"};
     GlslEditorPlugin::InitFile m_glsl_120_vert{"glsl_120.vert"};
     GlslEditorPlugin::InitFile m_glsl_120_common{"glsl_120_common.glsl"};
@@ -143,6 +147,8 @@ void GlslEditorPlugin::extensionsInitialized()
 
 const GlslEditorPlugin::InitFile *GlslEditorPlugin::fragmentShaderInit(int variant)
 {
+    if (variant & GLSL::Lexer::Variant_GLSL_400)
+        return &dd->m_glsl_330_frag;
     return (variant & GLSL::Lexer::Variant_GLSL_120)
             ? &dd->m_glsl_120_frag
             : &dd->m_glsl_es_100_frag;
@@ -150,6 +156,8 @@ const GlslEditorPlugin::InitFile *GlslEditorPlugin::fragmentShaderInit(int varia
 
 const GlslEditorPlugin::InitFile *GlslEditorPlugin::vertexShaderInit(int variant)
 {
+    if (variant & GLSL::Lexer::Variant_GLSL_400)
+        return &dd->m_glsl_330_vert;
     return (variant & GLSL::Lexer::Variant_GLSL_120)
             ? &dd->m_glsl_120_vert
             : &dd->m_glsl_es_100_vert;
@@ -157,6 +165,8 @@ const GlslEditorPlugin::InitFile *GlslEditorPlugin::vertexShaderInit(int variant
 
 const GlslEditorPlugin::InitFile *GlslEditorPlugin::shaderInit(int variant)
 {
+    if (variant & GLSL::Lexer::Variant_GLSL_400)
+        return &dd->m_glsl_330_common;
     return (variant & GLSL::Lexer::Variant_GLSL_120)
             ? &dd->m_glsl_120_common
             : &dd->m_glsl_es_100_common;

@@ -24,17 +24,16 @@
 ****************************************************************************/
 
 #include "cmakeprojectmanager.h"
-#include "cmakebuildconfiguration.h"
+
+#include "cmakebuildsystem.h"
 #include "cmakekitinformation.h"
-#include "cmakeprojectconstants.h"
 #include "cmakeproject.h"
-#include "cmakesettingspage.h"
-#include "cmaketoolmanager.h"
+#include "cmakeprojectconstants.h"
 #include "cmakeprojectnodes.h"
+#include "fileapiparser.h"
 
 #include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/actionmanager/actionmanager.h>
-#include <coreplugin/actionmanager/command.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/editormanager/ieditor.h>
 #include <coreplugin/icore.h>
@@ -49,17 +48,19 @@
 #include <utils/parameteraction.h>
 
 #include <QAction>
-#include <QDateTime>
-#include <QIcon>
+#include <QFileDialog>
+#include <QMessageBox>
 
 using namespace ProjectExplorer;
 using namespace CMakeProjectManager::Internal;
 
-CMakeManager::CMakeManager() :
-    m_runCMakeAction(new QAction(QIcon(), tr("Run CMake"), this)),
-    m_clearCMakeCacheAction(new QAction(QIcon(), tr("Clear CMake Configuration"), this)),
-    m_runCMakeActionContextMenu(new QAction(QIcon(), tr("Run CMake"), this)),
-    m_rescanProjectAction(new QAction(QIcon(), tr("Rescan Project"), this))
+CMakeManager::CMakeManager()
+    : m_runCMakeAction(new QAction(QIcon(), tr("Run CMake"), this))
+    , m_clearCMakeCacheAction(new QAction(QIcon(), tr("Clear CMake Configuration"), this))
+    , m_runCMakeActionContextMenu(new QAction(QIcon(), tr("Run CMake"), this))
+    , m_rescanProjectAction(new QAction(QIcon(), tr("Rescan Project"), this))
+    , m_parseAndValidateCMakeReplyFileAction(
+          new QAction(QIcon(), tr("Parse and verify a CMake reply file."), this))
 {
     Core::ActionContainer *mbuild =
             Core::ActionManager::actionContainer(ProjectExplorer::Constants::M_BUILDPROJECT);
@@ -70,11 +71,12 @@ CMakeManager::CMakeManager() :
     Core::ActionContainer *mfile =
             Core::ActionManager::actionContainer(ProjectExplorer::Constants::M_FILECONTEXT);
 
-    const Core::Context projectContext(CMakeProjectManager::Constants::CMAKEPROJECT_ID);
+    const Core::Context projectContext(CMakeProjectManager::Constants::CMAKE_PROJECT_ID);
     const Core::Context globalContext(Core::Constants::C_GLOBAL);
 
     Core::Command *command = Core::ActionManager::registerAction(m_runCMakeAction,
-                                                                 Constants::RUNCMAKE, globalContext);
+                                                                 Constants::RUN_CMAKE,
+                                                                 globalContext);
     command->setAttribute(Core::Command::CA_Hide);
     mbuild->addAction(command, ProjectExplorer::Constants::G_BUILD_DEPLOY);
     connect(m_runCMakeAction, &QAction::triggered, [this]() {
@@ -82,7 +84,8 @@ CMakeManager::CMakeManager() :
     });
 
     command = Core::ActionManager::registerAction(m_clearCMakeCacheAction,
-                                                  Constants::CLEARCMAKECACHE, globalContext);
+                                                  Constants::CLEAR_CMAKE_CACHE,
+                                                  globalContext);
     command->setAttribute(Core::Command::CA_Hide);
     mbuild->addAction(command, ProjectExplorer::Constants::G_BUILD_DEPLOY);
     connect(m_clearCMakeCacheAction, &QAction::triggered, [this]() {
@@ -90,7 +93,8 @@ CMakeManager::CMakeManager() :
     });
 
     command = Core::ActionManager::registerAction(m_runCMakeActionContextMenu,
-                                                  Constants::RUNCMAKECONTEXTMENU, projectContext);
+                                                  Constants::RUN_CMAKE_CONTEXT_MENU,
+                                                  projectContext);
     command->setAttribute(Core::Command::CA_Hide);
     mproject->addAction(command, ProjectExplorer::Constants::G_PROJECT_BUILD);
     msubproject->addAction(command, ProjectExplorer::Constants::G_PROJECT_BUILD);
@@ -100,29 +104,40 @@ CMakeManager::CMakeManager() :
 
     m_buildFileContextMenu = new QAction(tr("Build"), this);
     command = Core::ActionManager::registerAction(m_buildFileContextMenu,
-                                                  Constants::BUILDFILECONTEXTMENU, projectContext);
+                                                  Constants::BUILD_FILE_CONTEXT_MENU,
+                                                  projectContext);
     command->setAttribute(Core::Command::CA_Hide);
     mfile->addAction(command, ProjectExplorer::Constants::G_FILE_OTHER);
     connect(m_buildFileContextMenu, &QAction::triggered,
             this, &CMakeManager::buildFileContextMenu);
 
     command = Core::ActionManager::registerAction(m_rescanProjectAction,
-                                                  Constants::RESCANPROJECT, globalContext);
+                                                  Constants::RESCAN_PROJECT,
+                                                  globalContext);
     command->setAttribute(Core::Command::CA_Hide);
     mbuild->addAction(command, ProjectExplorer::Constants::G_BUILD_DEPLOY);
     connect(m_rescanProjectAction, &QAction::triggered, [this]() {
         rescanProject(ProjectTree::currentBuildSystem());
     });
 
-    m_buildFileAction = new Utils::ParameterAction(tr("Build File"), tr("Build File \"%1\""),
-                                                   Utils::ParameterAction::AlwaysEnabled, this);
-    command = Core::ActionManager::registerAction(m_buildFileAction, Constants::BUILDFILE);
+    m_buildFileAction = new Utils::ParameterAction(tr("Build File"),
+                                                   tr("Build File \"%1\""),
+                                                   Utils::ParameterAction::AlwaysEnabled,
+                                                   this);
+    command = Core::ActionManager::registerAction(m_buildFileAction, Constants::BUILD_FILE);
     command->setAttribute(Core::Command::CA_Hide);
     command->setAttribute(Core::Command::CA_UpdateText);
     command->setDescription(m_buildFileAction->text());
     command->setDefaultKeySequence(QKeySequence(tr("Ctrl+Alt+B")));
     mbuild->addAction(command, ProjectExplorer::Constants::G_BUILD_BUILD);
     connect(m_buildFileAction, &QAction::triggered, this, [this] { buildFile(); });
+
+    command = Core::ActionManager::registerAction(m_parseAndValidateCMakeReplyFileAction,
+                                                  "CMakeProject.Debug.ParseAndVerifyReplyFile");
+    connect(m_parseAndValidateCMakeReplyFileAction,
+            &QAction::triggered,
+            this,
+            &CMakeManager::parseAndValidateCMakeReplyFile);
 
     connect(SessionManager::instance(), &SessionManager::startupProjectChanged,
             this, &CMakeManager::updateCmakeActions);
@@ -212,6 +227,29 @@ void CMakeManager::enableBuildFileMenus(Node *node)
     }
 }
 
+void CMakeManager::parseAndValidateCMakeReplyFile()
+{
+    QString replyFile = QFileDialog::getOpenFileName(Core::ICore::mainWindow(),
+                                                     tr("Select a CMake Reply File"),
+                                                     QString(),
+                                                     QString("index*.json"));
+    if (replyFile.isEmpty())
+        return;
+
+    QString errorMessage;
+    auto result = FileApiParser::parseData(QFileInfo(replyFile), errorMessage);
+
+    const QString message
+        = errorMessage.isEmpty()
+              ? tr("The reply file \"%1\" and referenced data parsed OK and passed validation.")
+                    .arg(QDir::toNativeSeparators(replyFile))
+              : tr("The reply file \"%1\" failed to parse or validate with error "
+                   "message:<br><b>\"%2\"</b>")
+                    .arg(QDir::toNativeSeparators(replyFile))
+                    .arg(errorMessage);
+    QMessageBox::information(Core::ICore::mainWindow(), tr("Parsing Result"), message);
+}
+
 void CMakeManager::buildFile(Node *node)
 {
     if (!node) {
@@ -241,9 +279,7 @@ void CMakeManager::buildFile(Node *node)
     if (generator == "Ninja") {
         const Utils::FilePath relativeBuildDir = targetNode->buildDirectory().relativeChildPath(
                     bc->buildDirectory());
-        targetBase = relativeBuildDir
-                .pathAppended("CMakeFiles")
-                .pathAppended(targetNode->displayName() + ".dir");
+        targetBase = relativeBuildDir / "CMakeFiles" / (targetNode->displayName() + ".dir");
     } else if (!generator.contains("Makefiles")) {
         Core::MessageManager::write(tr("Build File is not supported for generator \"%1\"")
                                     .arg(generator));

@@ -41,6 +41,7 @@
 #include "warningitem.h"
 
 #include <utils/qtcassert.h>
+#include <utils/stringutils.h>
 
 #include <QAction>
 #include <QGuiApplication>
@@ -286,7 +287,7 @@ void GraphicsScene::paste(const QPointF &targetPos)
     QString strMinPos = QLatin1String(mimeData->data("StateChartEditor/CopiedMinPos"));
     QPointF minPos(0, 0);
     if (!strMinPos.isEmpty()) {
-        QStringList coords = strMinPos.split(":", QString::SkipEmptyParts);
+        QStringList coords = strMinPos.split(":", Qt::SkipEmptyParts);
         if (coords.count() == 2)
             minPos = QPointF(coords[0].toDouble(), coords[1].toDouble());
     }
@@ -679,7 +680,7 @@ void GraphicsScene::keyPressEvent(QKeyEvent *event)
 {
     QGraphicsItem *focusItem = this->focusItem();
     if (!focusItem || focusItem->type() != TextType) {
-        if (event->key() == Qt::Key_Delete)
+        if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace)
             removeSelectedItems();
     }
     QGraphicsScene::keyPressEvent(event);
@@ -831,7 +832,8 @@ void GraphicsScene::addWarningItem(WarningItem *item)
     if (!m_allWarnings.contains(item)) {
         m_allWarnings << item;
         if (!m_autoLayoutRunning && !m_initializing)
-            QMetaObject::invokeMethod(this, "warningVisibilityChanged", Qt::QueuedConnection, Q_ARG(int, 0));
+            QMetaObject::invokeMethod(this, [this] { warningVisibilityChanged(0); },
+                                      Qt::QueuedConnection);
     }
 }
 
@@ -840,7 +842,8 @@ void GraphicsScene::removeWarningItem(WarningItem *item)
     m_allWarnings.removeAll(item);
 
     if (!m_autoLayoutRunning && !m_initializing)
-        QMetaObject::invokeMethod(this, "warningVisibilityChanged", Qt::QueuedConnection, Q_ARG(int, 0));
+        QMetaObject::invokeMethod(this, [this] { warningVisibilityChanged(0); },
+                                  Qt::QueuedConnection);
 }
 
 void GraphicsScene::warningVisibilityChanged(int type, WarningItem *item)

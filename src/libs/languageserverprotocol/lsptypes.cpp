@@ -33,6 +33,7 @@
 #include <QHash>
 #include <QJsonArray>
 #include <QMap>
+#include <QRegularExpression>
 #include <QTextBlock>
 #include <QTextDocument>
 #include <QVector>
@@ -101,7 +102,7 @@ void WorkspaceEdit::setChanges(const Changes &changes)
     insert(changesKey, changesObject);
 }
 
-WorkSpaceFolder::WorkSpaceFolder(const QString &uri, const QString &name)
+WorkSpaceFolder::WorkSpaceFolder(const DocumentUri &uri, const QString &name)
 {
     setUri(uri);
     setName(name);
@@ -161,7 +162,7 @@ bool SymbolInformation::isValid(ErrorHierarchy *error) const
 
 bool TextDocumentEdit::isValid(ErrorHierarchy *error) const
 {
-    return check<VersionedTextDocumentIdentifier>(error, idKey)
+    return check<VersionedTextDocumentIdentifier>(error, textDocumentKey)
             && checkArray<TextEdit>(error, editsKey);
 }
 
@@ -370,10 +371,12 @@ bool DocumentFilter::applies(const Utils::FilePath &fileName, const Utils::MimeT
             return true;
     }
     if (Utils::optional<QString> _pattern = pattern()) {
-        QRegExp regexp(_pattern.value(),
-                       Utils::HostOsInfo::fileNameCaseSensitivity(),
-                       QRegExp::Wildcard);
-        if (regexp.exactMatch(fileName.toString()))
+        QRegularExpression::PatternOption option = QRegularExpression::NoPatternOption;
+        if (Utils::HostOsInfo::fileNameCaseSensitivity() == Qt::CaseInsensitive)
+            option = QRegularExpression::CaseInsensitiveOption;
+        QRegularExpression regexp(QRegularExpression::wildcardToRegularExpression(_pattern.value()),
+                                  option);
+        if (regexp.match(fileName.toString()).hasMatch())
             return true;
     }
     if (Utils::optional<QString> _lang = language()) {
@@ -399,12 +402,20 @@ Utils::Link Location::toLink() const
 {
     if (!isValid(nullptr))
         return Utils::Link();
-    auto file = uri().toString(QUrl::FullyDecoded | QUrl::PreferLocalFile);
+
+    // Ensure %xx like %20 are really decoded using fromPercentEncoding
+    // Else, a path with spaces would keep its %20 which would cause failure
+    // to open the file by the text editor. This is the cases with compilers in
+    // C:\Programs Files on Windows.
+    auto file = uri().toString(QUrl::PrettyDecoded | QUrl::PreferLocalFile);
+    // fromPercentEncoding convert %xx encoding to raw values and then interpret
+    // the result as utf-8, so toUtf8() must be used here.
+    file = QUrl::fromPercentEncoding(file.toUtf8());
     return Utils::Link(file, range().start().line() + 1, range().start().character());
 }
 
 DocumentUri::DocumentUri(const QString &other)
-    : QUrl(QUrl::fromPercentEncoding(other.toLocal8Bit()))
+    : QUrl(QUrl::fromPercentEncoding(other.toUtf8()))
 { }
 
 DocumentUri::DocumentUri(const Utils::FilePath &other)

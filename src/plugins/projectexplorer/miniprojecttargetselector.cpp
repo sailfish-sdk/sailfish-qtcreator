@@ -70,6 +70,8 @@ using namespace Utils;
 namespace ProjectExplorer {
 namespace Internal {
 
+const int RunColumnWidth = 30;
+
 static QIcon createCenteredIcon(const QIcon &icon, const QIcon &overlay)
 {
     QPixmap targetPixmap;
@@ -94,76 +96,43 @@ static QIcon createCenteredIcon(const QIcon &icon, const QIcon &overlay)
     return QIcon(targetPixmap);
 }
 
-class SelectorView : public TreeView
-{
-    Q_OBJECT
-
-public:
-    SelectorView(QWidget *parent);
-
-    void setMaxCount(int maxCount);
-    int maxCount();
-
-    int optimalWidth() const;
-    void setOptimalWidth(int width);
-
-    int padding();
-
-private:
-    void keyPressEvent(QKeyEvent *event) override;
-    void keyReleaseEvent(QKeyEvent *event) override;
-
-    int m_maxCount = 0;
-    int m_optimalWidth = 0;
-};
-
-// The project-specific classes look annoyingly similar to the generic ones.
-// Can we merge them?
-class SelectorProjectItem : public TreeItem
-{
-public:
-    SelectorProjectItem() = default;
-    SelectorProjectItem(Project *project) : m_project(project) {}
-    Project *project() const { return m_project; }
-    QString displayName() const
-    {
-        const auto hasSameProjectName = [this](TreeItem *ti) {
-            return ti != this && static_cast<SelectorProjectItem *>(ti)->project()->displayName()
-                                   == project()->displayName();
-        };
-        QString displayName = m_project->displayName();
-        if (parent()->findAnyChild(hasSameProjectName)) {
-            displayName.append(" (").append(project()->projectFilePath().toUserOutput())
-                    .append(')');
-        }
-        return displayName;
-    }
-
-private:
-    QVariant data(int column, int role) const override
-    {
-        return column == 0 && role == Qt::DisplayRole ? displayName() : QString();
-    }
-
-    Project *m_project = nullptr;
-};
-
 class GenericItem : public TreeItem
 {
 public:
     GenericItem() = default;
     GenericItem(QObject *object) : m_object(object) {}
     QObject *object() const { return m_object; }
-    QString displayName() const
+    QString rawDisplayName() const
     {
+        if (const auto p = qobject_cast<Project *>(object()))
+            return p->displayName();
         if (const auto t = qobject_cast<Target *>(object()))
             return t->displayName();
         return static_cast<ProjectConfiguration *>(object())->displayName();
+
+    }
+    QString displayName() const
+    {
+        if (const auto p = qobject_cast<Project *>(object())) {
+            const auto hasSameProjectName = [this](TreeItem *ti) {
+                return ti != this
+                        && static_cast<GenericItem *>(ti)->rawDisplayName() == rawDisplayName();
+            };
+            QString displayName = p->displayName();
+            if (parent()->findAnyChild(hasSameProjectName)) {
+                displayName.append(" (").append(p->projectFilePath().toUserOutput())
+                        .append(')');
+            }
+            return displayName;
+        }
+        return rawDisplayName();
     }
 
 private:
-    QString toolTip() const
+    QVariant toolTip() const
     {
+        if (qobject_cast<Project *>(object()))
+            return {};
         if (const auto t = qobject_cast<Target *>(object()))
             return t->toolTip();
         return static_cast<ProjectConfiguration *>(object())->toolTip();
@@ -180,7 +149,8 @@ private:
             return displayName();
         case Qt::ToolTipRole:
             return toolTip();
-        default:break;
+        default:
+            break;
         }
         return {};
     }
@@ -188,130 +158,14 @@ private:
     QObject *m_object = nullptr;
 };
 
-static QString rawDisplayName(const SelectorProjectItem *item)
+static bool compareItems(const TreeItem *ti1, const TreeItem *ti2)
 {
-    return item->project()->displayName();
-}
-static QString rawDisplayName(const GenericItem *item) { return item->displayName(); }
-
-template<typename T> bool compareItems(const TreeItem *ti1, const TreeItem *ti2)
-{
-    const int result = caseFriendlyCompare(rawDisplayName(static_cast<const T*>(ti1)),
-                                           rawDisplayName(static_cast<const T*>(ti2)));
+    const int result = caseFriendlyCompare(static_cast<const GenericItem *>(ti1)->rawDisplayName(),
+                                           static_cast<const GenericItem *>(ti2)->rawDisplayName());
     if (result != 0)
         return result < 0;
     return ti1 < ti2;
 }
-
-class ProjectsModel : public TreeModel<SelectorProjectItem, SelectorProjectItem>
-{
-    Q_OBJECT
-public:
-    ProjectsModel(QObject *parent) : TreeModel(parent)
-    {
-        connect(SessionManager::instance(), &SessionManager::projectAdded,
-                this, [this](Project *project) {
-            emit projectAdded(addItemForProject(project));
-        });
-        connect(SessionManager::instance(), &SessionManager::aboutToRemoveProject,
-                this, [this](const Project *project) {
-            SelectorProjectItem * const item = itemForProject(project);
-            if (!item)
-                return;
-            destroyItem(item);
-            emit optimalWidthChanged();
-        });
-        buildTree();
-    }
-
-    SelectorProjectItem *itemForProject(const Project *project) const
-    {
-        return findItemAtLevel<1>([project](const SelectorProjectItem *item) {
-            return item->project() == project;
-        });
-    }
-
-signals:
-    void projectAdded(const SelectorProjectItem *projectItem);
-    void requestRestoreCurrentIndex();
-    void optimalWidthChanged();
-
-private:
-    const SelectorProjectItem *addItemForProject(Project *project)
-    {
-        const auto projectItem = new SelectorProjectItem(project);
-        rootItem()->insertOrderedChild(projectItem, &compareItems<SelectorProjectItem>);
-        connect(project, &Project::displayNameChanged, this, [this] {
-            rootItem()->sortChildren(&compareItems<SelectorProjectItem>);
-            emit optimalWidthChanged();
-            emit requestRestoreCurrentIndex();
-        });
-        return projectItem;
-    }
-
-    void buildTree()
-    {
-        for (Project * const project : SessionManager::projects())
-            addItemForProject(project);
-    }
-};
-
-class ProjectListView : public SelectorView
-{
-    Q_OBJECT
-
-public:
-    explicit ProjectListView(QWidget *parent = nullptr) : SelectorView(parent)
-    {
-        ProjectsModel * const model = new ProjectsModel(this);
-        connect(model, &ProjectsModel::projectAdded, this,
-                [this](const SelectorProjectItem *projectItem) {
-            QFontMetrics fn(font());
-            const int width = fn.horizontalAdvance(projectItem->displayName()) + padding();
-            if (width > optimalWidth())
-                setOptimalWidth(width);
-            restoreCurrentIndex();
-        });
-        connect(model, &ProjectsModel::optimalWidthChanged,
-                this, &ProjectListView::resetOptimalWidth);
-        connect(model, &ProjectsModel::requestRestoreCurrentIndex,
-                this, &ProjectListView::restoreCurrentIndex);
-        connect(SessionManager::instance(), &SessionManager::startupProjectChanged,
-                this, [this, model](const Project *project) {
-            const SelectorProjectItem * const item = model->itemForProject(project);
-            if (item)
-                setCurrentIndex(item->index());
-        });
-        setModel(model);
-        connect(selectionModel(), &QItemSelectionModel::currentChanged,
-                this, [model](const QModelIndex &index) {
-            const SelectorProjectItem * const item = model->itemForIndex(index);
-            if (item && item->project())
-                SessionManager::setStartupProject(item->project());
-        });
-    }
-
-private:
-    ProjectsModel *theModel() const { return static_cast<ProjectsModel *>(model()); }
-
-    void restoreCurrentIndex()
-    {
-        const SelectorProjectItem * const itemForStartupProject
-                = theModel()->itemForProject(SessionManager::startupProject());
-        if (itemForStartupProject)
-            setCurrentIndex(theModel()->indexForItem(itemForStartupProject));
-    }
-
-    void resetOptimalWidth()
-    {
-        int width = 0;
-        QFontMetrics fn(font());
-        theModel()->forItemsAtLevel<1>([this, &width, &fn](const SelectorProjectItem *item) {
-            width = qMax(fn.horizontalAdvance(item->displayName()) + padding(), width);
-        });
-        setOptimalWidth(width);
-    }
-};
 
 class GenericModel : public TreeModel<GenericItem, GenericItem>
 {
@@ -329,8 +183,11 @@ public:
     const GenericItem *addItemForObject(QObject *object)
     {
         const auto item = new GenericItem(object);
-        rootItem()->insertOrderedChild(item, &compareItems<GenericItem>);
-        if (const auto target = qobject_cast<Target *>(object)) {
+        rootItem()->insertOrderedChild(item, &compareItems);
+        if (const auto project = qobject_cast<Project *>(object)) {
+            connect(project, &Project::displayNameChanged,
+                    this, &GenericModel::displayNameChanged);
+        } else if (const auto target = qobject_cast<Target *>(object)) {
             connect(target, &Target::kitChanged, this, &GenericModel::displayNameChanged);
         } else {
             const auto pc = qobject_cast<ProjectConfiguration *>(object);
@@ -341,6 +198,13 @@ public:
                     this, &GenericModel::updateToolTips);
         }
         return item;
+    }
+
+    GenericItem *itemForObject(const QObject *object) const
+    {
+        return findItemAtLevel<1>([object](const GenericItem *item) {
+            return item->object() == object;
+        });
     }
 
     void setColumnCount(int columns) { m_columnCount = columns; }
@@ -355,6 +219,99 @@ private:
     }
 };
 
+class SelectorView : public TreeView
+{
+    Q_OBJECT
+
+public:
+    SelectorView(QWidget *parent);
+
+    void setMaxCount(int maxCount);
+    int maxCount();
+
+    int optimalWidth() const;
+    void setOptimalWidth(int width);
+
+    int padding();
+
+    GenericModel *theModel() const { return static_cast<GenericModel *>(model()); }
+
+protected:
+    void resetOptimalWidth()
+    {
+        int width = 0;
+        QFontMetrics fn(font());
+        theModel()->forItemsAtLevel<1>([this, &width, &fn](const GenericItem *item) {
+            width = qMax(fn.horizontalAdvance(item->displayName()) + padding(), width);
+        });
+        setOptimalWidth(width);
+    }
+
+private:
+    void keyPressEvent(QKeyEvent *event) override;
+    void keyReleaseEvent(QKeyEvent *event) override;
+
+    int m_maxCount = 0;
+    int m_optimalWidth = 0;
+};
+
+class ProjectListView : public SelectorView
+{
+    Q_OBJECT
+
+public:
+    explicit ProjectListView(QWidget *parent = nullptr) : SelectorView(parent)
+    {
+        const auto model = new GenericModel(this);
+        model->rebuild(transform<QList<QObject *>>(SessionManager::projects(),
+                                                   [](Project *p) { return p; }));
+        connect(SessionManager::instance(), &SessionManager::projectAdded,
+                this, [this, model](Project *project) {
+            const GenericItem *projectItem = model->addItemForObject(project);
+            QFontMetrics fn(font());
+            const int width = fn.horizontalAdvance(projectItem->displayName()) + padding();
+            if (width > optimalWidth())
+                setOptimalWidth(width);
+            restoreCurrentIndex();
+        });
+        connect(SessionManager::instance(), &SessionManager::aboutToRemoveProject,
+                this, [this, model](const Project *project) {
+            GenericItem * const item = model->itemForObject(project);
+            if (!item)
+                return;
+            model->destroyItem(item);
+            resetOptimalWidth();
+        });
+        connect(SessionManager::instance(), &SessionManager::startupProjectChanged,
+                this, [this, model](const Project *project) {
+            const GenericItem * const item = model->itemForObject(project);
+            if (item)
+                setCurrentIndex(item->index());
+        });
+        connect(model, &GenericModel::displayNameChanged, this, [this, model] {
+            model->rootItem()->sortChildren(&compareItems);
+            resetOptimalWidth();
+            restoreCurrentIndex();
+        });
+        setModel(model);
+        connect(selectionModel(), &QItemSelectionModel::currentChanged,
+                this, [model](const QModelIndex &index) {
+            const GenericItem * const item = model->itemForIndex(index);
+            if (item && item->object())
+                SessionManager::setStartupProject(qobject_cast<Project *>(item->object()));
+        });
+    }
+
+private:
+    void restoreCurrentIndex()
+    {
+        const GenericItem * const itemForStartupProject
+                = theModel()->itemForObject(SessionManager::startupProject());
+        if (itemForStartupProject)
+            setCurrentIndex(theModel()->indexForItem(itemForStartupProject));
+    }
+};
+
 class GenericListWidget : public SelectorView
 {
     Q_OBJECT
@@ -365,7 +322,7 @@ public:
         const auto model = new GenericModel(this);
         connect(model, &GenericModel::displayNameChanged, this, [this, model] {
             const GenericItem * const activeItem = model->itemForIndex(currentIndex());
-            model->rootItem()->sortChildren(&compareItems<GenericItem>);
+            model->rootItem()->sortChildren(&compareItems);
             resetOptimalWidth();
             if (activeItem)
                 setCurrentIndex(activeItem->index());
@@ -388,7 +345,7 @@ public:
 
     void setActiveProjectConfiguration(QObject *active)
     {
-        if (const GenericItem * const item = itemForObject(active))
+        if (const GenericItem * const item = theModel()->itemForObject(active))
             setCurrentIndex(item->index());
     }
 
@@ -407,15 +364,13 @@ public:
     void removeProjectConfiguration(QObject *pc)
     {
         const auto activeItem = theModel()->itemForIndex(currentIndex());
-        if (GenericItem * const item = itemForObject(pc)) {
+        if (GenericItem * const item = theModel()->itemForObject(pc)) {
             theModel()->destroyItem(item);
             resetOptimalWidth();
             if (activeItem && activeItem != item)
                 setCurrentIndex(activeItem->index());
         }
     }
-
-    GenericModel *theModel() const { return static_cast<GenericModel *>(model()); }
 
 private:
     void mousePressEvent(QMouseEvent *event) override
@@ -442,23 +397,6 @@ private:
             return;
         }
         TreeView::mouseReleaseEvent(event);
-    }
-
-    GenericItem *itemForObject(const QObject *object)
-    {
-        return theModel()->findItemAtLevel<1>([object](const GenericItem *item) {
-            return item->object() == object;
-        });
-    }
-
-    void resetOptimalWidth()
-    {
-        int width = 0;
-        QFontMetrics fn(font());
-        theModel()->forItemsAtLevel<1>([this, &width, &fn](const GenericItem *item) {
-            width = qMax(fn.horizontalAdvance(item->displayName()) + padding(), width);
-        });
-        setOptimalWidth(width);
     }
 
     QObject *objectAt(const QModelIndex &index) const
@@ -549,14 +487,10 @@ void TargetSelectorDelegate::paint(QPainter *painter,
             ->setData(index, index.model()->data(index, Qt::UserRole + 1).toString(), Qt::ToolTipRole);
     painter->drawText(option.rect.left() + 6, option.rect.top() + (option.rect.height() - fm.height()) / 2 + fm.ascent(), elidedText);
     if (index.column() == 1 && option.state & QStyle::State_MouseOver) {
-        const QIcon icon = Utils::Icons::RUN_SMALL.icon();
-        QRect iconRect(option.rect.right() - option.rect.height(),
-                       option.rect.top(),
-                       option.rect.height() / painter->device()->devicePixelRatio(),
-                       option.rect.height() / painter->device()->devicePixelRatio());
-        iconRect.translate((option.rect.width() - iconRect.width()) / 2,
-                           (option.rect.height() - iconRect.height()) / 2);
-        icon.paint(painter, iconRect, Qt::AlignHCenter | Qt::AlignVCenter);
+        const QIcon icon = Utils::Icons::RUN_SMALL_TOOLBAR.icon();
+        QRect iconRect(0, 0, 16, 16);
+        iconRect.moveCenter(option.rect.center());
+        icon.paint(painter, iconRect);
     }
 
     painter->restore();
@@ -650,6 +584,8 @@ int SelectorView::optimalWidth() const
 void SelectorView::setOptimalWidth(int width)
 {
     m_optimalWidth = width;
+    if (model()->columnCount() == 2)
+        m_optimalWidth += RunColumnWidth;
     updateGeometry();
 }
 
@@ -716,10 +652,10 @@ private:
             return;
 
         bool addedMutables = false;
-        QList<Core::Id> knownIdList = Utils::transform(m_widgets, &KitAspectWidget::kitInformationId);
+        QList<Utils::Id> knownIdList = Utils::transform(m_widgets, &KitAspectWidget::kitInformationId);
 
         for (KitAspect *aspect : KitManager::kitAspects()) {
-            const Core::Id currentId = aspect->id();
+            const Utils::Id currentId = aspect->id();
             if (m_kit->isMutable(currentId) && !knownIdList.removeOne(currentId)) {
                 addedMutables = true;
                 break;
@@ -1055,7 +991,7 @@ void MiniProjectTargetSelector::doLayout(bool keepSize)
 
         QVector<int> widths = listWidgetWidths(minWidth, 1000);
 
-        const int runColumnWidth = widths[RUN] == -1 ? 0 : 30;
+        const int runColumnWidth = widths[RUN] == -1 ? 0 : RunColumnWidth;
         int x = 0;
         for (int i = PROJECT; i < LAST; ++i) {
             int optimalWidth = widths[i];
@@ -1073,7 +1009,8 @@ void MiniProjectTargetSelector::doLayout(bool keepSize)
             x += optimalWidth + 1; //1 extra pixel for the separators or the right border
         }
 
-        m_listWidgets[RUN]->setColumnWidth(0, m_listWidgets[RUN]->size().width() - runColumnWidth);
+        m_listWidgets[RUN]->setColumnWidth(0, m_listWidgets[RUN]->size().width() - runColumnWidth
+                                           - m_listWidgets[RUN]->padding());
         m_listWidgets[RUN]->setColumnWidth(1, runColumnWidth);
         m_summaryLabel->resize(x - 1, summaryLabelHeight);
         m_kitAreaWidget->resize(x - 1, kitAreaHeight);
@@ -1095,13 +1032,8 @@ void MiniProjectTargetSelector::doLayout(bool keepSize)
 
 void MiniProjectTargetSelector::projectAdded(Project *project)
 {
-    connect(project, &Project::addedProjectConfiguration,
-            this, &MiniProjectTargetSelector::handleNewProjectConfiguration);
     connect(project, &Project::addedTarget,
             this, &MiniProjectTargetSelector::handleNewTarget);
-
-    connect(project, &Project::removedProjectConfiguration,
-            this, &MiniProjectTargetSelector::handleRemovalOfProjectConfiguration);
     connect(project, &Project::removedTarget,
             this, &MiniProjectTargetSelector::handleRemovalOfTarget);
 
@@ -1117,13 +1049,8 @@ void MiniProjectTargetSelector::projectAdded(Project *project)
 
 void MiniProjectTargetSelector::projectRemoved(Project *project)
 {
-    disconnect(project, &Project::addedProjectConfiguration,
-               this, &MiniProjectTargetSelector::handleNewProjectConfiguration);
     disconnect(project, &Project::addedTarget,
                this, &MiniProjectTargetSelector::handleNewTarget);
-
-    disconnect(project, &Project::removedProjectConfiguration,
-               this, &MiniProjectTargetSelector::handleRemovalOfProjectConfiguration);
     disconnect(project, &Project::removedTarget,
                this, &MiniProjectTargetSelector::handleRemovalOfTarget);
 
@@ -1146,25 +1073,6 @@ void MiniProjectTargetSelector::handleNewTarget(Target *target)
     updateRunListVisible();
 }
 
-void MiniProjectTargetSelector::handleNewProjectConfiguration(ProjectConfiguration *pc)
-{
-    if (auto bc = qobject_cast<BuildConfiguration *>(pc)) {
-        if (addedBuildConfiguration(bc))
-            updateBuildListVisible();
-        return;
-    }
-    if (auto dc = qobject_cast<DeployConfiguration *>(pc)) {
-        if (addedDeployConfiguration(dc))
-            updateDeployListVisible();
-        return;
-    }
-    if (auto rc = qobject_cast<RunConfiguration *>(pc)) {
-        if (addedRunConfiguration(rc))
-            updateRunListVisible();
-        return;
-    }
-}
-
 void MiniProjectTargetSelector::handleRemovalOfTarget(Target *target)
 {
     removedTarget(target);
@@ -1175,25 +1083,6 @@ void MiniProjectTargetSelector::handleRemovalOfTarget(Target *target)
     updateRunListVisible();
 }
 
-void MiniProjectTargetSelector::handleRemovalOfProjectConfiguration(ProjectConfiguration *pc)
-{
-    if (auto bc = qobject_cast<BuildConfiguration *>(pc)) {
-        if (removedBuildConfiguration(bc))
-            updateBuildListVisible();
-        return;
-    }
-    if (auto dc = qobject_cast<DeployConfiguration *>(pc)) {
-        if (removedDeployConfiguration(dc))
-            updateDeployListVisible();
-        return;
-    }
-    if (auto rc = qobject_cast<RunConfiguration *>(pc)) {
-        if (removedRunConfiguration(rc))
-            updateRunListVisible();
-        return;
-    }
-}
-
 void MiniProjectTargetSelector::addedTarget(Target *target)
 {
     if (target->project() != m_project)
@@ -1202,11 +1091,11 @@ void MiniProjectTargetSelector::addedTarget(Target *target)
     m_listWidgets[TARGET]->addProjectConfiguration(target);
 
     for (BuildConfiguration *bc : target->buildConfigurations())
-        addedBuildConfiguration(bc);
+        addedBuildConfiguration(bc, false);
     for (DeployConfiguration *dc : target->deployConfigurations())
-        addedDeployConfiguration(dc);
+        addedDeployConfiguration(dc, false);
     for (RunConfiguration *rc : target->runConfigurations())
-        addedRunConfiguration(rc);
+        addedRunConfiguration(rc, false);
 }
 
 void MiniProjectTargetSelector::removedTarget(Target *target)
@@ -1217,64 +1106,71 @@ void MiniProjectTargetSelector::removedTarget(Target *target)
     m_listWidgets[TARGET]->removeProjectConfiguration(target);
 
     for (BuildConfiguration *bc : target->buildConfigurations())
-        removedBuildConfiguration(bc);
+        removedBuildConfiguration(bc, false);
     for (DeployConfiguration *dc : target->deployConfigurations())
-        removedDeployConfiguration(dc);
+        removedDeployConfiguration(dc, false);
     for (RunConfiguration *rc : target->runConfigurations())
-        removedRunConfiguration(rc);
+        removedRunConfiguration(rc, false);
 }
 
-bool MiniProjectTargetSelector::addedBuildConfiguration(BuildConfiguration *bc)
+void MiniProjectTargetSelector::addedBuildConfiguration(BuildConfiguration *bc, bool update)
 {
-    if (bc->target() != m_project->activeTarget())
-        return false;
+    if (!m_project || bc->target() != m_project->activeTarget())
+        return;
 
     m_listWidgets[BUILD]->addProjectConfiguration(bc);
-    return true;
+    if (update)
+        updateBuildListVisible();
 }
 
-bool MiniProjectTargetSelector::removedBuildConfiguration(BuildConfiguration *bc)
+void MiniProjectTargetSelector::removedBuildConfiguration(BuildConfiguration *bc, bool update)
 {
-    if (bc->target() != m_project->activeTarget())
-        return false;
+    if (!m_project || bc->target() != m_project->activeTarget())
+        return;
 
     m_listWidgets[BUILD]->removeProjectConfiguration(bc);
-    return true;
+    if (update)
+        updateBuildListVisible();
 }
 
-bool MiniProjectTargetSelector::addedDeployConfiguration(DeployConfiguration *dc)
+void MiniProjectTargetSelector::addedDeployConfiguration(DeployConfiguration *dc, bool update)
 {
     if (!m_project || dc->target() != m_project->activeTarget())
-        return false;
+        return;
 
     m_listWidgets[DEPLOY]->addProjectConfiguration(dc);
-    return true;
+    if (update)
+        updateDeployListVisible();
 }
 
-bool MiniProjectTargetSelector::removedDeployConfiguration(DeployConfiguration *dc)
+void MiniProjectTargetSelector::removedDeployConfiguration(DeployConfiguration *dc, bool update)
 {
     if (!m_project || dc->target() != m_project->activeTarget())
-        return false;
+        return;
 
     m_listWidgets[DEPLOY]->removeProjectConfiguration(dc);
-    return true;
+    if (update)
+        updateDeployListVisible();
 }
-bool MiniProjectTargetSelector::addedRunConfiguration(RunConfiguration *rc)
+
+void MiniProjectTargetSelector::addedRunConfiguration(RunConfiguration *rc, bool update)
 {
     if (!m_project || rc->target() != m_project->activeTarget())
-        return false;
+        return;
 
     m_listWidgets[RUN]->addProjectConfiguration(rc);
-    return true;
+    if (update)
+        updateRunListVisible();
 }
 
-bool MiniProjectTargetSelector::removedRunConfiguration(RunConfiguration *rc)
+void MiniProjectTargetSelector::removedRunConfiguration(RunConfiguration *rc, bool update)
 {
     if (!m_project || rc->target() != m_project->activeTarget())
-        return false;
+        return;
 
     m_listWidgets[RUN]->removeProjectConfiguration(rc);
-    return true;
+    if (update)
+        updateRunListVisible();
 }
 
 void MiniProjectTargetSelector::updateProjectListVisible()

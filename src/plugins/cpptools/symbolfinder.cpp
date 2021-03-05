@@ -36,6 +36,7 @@
 #include <utils/qtcassert.h>
 
 #include <QDebug>
+#include <QPair>
 
 #include <algorithm>
 #include <utility>
@@ -45,21 +46,30 @@ using namespace CppTools;
 
 namespace {
 
+struct Hit {
+    Hit(Function *func, bool exact) : func(func), exact(exact) {}
+    Hit() = default;
+
+    Function *func = nullptr;
+    bool exact = false;
+};
+
 class FindMatchingDefinition: public SymbolVisitor
 {
     Symbol *_declaration = nullptr;
     const OperatorNameId *_oper = nullptr;
-    QList<Function *> _result;
+    const bool _strict;
+    QList<Hit> _result;
 
 public:
-    explicit FindMatchingDefinition(Symbol *declaration)
-        : _declaration(declaration)
+    explicit FindMatchingDefinition(Symbol *declaration, bool strict)
+        : _declaration(declaration), _strict(strict)
     {
         if (_declaration->name())
             _oper = _declaration->name()->asOperatorNameId();
     }
 
-    QList<Function *> result() const { return _result; }
+    const QList<Hit> result() const { return _result; }
 
     using SymbolVisitor::visit;
 
@@ -68,11 +78,15 @@ public:
         if (_oper) {
             if (const Name *name = fun->unqualifiedName()) {
                     if (_oper->match(name))
-                        _result.append(fun);
+                        _result.append({fun, true});
             }
         } else if (Function *decl = _declaration->type()->asFunctionType()) {
-            if (fun->match(decl))
-                _result.append(fun);
+            if (fun->match(decl)) {
+                _result.prepend({fun, true});
+            } else if (!_strict
+                       && Matcher::match(fun->unqualifiedName(), decl->unqualifiedName())) {
+                _result.append({fun, false});
+            }
         }
 
         return false;
@@ -82,6 +96,46 @@ public:
     {
         return false;
     }
+};
+
+class FindMatchingVarDefinition: public SymbolVisitor
+{
+    Symbol *_declaration = nullptr;
+    QList<Declaration *> _result;
+    const Identifier *_className = nullptr;
+
+public:
+    explicit FindMatchingVarDefinition(Symbol *declaration)
+        : _declaration(declaration)
+    {
+        if (declaration->isStatic() && declaration->enclosingScope()->asClass()
+                && declaration->enclosingClass()->asClass()->name()) {
+            _className = declaration->enclosingScope()->name()->identifier();
+        }
+    }
+
+    const QList<Declaration *> result() const { return _result; }
+
+    using SymbolVisitor::visit;
+
+    bool visit(Declaration *decl) override
+    {
+        if (!decl->type()->match(_declaration->type().type()))
+            return false;
+        if (!_declaration->identifier()->equalTo(decl->identifier()))
+            return false;
+        if (_className) {
+            const QualifiedNameId * const qualName = decl->name()->asQualifiedNameId();
+            if (!qualName)
+                return false;
+            if (!qualName->base() || !qualName->base()->identifier()->equalTo(_className))
+                return false;
+        }
+        _result.append(decl);
+        return false;
+    }
+
+    bool visit(Block *) override { return false; }
 };
 
 } // end of anonymous namespace
@@ -114,6 +168,7 @@ Function *SymbolFinder::findMatchingDefinition(Symbol *declaration,
         return nullptr;
     }
 
+    Hit best;
     foreach (const QString &fileName, fileIterationOrder(declFile, snapshot)) {
         Document::Ptr doc = snapshot.document(fileName);
         if (!doc) {
@@ -135,76 +190,119 @@ Function *SymbolFinder::findMatchingDefinition(Symbol *declaration,
                 continue;
         }
 
-        FindMatchingDefinition candidates(declaration);
+        FindMatchingDefinition candidates(declaration, strict);
         candidates.accept(doc->globalNamespace());
 
-        const QList<Function *> result = candidates.result();
-        if (!result.isEmpty()) {
-            LookupContext context(doc, snapshot);
+        const QList<Hit> result = candidates.result();
+        if (result.isEmpty())
+            continue;
 
-            QList<Function *> viableFunctions;
+        LookupContext context(doc, snapshot);
+        ClassOrNamespace *enclosingType = context.lookupType(declaration);
+        if (!enclosingType)
+            continue; // nothing to do
 
-            ClassOrNamespace *enclosingType = context.lookupType(declaration);
-            if (!enclosingType)
-                continue; // nothing to do
+        for (const Hit &hit : result) {
+            QTC_CHECK(!strict || hit.exact);
 
-            foreach (Function *fun, result) {
-                if (fun->unqualifiedName()->isDestructorNameId() != declaration->unqualifiedName()->isDestructorNameId())
-                    continue;
-
-                const QList<LookupItem> declarations = context.lookup(fun->name(), fun->enclosingScope());
-                if (declarations.isEmpty())
-                    continue;
-
-                const LookupItem best = declarations.first();
-                if (enclosingType == context.lookupType(best.declaration()))
-                    viableFunctions.append(fun);
-            }
-
-            if (viableFunctions.isEmpty())
+            const QList<LookupItem> declarations = context.lookup(hit.func->name(),
+                                                                  hit.func->enclosingScope());
+            if (declarations.isEmpty())
+                continue;
+            if (enclosingType != context.lookupType(declarations.first().declaration()))
                 continue;
 
-            else if (!strict && viableFunctions.length() == 1)
-                return viableFunctions.first();
+            if (hit.exact)
+                return hit.func;
 
-            Function *best = nullptr;
-
-            foreach (Function *fun, viableFunctions) {
-                if (!(fun->unqualifiedName()
-                      && fun->unqualifiedName()->match(declaration->unqualifiedName()))) {
-                    continue;
-                }
-                if (fun->argumentCount() == declarationTy->argumentCount()) {
-                    if (!strict && !best)
-                        best = fun;
-
-                    const unsigned argc = declarationTy->argumentCount();
-                    unsigned argIt = 0;
-                    for (; argIt < argc; ++argIt) {
-                        Symbol *arg = fun->argumentAt(argIt);
-                        Symbol *otherArg = declarationTy->argumentAt(argIt);
-                        if (!arg->type().match(otherArg->type()))
-                            break;
-                    }
-
-                    if (argIt == argc
-                            && fun->isConst() == declaration->type().isConst()
-                            && fun->isVolatile() == declaration->type().isVolatile()) {
-                        best = fun;
-                    }
-                }
-            }
-
-            if (strict && !best)
-                continue;
-
-            if (!best)
-                best = viableFunctions.first();
-            return best;
+            if (!best.func || hit.func->argumentCount() == declarationTy->argumentCount())
+                best = hit;
         }
     }
 
-    return nullptr;
+    QTC_CHECK(!best.exact);
+    return strict ? nullptr : best.func;
+}
+
+Symbol *SymbolFinder::findMatchingVarDefinition(Symbol *declaration, const Snapshot &snapshot)
+{
+    if (!declaration)
+        return nullptr;
+    for (const Scope *s = declaration->enclosingScope(); s; s = s->enclosingScope()) {
+        if (s->asBlock())
+            return nullptr;
+    }
+
+    QString declFile = QString::fromUtf8(declaration->fileName(), declaration->fileNameLength());
+    const Document::Ptr thisDocument = snapshot.document(declFile);
+    if (!thisDocument) {
+        qWarning() << "undefined document:" << declaration->fileName();
+        return nullptr;
+    }
+
+    using SymbolWithPriority = QPair<Symbol *, bool>;
+    QList<SymbolWithPriority> candidates;
+    QList<SymbolWithPriority> fallbacks;
+    foreach (const QString &fileName, fileIterationOrder(declFile, snapshot)) {
+        Document::Ptr doc = snapshot.document(fileName);
+        if (!doc) {
+            clearCache(declFile, fileName);
+            continue;
+        }
+
+        const Identifier *id = declaration->identifier();
+        if (id && !doc->control()->findIdentifier(id->chars(), id->size()))
+            continue;
+
+        FindMatchingVarDefinition finder(declaration);
+        finder.accept(doc->globalNamespace());
+        if (finder.result().isEmpty())
+            continue;
+
+        LookupContext context(doc, snapshot);
+        ClassOrNamespace * const enclosingType = context.lookupType(declaration);
+        for (Symbol * const symbol : finder.result()) {
+            const QList<LookupItem> items = context.lookup(symbol->name(),
+                                                           symbol->enclosingScope());
+            bool addFallback = true;
+            for (const LookupItem &item : items) {
+                if (item.declaration() == symbol)
+                    addFallback = false;
+                candidates << qMakePair(item.declaration(),
+                                        context.lookupType(item.declaration()) == enclosingType);
+            }
+            // TODO: This is a workaround for static member definitions not being found by
+            //       the lookup() function.
+            if (addFallback)
+                fallbacks << qMakePair(symbol, context.lookupType(symbol) == enclosingType);
+        }
+    }
+
+    candidates << fallbacks;
+    SymbolWithPriority best;
+    for (const auto &candidate : qAsConst(candidates)) {
+        if (candidate.first == declaration)
+            continue;
+        if (QLatin1String(candidate.first->fileName()) == declFile
+                && candidate.first->sourceLocation() == declaration->sourceLocation())
+            continue;
+        if (!candidate.first->asDeclaration())
+            continue;
+        if (declaration->isExtern() && candidate.first->isStatic())
+            continue;
+        if (!best.first) {
+            best = candidate;
+            continue;
+        }
+        if (!best.second && candidate.second) {
+            best = candidate;
+            continue;
+        }
+        if (best.first->isExtern() && !candidate.first->isExtern())
+            best = candidate;
+    }
+
+    return best.first;
 }
 
 Class *SymbolFinder::findMatchingClassDeclaration(Symbol *declaration, const Snapshot &snapshot)
@@ -333,7 +431,16 @@ QList<Declaration *> SymbolFinder::findMatchingDeclaration(const LookupContext &
     QList<Declaration *> nameMatch, argumentCountMatch, typeMatch;
     findMatchingDeclaration(context, functionType, &typeMatch, &argumentCountMatch, &nameMatch);
     result.append(typeMatch);
-    result.append(argumentCountMatch);
+
+    // For member functions not defined inline, add fuzzy matches as fallbacks. We cannot do
+    // this for free functions, because there is no guarantee that there's a separate declaration.
+    QList<Declaration *> fuzzyMatches = argumentCountMatch + nameMatch;
+    if (!functionType->enclosingScope() || !functionType->enclosingScope()->isClass()) {
+        for (Declaration * const d : fuzzyMatches) {
+            if (d->enclosingScope() && d->enclosingScope()->isClass())
+                result.append(d);
+        }
+    }
     return result;
 }
 

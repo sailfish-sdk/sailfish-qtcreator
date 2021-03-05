@@ -25,11 +25,15 @@
 
 #include "buildaspects.h"
 
+#include "buildconfiguration.h"
 #include "buildpropertiessettings.h"
 #include "projectexplorer.h"
 
+#include <coreplugin/fileutils.h>
+
 #include <utils/fileutils.h>
 #include <utils/infolabel.h>
+#include <utils/layoutbuilder.h>
 
 #include <QLayout>
 
@@ -46,12 +50,15 @@ public:
     QPointer<InfoLabel> problemLabel;
 };
 
-BuildDirectoryAspect::BuildDirectoryAspect() : d(new Private)
+BuildDirectoryAspect::BuildDirectoryAspect(const BuildConfiguration *bc) : d(new Private)
 {
     setSettingsKey("ProjectExplorer.BuildConfiguration.BuildDirectory");
     setLabelText(tr("Build directory:"));
     setDisplayStyle(PathChooserDisplay);
     setExpectedKind(Utils::PathChooser::Directory);
+    setOpenTerminalHandler([this, bc] {
+        Core::FileUtils::openTerminal(value(), bc->environment());
+    });
 }
 
 BuildDirectoryAspect::~BuildDirectoryAspect()
@@ -79,16 +86,16 @@ void BuildDirectoryAspect::setProblem(const QString &description)
 
 void BuildDirectoryAspect::toMap(QVariantMap &map) const
 {
-    BaseStringAspect::toMap(map);
+    StringAspect::toMap(map);
     if (!d->sourceDir.isEmpty()) {
         const FilePath shadowDir = isChecked() ? filePath() : d->savedShadowBuildDir;
-        map.insert(settingsKey() + ".shadowDir", shadowDir.toString());
+        saveToMap(map, shadowDir.toString(), QString(), ".shadowDir");
     }
 }
 
 void BuildDirectoryAspect::fromMap(const QVariantMap &map)
 {
-    BaseStringAspect::fromMap(map);
+    StringAspect::fromMap(map);
     if (!d->sourceDir.isEmpty()) {
         d->savedShadowBuildDir = FilePath::fromString(map.value(settingsKey() + ".shadowDir")
                                                       .toString());
@@ -98,13 +105,13 @@ void BuildDirectoryAspect::fromMap(const QVariantMap &map)
 
 void BuildDirectoryAspect::addToLayout(LayoutBuilder &builder)
 {
-    BaseStringAspect::addToLayout(builder);
+    StringAspect::addToLayout(builder);
     d->problemLabel = new InfoLabel({}, InfoLabel::Warning);
     d->problemLabel->setElideMode(Qt::ElideNone);
-    builder.startNewRow().addItems(QString(), d->problemLabel.data());
+    builder.addRow({{}, d->problemLabel.data()});
     updateProblemLabel();
     if (!d->sourceDir.isEmpty()) {
-        connect(this, &BaseStringAspect::checkedChanged, builder.layout(), [this] {
+        connect(this, &StringAspect::checkedChanged, builder.layout(), [this] {
             if (isChecked()) {
                 setFilePath(d->savedShadowBuildDir.isEmpty()
                             ? d->sourceDir : d->savedShadowBuildDir);
@@ -127,7 +134,7 @@ void BuildDirectoryAspect::updateProblemLabel()
 
 SeparateDebugInfoAspect::SeparateDebugInfoAspect()
 {
-    setDisplayName(tr("Separate Debug Info:"));
+    setDisplayName(tr("Separate debug info:"));
     setSettingsKey("SeparateDebugInfo");
     setSetting(ProjectExplorerPlugin::buildPropertiesSettings().separateDebugInfo);
 }

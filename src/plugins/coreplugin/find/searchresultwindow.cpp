@@ -25,7 +25,6 @@
 
 #include "searchresultwindow.h"
 #include "searchresultwidget.h"
-#include "searchresultcolor.h"
 #include "textfindconstants.h"
 
 #include <coreplugin/icore.h>
@@ -126,7 +125,7 @@ namespace Internal {
         QList<SearchResult *> m_searchResults;
         int m_currentIndex;
         QFont m_font;
-        SearchResultColor m_color;
+        SearchResultColors m_colors;
         int m_tabWidth;
 
     };
@@ -260,7 +259,9 @@ using namespace Core::Internal;
 
 /*!
     \class Core::SearchResult
+    \inheaderfile coreplugin/find/searchresultwindow.h
     \inmodule QtCreator
+
     \brief The SearchResult class reports user interaction, such as the
     activation of a search result item.
 
@@ -340,7 +341,9 @@ using namespace Core::Internal;
 
 /*!
     \class Core::SearchResultWindow
+    \inheaderfile coreplugin/find/searchresultwindow.h
     \inmodule QtCreator
+
     \brief The SearchResultWindow class is the implementation of a commonly
     shared \uicontrol{Search Results} output pane.
 
@@ -499,7 +502,7 @@ SearchResult *SearchResultWindow::startNewSearch(const QString &label,
             d, &SearchResultWindowPrivate::moveWidgetToTop);
     connect(widget, &SearchResultWidget::requestPopup,
             d, &SearchResultWindowPrivate::popupRequested);
-    widget->setTextEditorFont(d->m_font, d->m_color);
+    widget->setTextEditorFont(d->m_font, d->m_colors);
     widget->setTabWidth(d->m_tabWidth);
     widget->setSupportPreserveCase(preserveCaseMode == PreserveCaseEnabled);
     bool supportsReplace = searchOrSearchAndReplace != SearchOnly;
@@ -570,25 +573,12 @@ void SearchResultWindow::setFocus()
 /*!
     \internal
 */
-void SearchResultWindow::setTextEditorFont(const QFont &font,
-                                           const QColor &textForegroundColor,
-                                           const QColor &textBackgroundColor,
-                                           const QColor &highlightForegroundColor,
-                                           const QColor &highlightBackgroundColor)
+void SearchResultWindow::setTextEditorFont(const QFont &font, const SearchResultColors &colors)
 {
     d->m_font = font;
-    Internal::SearchResultColor color;
-    color.textBackground = textBackgroundColor;
-    color.textForeground = textForegroundColor;
-    color.highlightBackground = highlightBackgroundColor.isValid()
-            ? highlightBackgroundColor
-            : textBackgroundColor;
-    color.highlightForeground = highlightForegroundColor.isValid()
-            ? highlightForegroundColor
-            : textForegroundColor;
-    d->m_color = color;
+    d->m_colors = colors;
     foreach (Internal::SearchResultWidget *widget, d->m_searchResultWidgets)
-        widget->setTextEditorFont(font, color);
+        widget->setTextEditorFont(font, colors);
 }
 
 /*!
@@ -708,6 +698,8 @@ SearchResult::SearchResult(SearchResultWidget *widget)
     connect(widget, &SearchResultWidget::activated, this, &SearchResult::activated);
     connect(widget, &SearchResultWidget::replaceButtonClicked,
             this, &SearchResult::replaceButtonClicked);
+    connect(widget, &SearchResultWidget::replaceTextChanged,
+            this, &SearchResult::replaceTextChanged);
     connect(widget, &SearchResultWidget::cancelled, this, &SearchResult::cancelled);
     connect(widget, &SearchResultWidget::paused, this, &SearchResult::paused);
     connect(widget, &SearchResultWidget::visibilityChanged,
@@ -770,6 +762,14 @@ QWidget *SearchResult::additionalReplaceWidget() const
 }
 
 /*!
+    Sets a \a widget as UI for a global search and replace action.
+*/
+void SearchResult::setAdditionalReplaceWidget(QWidget *widget)
+{
+    m_widget->setAdditionalReplaceWidget(widget);
+}
+
+/*!
     Adds a single result line to the \uicontrol {Search Results} output pane.
 
     \a fileName, \a lineNumber, and \a lineText are shown on the result line.
@@ -782,7 +782,8 @@ QWidget *SearchResult::additionalReplaceWidget() const
     \sa addResults()
 */
 void SearchResult::addResult(const QString &fileName, int lineNumber, const QString &lineText,
-                             int searchTermStart, int searchTermLength, const QVariant &userData)
+                             int searchTermStart, int searchTermLength, const QVariant &userData,
+                             SearchResultColor::Style style)
 {
     Search::TextRange mainRange;
     mainRange.begin.line = lineNumber;
@@ -790,7 +791,7 @@ void SearchResult::addResult(const QString &fileName, int lineNumber, const QStr
     mainRange.end.line = mainRange.begin.line;
     mainRange.end.column = mainRange.begin.column + searchTermLength;
 
-    m_widget->addResult(fileName, lineText, mainRange, userData);
+    m_widget->addResult(fileName, lineText, mainRange, userData, style);
 }
 
 /*!
@@ -808,9 +809,10 @@ void SearchResult::addResult(const QString &fileName, int lineNumber, const QStr
 void SearchResult::addResult(const QString &fileName,
                              const QString &lineText,
                              Search::TextRange mainRange,
-                             const QVariant &userData)
+                             const QVariant &userData,
+                             SearchResultColor::Style style)
 {
-    m_widget->addResult(fileName, lineText, mainRange, userData);
+    m_widget->addResult(fileName, lineText, mainRange, userData, style);
     emit countChanged(m_widget->count());
 }
 
@@ -842,6 +844,14 @@ void SearchResult::finishSearch(bool canceled)
 void SearchResult::setTextToReplace(const QString &textToReplace)
 {
     m_widget->setTextToReplace(textToReplace);
+}
+
+/*!
+    Sets whether replace is enabled and can be triggered by the user
+*/
+void SearchResult::setReplaceEnabled(bool enabled)
+{
+    m_widget->setReplaceEnabled(enabled);
 }
 
 /*!

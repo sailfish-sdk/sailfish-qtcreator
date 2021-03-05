@@ -125,6 +125,9 @@ private Q_SLOTS:
     void braceReturn();
     void staticVarDeclWithTypeDecl();
     void strings();
+    void initializerWithinFunctionArg();
+    void shiftWithinInitializer();
+    void lambdaWithReturnType();
 };
 
 struct Line {
@@ -1285,6 +1288,7 @@ void tst_CodeFormatter::functionReturnType()
          << Line("A::B::foo() {}")
          << Line("std::map<int,std::vector<int>> indent() {}")
          << Line("std::map<int,std::vector<int> > indent() {}")
+         << Line("auto indent() -> std::map<int,std::vector<int>>")
          << Line("")
          ;
     checkIndent(data);
@@ -2165,6 +2169,41 @@ void tst_CodeFormatter::strings()
          << Line("    ~          \"bar\"")
          << Line("    ~          \"baz\", 4,")
          << Line("    ~    5, 6);")
+         << Line("}")
+            ;
+    checkIndent(data);
+}
+
+void tst_CodeFormatter::initializerWithinFunctionArg()
+{
+    QList<Line> data;
+    data << Line("void f() {")
+         << Line("    g(foo,")
+         << Line("      { 1, 2});", 4, 2)
+         << Line("}")
+           ;
+
+    checkIndent(data);
+}
+
+void tst_CodeFormatter::shiftWithinInitializer()
+{
+    QList<Line> data;
+    data << Line("void f() {")
+         << Line("    list << A{1 << 1};")
+         << Line("    list;") // OK, same indentation/padding as above.
+         << Line("}")
+            ;
+    checkIndent(data);
+}
+
+void tst_CodeFormatter::lambdaWithReturnType()
+{
+    QList<Line> data;
+    data << Line("int main() {")
+         << Line("    hello([]() -> void {")
+         << Line("        cout << \"world\";") // OK, same indentation/padding as above.
+         << Line("    });")
          << Line("}")
             ;
     checkIndent(data);

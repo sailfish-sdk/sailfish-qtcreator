@@ -31,13 +31,14 @@
 #include "../gitconstants.h"
 
 #include <utils/icon.h>
+#include <utils/stringutils.h>
 #include <utils/theme/theme.h>
 
 #include <QApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QPushButton>
-#include <QRegExpValidator>
+#include <QRegularExpressionValidator>
 #include <QVersionNumber>
 
 using namespace Git::Internal;
@@ -65,6 +66,8 @@ protected:
 QString GerritPushDialog::determineRemoteBranch(const QString &localBranch)
 {
     const QString earliestCommit = m_ui->commitView->earliestCommit();
+    if (earliestCommit.isEmpty())
+        return {};
 
     QString output;
     QString error;
@@ -114,7 +117,7 @@ void GerritPushDialog::initRemoteBranches()
             continue;
         const QString ref = entries.at(0).mid(remotesPrefix.size());
         int refBranchIndex = ref.indexOf('/');
-        qint64 timeT = entries.at(1).leftRef(entries.at(1).indexOf(' ')).toLongLong();
+        qint64 timeT = entries.at(1).left(entries.at(1).indexOf(' ')).toLongLong();
         BranchDate bd(ref.mid(refBranchIndex + 1), QDateTime::fromSecsSinceEpoch(timeT).date());
         m_remoteBranches.insertMulti(ref.left(refBranchIndex), bd);
     }
@@ -156,7 +159,7 @@ GerritPushDialog::GerritPushDialog(const QString &workingDir, const QString &rev
     updateCommits(m_ui->localBranchComboBox->currentIndex());
     onRemoteChanged(true);
 
-    QRegExpValidator *noSpaceValidator = new QRegExpValidator(QRegExp("^\\S+$"), this);
+    QRegularExpressionValidator *noSpaceValidator = new QRegularExpressionValidator(QRegularExpression("^\\S+$"), this);
     m_ui->reviewersLineEdit->setText(reviewerList);
     m_ui->reviewersLineEdit->setValidator(noSpaceValidator);
     m_ui->topicLineEdit->setValidator(noSpaceValidator);
@@ -232,6 +235,13 @@ void GerritPushDialog::onRemoteChanged(bool force)
 {
     setRemoteBranches();
     const QString version = m_ui->remoteComboBox->currentServer().version;
+    const QString remote = m_ui->remoteComboBox->currentRemoteName();
+
+    m_ui->commitView->setExcludedRemote(remote);
+    const QString branch = m_ui->localBranchComboBox->itemText(m_ui->localBranchComboBox->currentIndex());
+    m_hasLocalCommits = m_ui->commitView->init(m_workingDir, branch, LogChangeWidget::Silent);
+    validate();
+
     const bool supportsWip = versionSupportsWip(version);
     if (!force && supportsWip == m_currentSupportsWip)
         return;
@@ -290,7 +300,7 @@ QString GerritPushDialog::pushTarget() const
     if (!topic.isEmpty())
         target += '/' + topic;
 
-    const QStringList reviewersInput = reviewers().split(',', QString::SkipEmptyParts);
+    const QStringList reviewersInput = reviewers().split(',', Qt::SkipEmptyParts);
     for (const QString &reviewer : reviewersInput)
         options << "r=" + reviewer;
 

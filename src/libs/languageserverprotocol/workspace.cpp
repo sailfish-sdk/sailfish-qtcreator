@@ -37,7 +37,7 @@ constexpr const char ApplyWorkspaceEditRequest::methodName[];
 constexpr const char DidChangeWatchedFilesNotification::methodName[];
 
 WorkSpaceFolderRequest::WorkSpaceFolderRequest()
-    : Request(methodName)
+    : Request(methodName, nullptr)
 { }
 
 DidChangeWorkspaceFoldersNotification::DidChangeWorkspaceFoldersNotification(
@@ -104,7 +104,7 @@ LanguageServerProtocol::WorkSpaceFolderResult::operator const QJsonValue() const
     if (!Utils::holds_alternative<QList<WorkSpaceFolder>>(*this))
         return QJsonValue::Null;
     QJsonArray array;
-    for (auto folder : Utils::get<QList<WorkSpaceFolder>>(*this))
+    for (const auto &folder : Utils::get<QList<WorkSpaceFolder>>(*this))
         array.append(QJsonValue(folder));
     return array;
 }
